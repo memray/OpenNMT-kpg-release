@@ -1,12 +1,20 @@
-import onmt.IO
-import onmt.Models
-import onmt.Loss
-from onmt.Trainer import Trainer, Statistics
-from onmt.Translator import Translator
-from onmt.Optim import Optim
-from onmt.Beam import Beam, GNMTGlobalScorer
+""" Main entry point of the ONMT library """
+from __future__ import division, print_function
 
+import onmt.inputters
+import onmt.encoders
+import onmt.decoders
+import onmt.models
+import onmt.utils
+import onmt.modules
+from onmt.trainer import Trainer
+import sys
+import onmt.utils.optimizers
+onmt.utils.optimizers.Optim = onmt.utils.optimizers.Optimizer
+sys.modules["onmt.Optim"] = onmt.utils.optimizers
 
-# For flake8 compatibility
-__all__ = [onmt.Loss, onmt.IO, onmt.Models, Trainer, Translator,
-           Optim, Beam, Statistics, GNMTGlobalScorer]
+# For Flake
+__all__ = [onmt.inputters, onmt.encoders, onmt.decoders, onmt.models,
+           onmt.utils, onmt.modules, "Trainer"]
+
+__version__ = "0.7.0"
