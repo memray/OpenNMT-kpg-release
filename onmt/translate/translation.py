@@ -2,7 +2,7 @@
 from __future__ import unicode_literals, print_function
 
 import torch
-from onmt.inputters.text_dataset import TextDataset
+from onmt.inputters.text_dataset import TextMultiField
 
 
 class TranslationBuilder(object):
@@ -25,12 +25,14 @@ class TranslationBuilder(object):
                  has_tgt=False):
         self.data = data
         self.fields = fields
+        self._has_text_src = isinstance(
+            self.fields["src"][0][1], TextMultiField)
         self.n_best = n_best
         self.replace_unk = replace_unk
         self.has_tgt = has_tgt
 
     def _build_target_tokens(self, src, src_vocab, src_raw, pred, attn):
-        tgt_field = self.fields["tgt"][0][1]
+        tgt_field = self.fields["tgt"][0][1].base_field
         vocab = tgt_field.vocab
         tokens = []
         for tok in pred:
@@ -64,18 +66,19 @@ class TranslationBuilder(object):
 
         # Sorting
         inds, perm = torch.sort(batch.indices)
-        if isinstance(self.data, TextDataset):
-            src = batch.src[0].index_select(1, perm)
+        if self._has_text_src:
+            src = batch.src[0][:, :, 0].index_select(1, perm)
         else:
             src = None
-        tgt = batch.tgt.index_select(1, perm) if self.has_tgt else None
+        tgt = batch.tgt[:, :, 0].index_select(1, perm) \
+            if self.has_tgt else None
 
         translations = []
         for b in range(batch_size):
-            if isinstance(self.data, TextDataset):
+            if self._has_text_src:
                 src_vocab = self.data.src_vocabs[inds[b]] \
                     if self.data.src_vocabs else None
-                src_raw = self.data.examples[inds[b]].src
+                src_raw = self.data.examples[inds[b]].src[0]
             else:
                 src_vocab = None
                 src_raw = None
@@ -117,6 +120,9 @@ class Translation(object):
 
     """
 
+    __slots__ = ["src", "src_raw", "pred_sents", "attns", "pred_scores",
+                 "gold_sent", "gold_score"]
+
     def __init__(self, src, src_raw, pred_sents,
                  attn, pred_scores, tgt_sent, gold_score):
         self.src = src
@@ -132,21 +138,21 @@ class Translation(object):
         Log translation.
         """
 
-        output = '\nSENT {}: {}\n'.format(sent_number, self.src_raw)
+        msg = ['\nSENT {}: {}\n'.format(sent_number, self.src_raw)]
 
         best_pred = self.pred_sents[0]
         best_score = self.pred_scores[0]
         pred_sent = ' '.join(best_pred)
-        output += 'PRED {}: {}\n'.format(sent_number, pred_sent)
-        output += "PRED SCORE: {:.4f}\n".format(best_score)
+        msg.append('PRED {}: {}\n'.format(sent_number, pred_sent))
+        msg.append("PRED SCORE: {:.4f}\n".format(best_score))
 
         if self.gold_sent is not None:
             tgt_sent = ' '.join(self.gold_sent)
-            output += 'GOLD {}: {}\n'.format(sent_number, tgt_sent)
-            output += ("GOLD SCORE: {:.4f}\n".format(self.gold_score))
+            msg.append('GOLD {}: {}\n'.format(sent_number, tgt_sent))
+            msg.append(("GOLD SCORE: {:.4f}\n".format(self.gold_score)))
         if len(self.pred_sents) > 1:
-            output += '\nBEST HYP:\n'
+            msg.append('\nBEST HYP:\n')
             for score, sent in zip(self.pred_scores, self.pred_sents):
-                output += "[{:.4f}] {}\n".format(score, sent)
+                msg.append("[{:.4f}] {}\n".format(score, sent))
 
-        return output
+        return "".join(msg)

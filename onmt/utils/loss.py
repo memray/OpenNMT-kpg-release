@@ -19,9 +19,7 @@ def build_loss_compute(model, tgt_field, opt, train=True):
     object allows this loss to be computed in shards and passes the relevant
     data to a Statistics object which handles training/validation logging.
     Currently, the NMTLossCompute class handles all loss computation except
-    for when using a copy mechanism. Despite their name, LossCompute objects
-    do not merely compute the loss but also perform the backward pass inside
-    their sharded_compute_loss method.
+    for when using a copy mechanism.
     """
     device = torch.device("cuda" if onmt.utils.misc.use_gpu(opt) else "cpu")
 
@@ -36,7 +34,7 @@ def build_loss_compute(model, tgt_field, opt, train=True):
         criterion = LabelSmoothingLoss(
             opt.label_smoothing, len(tgt_field.vocab), ignore_index=padding_idx
         )
-    elif isinstance(model.generator[1], LogSparsemax):
+    elif isinstance(model.generator[-1], LogSparsemax):
         criterion = SparsemaxLoss(ignore_index=padding_idx, reduction='sum')
     else:
         criterion = nn.NLLLoss(ignore_index=padding_idx, reduction='sum')
@@ -113,35 +111,21 @@ class LossComputeBase(nn.Module):
         """
         return NotImplementedError
 
-    def monolithic_compute_loss(self, batch, output, attns):
-        """
-        Compute the forward loss for the batch.
-
-        Args:
-          batch (batch): batch of labeled examples
-          output (:obj:`FloatTensor`):
-              output of decoder model `[tgt_len x batch x hidden]`
-          attns (dict of :obj:`FloatTensor`) :
-              dictionary of attention distributions
-              `[tgt_len x batch x src_len]`
-        Returns:
-            :obj:`onmt.utils.Statistics`: loss statistics
-        """
-        range_ = (0, batch.tgt.size(0))
-        shard_state = self._make_shard_state(batch, output, range_, attns)
-        _, batch_stats = self._compute_loss(batch, **shard_state)
-
-        return batch_stats
-
-    def sharded_compute_loss(self, batch, output, attns,
-                             cur_trunc, trunc_size, shard_size,
-                             normalization):
-        """Compute the forward loss and backpropagate.  Computation is done
-        with shards and optionally truncation for memory efficiency.
+    def __call__(self,
+                 batch,
+                 output,
+                 attns,
+                 normalization=1.0,
+                 shard_size=0,
+                 trunc_start=0,
+                 trunc_size=None):
+        """Compute the forward loss, possibly in shards in which case this
+        method also runs the backward pass and returns ``None`` as the loss
+        value.
 
         Also supports truncated BPTT for long sequences by taking a
         range in the decoder output sequence to back propagate in.
-        Range is from `(cur_trunc, cur_trunc + trunc_size)`.
+        Range is from `(trunc_start, trunc_start + trunc_size)`.
 
         Note sharding is an exact efficiency trick to relieve memory
         required for the generation buffers. Truncation is an
@@ -154,23 +138,27 @@ class LossComputeBase(nn.Module):
               output of decoder model `[tgt_len x batch x hidden]`
           attns (dict) : dictionary of attention distributions
               `[tgt_len x batch x src_len]`
-          cur_trunc (int) : starting position of truncation window
-          trunc_size (int) : length of truncation window
+          normalization: Optional normalization factor.
           shard_size (int) : maximum number of examples in a shard
-          normalization (int) : Loss is divided by this number
+          trunc_start (int) : starting position of truncation window
+          trunc_size (int) : length of truncation window
 
         Returns:
-            :obj:`onmt.utils.Statistics`: validation loss statistics
-
+            A tuple with the loss and a :obj:`onmt.utils.Statistics` instance.
         """
+        if trunc_size is None:
+            trunc_size = batch.tgt.size(0) - trunc_start
+        trunc_range = (trunc_start, trunc_start + trunc_size)
+        shard_state = self._make_shard_state(batch, output, trunc_range, attns)
+        if shard_size == 0:
+            loss, stats = self._compute_loss(batch, **shard_state)
+            return loss / float(normalization), stats
         batch_stats = onmt.utils.Statistics()
-        range_ = (cur_trunc, cur_trunc + trunc_size)
-        shard_state = self._make_shard_state(batch, output, range_, attns)
         for shard in shards(shard_state, shard_size):
             loss, stats = self._compute_loss(batch, **shard)
             loss.div(float(normalization)).backward()
             batch_stats.update(stats)
-        return batch_stats
+        return None, batch_stats
 
     def _stats(self, loss, scores, target):
         """
@@ -236,7 +224,7 @@ class NMTLossCompute(LossComputeBase):
     def _make_shard_state(self, batch, output, range_, attns=None):
         return {
             "output": output,
-            "target": batch.tgt[range_[0] + 1: range_[1]],
+            "target": batch.tgt[range_[0] + 1: range_[1], :, 0],
         }
 
     def _compute_loss(self, batch, output, target):

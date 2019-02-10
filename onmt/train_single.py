@@ -111,8 +111,13 @@ def main(opt, device_id):
     # Report src and tgt vocab sizes, including for features
     for side in ['src', 'tgt']:
         for name, f in fields[side]:
-            if f.use_vocab:
-                logger.info(' * %s vocab size = %d' % (name, len(f.vocab)))
+            try:
+                f_iter = iter(f)
+            except TypeError:
+                f_iter = [(name, f)]
+            for sn, sf in f_iter:
+                if sf.use_vocab:
+                    logger.info(' * %s vocab size = %d' % (sn, len(sf.vocab)))
 
     # Build model.
     model = build_model(model_opt, opt, fields, checkpoint)
@@ -143,7 +148,16 @@ def main(opt, device_id):
         logger.info('Starting training on GPU: %s' % opt.gpu_ranks)
     else:
         logger.info('Starting training on CPU, could be very slow')
-    trainer.train(train_iter, valid_iter, opt.train_steps, opt.valid_steps)
+    train_steps = opt.train_steps
+    if opt.single_pass and train_steps > 0:
+        logger.warning("Option single_pass is enabled, ignoring train_steps.")
+        train_steps = 0
+    trainer.train(
+        train_iter,
+        train_steps,
+        save_checkpoint_steps=opt.save_checkpoint_steps,
+        valid_iter=valid_iter,
+        valid_steps=opt.valid_steps)
 
     if opt.tensorboard:
         trainer.report_manager.tensorboard_writer.close()

@@ -2,6 +2,8 @@ from __future__ import division
 import torch
 from onmt.translate import penalties
 
+import warnings
+
 
 class Beam(object):
     """
@@ -10,11 +12,21 @@ class Beam(object):
     Takes care of beams, back pointers, and scores.
 
     Args:
-       size (int): beam size
-       pad, bos, eos (int): indices of padding, beginning, and ending.
-       n_best (int): nbest size to use
-       cuda (bool): use gpu
-       global_scorer (:obj:`GlobalScorer`)
+        beam_size (int): Number of beams to use.
+        pad (int): Magic integer in output vocab.
+        bos (int): Magic integer in output vocab.
+        eos (int): Magic integer in output vocab.
+        n_best (int): Don't stop until at least this many beams have
+            reached EOS.
+        cuda (bool): use gpu
+        global_scorer (onmt.translate.GNMTGlobalScorer): Scorer instance.
+        min_length (int): Shortest acceptable generation, not counting
+            begin-of-sentence or end-of-sentence.
+        stepwise_penalty (bool): Apply coverage penalty at every step.
+        block_ngram_repeat (int): Block beams where
+            ``block_ngram_repeat``-grams repeat.
+        exclusion_tokens (set[int]): If a gram contains any of these
+            token indices, it may repeat.
     """
 
     def __init__(self, size, pad, bos, eos,
@@ -63,12 +75,13 @@ class Beam(object):
         self.block_ngram_repeat = block_ngram_repeat
         self.exclusion_tokens = exclusion_tokens
 
-    def get_current_state(self):
-        "Get the outputs for the current timestep."
+    @property
+    def current_predictions(self):
         return self.next_ys[-1]
 
-    def get_current_origin(self):
-        "Get the backpointers for the current timestep."
+    @property
+    def current_origin(self):
+        """Get the backpointers for the current timestep."""
         return self.prev_ks[-1]
 
     def advance(self, word_probs, attn_out):
@@ -88,9 +101,12 @@ class Beam(object):
             self.global_scorer.update_score(self, attn_out)
         # force the output to be longer than self.min_length
         cur_len = len(self.next_ys)
-        if cur_len < self.min_length:
+        if cur_len <= self.min_length:
+            # assumes there are len(word_probs) predictions OTHER
+            # than EOS that are greater than -1e20
             for k in range(len(word_probs)):
                 word_probs[k][self._eos] = -1e20
+
         # Sum the previous scores.
         if len(self.prev_ks) > 0:
             beam_scores = word_probs + self.scores.unsqueeze(1)
@@ -101,7 +117,6 @@ class Beam(object):
 
             # Block ngram repeats
             if self.block_ngram_repeat > 0:
-                ngrams = []
                 le = len(self.next_ys)
                 for j in range(self.next_ys[-1].size(0)):
                     hyp, _ = self.get_hyp(le - 1, j)
@@ -148,6 +163,7 @@ class Beam(object):
             self.all_scores.append(self.scores)
             self.eos_top = True
 
+    @property
     def done(self):
         return self.eos_top and len(self.finished) >= self.n_best
 
@@ -179,53 +195,90 @@ class Beam(object):
 
 
 class GNMTGlobalScorer(object):
-    """
-    NMT re-ranking score from
-    "Google's Neural Machine Translation System" :cite:`wu2016google`
+    """NMT re-ranking.
 
     Args:
-       alpha (float): length parameter
-       beta (float):  coverage parameter
+       alpha (float): Length parameter.
+       beta (float):  Coverage parameter.
+       length_penalty (str): Length penalty strategy.
+       coverage_penalty (str): Coverage penalty strategy.
+
+    Attributes:
+        alpha (float): See above.
+        beta (float): See above.
+        length_penalty (callable): See :class:`penalties.PenaltyBuilder`.
+        coverage_penalty (callable): See :class:`penalties.PenaltyBuilder`.
+        has_cov_pen (bool): See :class:`penalties.PenaltyBuilder`.
+        has_len_pen (bool): See :class:`penalties.PenaltyBuilder`.
     """
 
-    def __init__(self, opt):
-        self.alpha = opt.alpha
-        self.beta = opt.beta
-        penalty_builder = penalties.PenaltyBuilder(opt.coverage_penalty,
-                                                   opt.length_penalty)
+    @classmethod
+    def from_opt(cls, opt):
+        return cls(
+            opt.alpha,
+            opt.beta,
+            opt.length_penalty,
+            opt.coverage_penalty)
+
+    def __init__(self, alpha, beta, length_penalty, coverage_penalty):
+        self._validate(alpha, beta, length_penalty, coverage_penalty)
+        self.alpha = alpha
+        self.beta = beta
+        penalty_builder = penalties.PenaltyBuilder(coverage_penalty,
+                                                   length_penalty)
+        self.has_cov_pen = penalty_builder.has_cov_pen
         # Term will be subtracted from probability
-        self.cov_penalty = penalty_builder.coverage_penalty()
+        self.cov_penalty = penalty_builder.coverage_penalty
+
+        self.has_len_pen = penalty_builder.has_len_pen
         # Probability will be divided by this
-        self.length_penalty = penalty_builder.length_penalty()
+        self.length_penalty = penalty_builder.length_penalty
+
+    @classmethod
+    def _validate(cls, alpha, beta, length_penalty, coverage_penalty):
+        # these warnings indicate that either the alpha/beta
+        # forces a penalty to be a no-op, or a penalty is a no-op but
+        # the alpha/beta would suggest otherwise.
+        if length_penalty is None or length_penalty == "none":
+            if alpha != 0:
+                warnings.warn("Non-default `alpha` with no length penalty. "
+                              "`alpha` has no effect.")
+        else:
+            # using some length penalty
+            if length_penalty == "wu" and alpha == 0.:
+                warnings.warn("Using length penalty Wu with alpha==0 "
+                              "is equivalent to using length penalty none.")
+        if coverage_penalty is None or coverage_penalty == "none":
+            if beta != 0:
+                warnings.warn("Non-default `beta` with no coverage penalty. "
+                              "`beta` has no effect.")
+        else:
+            # using some coverage penalty
+            if beta == 0.:
+                warnings.warn("Non-default coverage penalty with beta==0 "
+                              "is equivalent to using coverage penalty none.")
 
     def score(self, beam, logprobs):
-        """
-        Rescores a prediction based on penalty functions
-        """
-        normalized_probs = self.length_penalty(beam,
-                                               logprobs,
-                                               self.alpha)
+        """Rescore a prediction based on penalty functions."""
+        len_pen = self.length_penalty(len(beam.next_ys), self.alpha)
+        normalized_probs = logprobs / len_pen
         if not beam.stepwise_penalty:
-            penalty = self.cov_penalty(beam,
-                                       beam.global_state["coverage"],
+            penalty = self.cov_penalty(beam.global_state["coverage"],
                                        self.beta)
             normalized_probs -= penalty
 
         return normalized_probs
 
     def update_score(self, beam, attn):
-        """
-        Function to update scores of a Beam that is not finished
-        """
+        """Update scores of a Beam that is not finished."""
         if "prev_penalty" in beam.global_state.keys():
             beam.scores.add_(beam.global_state["prev_penalty"])
-            penalty = self.cov_penalty(beam,
-                                       beam.global_state["coverage"] + attn,
+            penalty = self.cov_penalty(beam.global_state["coverage"] + attn,
                                        self.beta)
             beam.scores.sub_(penalty)
 
     def update_global_state(self, beam):
-        "Keeps the coverage vector as sum of attentions"
+        """Keeps the coverage vector as sum of attentions."""
         if len(beam.prev_ks) == 1:
             beam.global_state["prev_penalty"] = beam.scores.clone().fill_(0.0)
             beam.global_state["coverage"] = beam.attn[-1]
@@ -236,7 +289,6 @@ class GNMTGlobalScorer(object):
             beam.global_state["coverage"] = beam.global_state["coverage"] \
                 .index_select(0, beam.prev_ks[-1]).add(beam.attn[-1])
 
-            prev_penalty = self.cov_penalty(beam,
-                                            beam.global_state["coverage"],
+            prev_penalty = self.cov_penalty(beam.global_state["coverage"],
                                             self.beta)
             beam.global_state["prev_penalty"] = prev_penalty

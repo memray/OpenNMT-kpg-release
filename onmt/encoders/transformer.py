@@ -4,9 +4,8 @@ Implementation of "Attention is All You Need"
 
 import torch.nn as nn
 
-import onmt
 from onmt.encoders.encoder import EncoderBase
-# from onmt.utils.misc import aeq
+from onmt.modules import MultiHeadedAttention
 from onmt.modules.position_ffn import PositionwiseFeedForward
 
 
@@ -23,19 +22,19 @@ class TransformerEncoderLayer(nn.Module):
         dropout (float): dropout probability(0-1.0).
     """
 
-    def __init__(self, d_model, heads, d_ff, dropout):
+    def __init__(self, d_model, heads, d_ff, dropout,
+                 max_relative_positions=0):
         super(TransformerEncoderLayer, self).__init__()
 
-        self.self_attn = onmt.modules.MultiHeadedAttention(
-            heads, d_model, dropout=dropout)
+        self.self_attn = MultiHeadedAttention(
+            heads, d_model, dropout=dropout,
+            max_relative_positions=max_relative_positions)
         self.feed_forward = PositionwiseFeedForward(d_model, d_ff, dropout)
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, inputs, mask):
         """
-        Transformer Encoder Layer definition.
-
         Args:
             inputs (`FloatTensor`): `[batch_size x src_len x model_dim]`
             mask (`LongTensor`): `[batch_size x src_len x src_len]`
@@ -47,7 +46,7 @@ class TransformerEncoderLayer(nn.Module):
         """
         input_norm = self.layer_norm(inputs)
         context, _ = self.self_attn(input_norm, input_norm, input_norm,
-                                    mask=mask)
+                                    mask=mask, type="self")
         out = self.dropout(context) + inputs
         return self.feed_forward(out)
 
@@ -84,16 +83,28 @@ class TransformerEncoder(EncoderBase):
         * memory_bank `[src_len x batch_size x model_dim]`
     """
 
-    def __init__(self, num_layers, d_model, heads, d_ff,
-                 dropout, embeddings):
+    def __init__(self, num_layers, d_model, heads, d_ff, dropout, embeddings,
+                 max_relative_positions):
         super(TransformerEncoder, self).__init__()
 
-        self.num_layers = num_layers
         self.embeddings = embeddings
         self.transformer = nn.ModuleList(
-            [TransformerEncoderLayer(d_model, heads, d_ff, dropout)
-             for _ in range(num_layers)])
+            [TransformerEncoderLayer(
+                d_model, heads, d_ff, dropout,
+                max_relative_positions=max_relative_positions)
+             for i in range(num_layers)])
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
+
+    @classmethod
+    def from_opt(cls, opt, embeddings):
+        return cls(
+            opt.enc_layers,
+            opt.enc_rnn_size,
+            opt.heads,
+            opt.transformer_ff,
+            opt.dropout,
+            embeddings,
+            opt.max_relative_positions)
 
     def forward(self, src, lengths=None):
         """ See :obj:`EncoderBase.forward()`"""
@@ -107,8 +118,8 @@ class TransformerEncoder(EncoderBase):
         padding_idx = self.embeddings.word_padding_idx
         mask = words.data.eq(padding_idx).unsqueeze(1)  # [B, 1, T]
         # Run the forward pass of every layer of the tranformer.
-        for i in range(self.num_layers):
-            out = self.transformer[i](out, mask)
+        for layer in self.transformer:
+            out = layer(out, mask)
         out = self.layer_norm(out)
 
         return emb, out.transpose(0, 1).contiguous(), lengths
