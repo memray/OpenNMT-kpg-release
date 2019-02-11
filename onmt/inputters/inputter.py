@@ -15,6 +15,7 @@ from torchtext.vocab import Vocab
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.image_dataset import image_fields
 from onmt.inputters.audio_dataset import audio_fields
+from onmt.inputters.keyphrase_dataset import keyphrase_fields
 from onmt.utils.logging import logger
 # backwards compatibility
 from onmt.inputters.text_dataset import _feature_tokenize  # noqa: F401
@@ -103,7 +104,8 @@ def get_fields(
 
     fields_getters = {"text": text_fields,
                       "img": image_fields,
-                      "audio": audio_fields}
+                      "audio": audio_fields,
+                      "keyphrase": keyphrase_fields}
 
     src_field_kwargs = {"n_feats": n_src_feats,
                         "include_lengths": True,

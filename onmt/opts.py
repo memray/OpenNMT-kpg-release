@@ -182,7 +182,7 @@ def preprocess_opts(parser):
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",
               help="""Type of the source input.
-                       Options are [text|img|audio].""")
+                       Options are [text|img|audio|keyphrase].""")
 
     group.add('--train_src', '-train_src', required=True,
               help="Path to the training source data")
@@ -291,6 +291,14 @@ def preprocess_opts(parser):
               choices=[3, 1],
               help="""Using grayscale image can training
                        model faster and smaller""")
+
+    # Option most relevant to keyphrase
+    group.add('--target_type', '-target_type', default="one2one",
+              help="""Type of the target phrases.
+                       Options are [one2one|one2many].
+                       one2one means each pair of data contains only one target phrase; 
+                       one2many means each pair of data contains multiple target phrases, 
+                       which are concatenated in one string.""")
 
 
 def train_opts(parser):
