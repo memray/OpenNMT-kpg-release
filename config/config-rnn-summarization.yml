@@ -1,4 +1,4 @@
-data: data/cnndm/CNNDM
+data: data/summarization/cnndm/cnndm
 save_model: models/cnndm
 save_checkpoint_steps: 10000
 keep_checkpoint: 10
@@ -18,11 +18,13 @@ adagrad_accumulator_init: 0.1
 max_grad_norm: 2
 
 batch_size: 16
+valid_batch_size: 16
 dropout: 0.0
 
 copy_attn: 'true'
 global_attention: mlp
 reuse_copy_attn: 'true'
+copy_loss_by_seqlength: 'true'
 bridge: 'true'
 
 world_size: 2

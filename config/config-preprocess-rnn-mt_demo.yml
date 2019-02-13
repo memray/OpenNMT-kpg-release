@@ -1,0 +1,19 @@
+data_type: text
+train_src: data/mt/demo/src-train.txt
+train_tgt: data/mt/demo/tgt-train.txt
+valid_src: data/mt/demo/src-val.txt
+valid_tgt: data/mt/demo/tgt-val.txt
+
+save_data: data/mt/demo/demo
+shard_size: 1000
+dynamic_dict: 'true'
+share_vocab: 'true'
+
+src_seq_length: 10000
+tgt_seq_length: 10000
+src_seq_length_trunc: 400
+tgt_seq_length_trunc: 100
+lower: 'true'
+
+report_every: 1000
+log_file: data/mt/demo/preprocess.log

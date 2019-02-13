@@ -72,7 +72,7 @@ def build_save_dataset(corpus_type, fields, src_reader, tgt_reader, opt):
     for i, (src_shard, tgt_shard) in enumerate(shard_pairs):
         assert len(src_shard) == len(tgt_shard)
         logger.info("Building shard %d." % i)
-        dataset = inputters.Dataset(
+        dataset = inputters.str2dataset[opt.data_type](
             fields,
             readers=[src_reader, tgt_reader] if tgt_reader else [src_reader],
             data=([("src", src_shard), ("tgt", tgt_shard)]
@@ -85,8 +85,8 @@ def build_save_dataset(corpus_type, fields, src_reader, tgt_reader, opt):
         data_path = "{:s}.{:s}.{:d}.pt".format(opt.save_data, corpus_type, i)
         dataset_paths.append(data_path)
 
-        logger.info(" * saving %sth %s data shard to %s."
-                    % (i, corpus_type, data_path))
+        logger.info(" * saving %sth %s data shard to %s. %d examples"
+                    % (i, corpus_type, data_path, len(dataset.examples)))
 
         dataset.save(data_path)
 
@@ -158,7 +158,7 @@ def main():
         tgt_truncate=opt.tgt_seq_length_trunc)
 
     src_reader = inputters.str2reader[opt.data_type].from_opt(opt)
-    tgt_reader = inputters.str2reader["text"].from_opt(opt)
+    tgt_reader = inputters.str2reader[opt.data_type].from_opt(opt)
 
     logger.info("Building & saving training data...")
     train_dataset_files = build_save_dataset(

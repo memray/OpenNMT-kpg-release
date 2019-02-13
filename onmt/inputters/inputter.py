@@ -12,6 +12,7 @@ import torchtext.data
 from torchtext.data import Field
 from torchtext.vocab import Vocab
 
+from onmt.inputters import keyphrase_dataset
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.image_dataset import image_fields
 from onmt.inputters.audio_dataset import audio_fields
@@ -66,7 +67,8 @@ def get_fields(
     eos='</s>',
     dynamic_dict=False,
     src_truncate=None,
-    tgt_truncate=None
+    tgt_truncate=None,
+    lower=False,
 ):
     """
     Args:
@@ -87,6 +89,7 @@ def get_fields(
             ``src_data_type``'s data reader - see there for more details).
         tgt_truncate: Cut off tgt sequences beyond this (passed to
             :class:`TextDataReader` - see there for more details).
+        lower: Added by Rui. To lower case the src/tgt value if it is a string.
 
     Returns:
         A dictionary. The keys are strings whose names correspond to the
@@ -96,9 +99,9 @@ def get_fields(
         an attribute of an example.
     """
 
-    assert src_data_type in ['text', 'img', 'audio'], \
+    assert src_data_type in ['text', 'img', 'audio', 'keyphrase'], \
         "Data type not implemented"
-    assert not dynamic_dict or src_data_type == 'text', \
+    assert not dynamic_dict or src_data_type == 'text' or src_data_type == 'keyphrase', \
         'it is not possible to use dynamic_dict with non-text input'
     fields = {'src': [], 'tgt': []}
 
@@ -110,15 +113,17 @@ def get_fields(
     src_field_kwargs = {"n_feats": n_src_feats,
                         "include_lengths": True,
                         "pad": pad, "bos": None, "eos": None,
-                        "truncate": src_truncate}
+                        "truncate": src_truncate, "lower": lower}
     fields["src"] = fields_getters[src_data_type](
         'src', **src_field_kwargs)
 
     tgt_field_kwargs = {"n_feats": n_tgt_feats,
                         "include_lengths": False,
                         "pad": pad, "bos": bos, "eos": eos,
-                        "truncate": tgt_truncate}
-    fields['tgt'] = fields_getters["text"](
+                        "truncate": tgt_truncate, "lower": lower}
+    # added by Rui, it might be smarter to add field_name to __init__ in the future
+    tgt_field_name = "keyphrase" if src_data_type == src_data_type else "text"
+    fields['tgt'] = fields_getters[tgt_field_name](
         'tgt', **tgt_field_kwargs)
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
@@ -134,6 +139,11 @@ def get_fields(
             use_vocab=False, dtype=torch.long,
             postprocessing=make_tgt, sequential=False)
         fields["alignment"] = [('alignment', align)]
+
+    # added by Rui, load some other meta information of each data example for keyphrase dataset
+    if src_data_type == 'keyphrase':
+        id = Field(use_vocab=False, dtype=torch.long, sequential=False)
+        fields["id"] = [('id', id)]
 
     return fields
 
@@ -346,13 +356,21 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
                     all_data = [getattr(ex, name, None)]
                 else:
                     all_data = getattr(ex, name)
+                    # added by Rui, to support keyphrase task where tgt is a list of tokens
+                    if name=='tgt' and isinstance(all_data[0], list) and len(all_data[0]) > 0 and isinstance(all_data[0][0], list):
+                        all_data = [[p for d in all_data for p in d]]
                 for (sub_n, sub_f), fd in zip(
                         f_iter, all_data):
                     has_vocab = (sub_n == 'src' and src_vocab) or \
                                 (sub_n == 'tgt' and tgt_vocab)
                     if sub_f.sequential and not has_vocab:
                         val = fd
-                        counters[sub_n].update(val)
+                        # added by Rui, to support keyphrase task where tgt is a list of tokens
+                        if isinstance(val, list) and len(val) > 0 and isinstance(val[0], list):
+                            for v_ in val:
+                                counters[sub_n].update(v_)
+                        else:
+                            counters[sub_n].update(val)
 
         # Drop the none-using from memory but keep the last
         if i < len(train_dataset_files) - 1:
@@ -375,7 +393,8 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
         counters,
         build_fv_args,
         size_multiple=vocab_size_multiple if not share_vocab else 1)
-    if data_type == 'text':
+    # modified by Rui
+    if data_type == 'text' or data_type == 'keyphrase':
         assert len(fields["src"]) == 1
         src_multifield = fields["src"][0][1]
         _build_fv_from_multifield(
@@ -402,6 +421,8 @@ def _merge_field_vocabs(src_field, tgt_field, vocab_size, min_freq,
     # build_vocab with both the src and tgt data?
     specials = [tgt_field.unk_token, tgt_field.pad_token,
                 tgt_field.init_token, tgt_field.eos_token]
+    # TODO added by Rui. Not elegant, but no elegant way
+    specials.append(keyphrase_dataset.SEP_token)
     merged = sum(
         [src_field.vocab.freqs, tgt_field.vocab.freqs], Counter()
     )

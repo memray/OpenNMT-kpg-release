@@ -292,14 +292,6 @@ def preprocess_opts(parser):
               help="""Using grayscale image can training
                        model faster and smaller""")
 
-    # Option most relevant to keyphrase
-    group.add('--target_type', '-target_type', default="one2one",
-              help="""Type of the target phrases.
-                       Options are [one2one|one2many].
-                       one2one means each pair of data contains only one target phrase; 
-                       one2many means each pair of data contains multiple target phrases, 
-                       which are concatenated in one string.""")
-
 
 def train_opts(parser):
     """ Training and saving options """

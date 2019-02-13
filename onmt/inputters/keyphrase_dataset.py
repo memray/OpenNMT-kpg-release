@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import json
+import re
 from functools import partial
 
 import six
@@ -13,10 +15,10 @@ from collections import Counter
 import torch
 from torchtext.data import Dataset as TorchtextDataset
 from torchtext.data import Example
-from torchtext.vocab import Vocab
 
 from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
+SEP_token = "<sep>"
 
 class KeyphraseDataset(TorchtextDataset):
     """Contain data and process it.
@@ -124,15 +126,31 @@ class KeyphraseDataReader(DataReaderBase):
             dictionaries whose keys are the names of fields and whose
             values are more or less the result of tokenizing with those
             fields.
+            src: title+abstract
+            tgt: a string of a keyword, or a string of concatenated keywords (delimited by <sep>)
         """
         assert _dir is None or _dir == "", \
-            "Cannot use _dir with TextDataReader."
+            "Cannot use _dir with KeyphraseDataReader."
         if isinstance(sequences, str):
             sequences = DataReaderBase._read_file(sequences)
-        for i, seq in enumerate(sequences):
-            if isinstance(seq, six.binary_type):
-                seq = seq.decode("utf-8")
-            yield {side: seq, "indices": i}
+        for i, json_line in enumerate(sequences):
+            json_line = json_line.decode("utf-8")
+            json_dict = json.loads(json_line)
+            # Note tgt could be a list of strings
+            seq = json_dict[side]
+
+            # torchtext field only takes numeric features
+            id = json_dict['id']
+
+            try:
+                if id.rfind('_') != -1:
+                    id = id[id.rfind('_') + 1:]
+                id = int(id)
+            except ValueError:
+                # if not convertible, use indices as id
+                id = i
+
+            yield {side: seq, "indices": i, 'id': id}
 
 
 def kp_sort_key(ex):
@@ -142,9 +160,31 @@ def kp_sort_key(ex):
     return len(ex.src[0])
 
 
+def copyseq_tokenize(text):
+    '''
+    The tokenizer used in Meng et al. ACL 2017
+    parse the feed-in text, filtering and tokenization
+    keep [_<>,\(\)\.\'%], replace digits to <digit>, split by [^a-zA-Z0-9_<>,\(\)\.\'%]
+    :param text:
+    :return: a list of tokens
+    '''
+    # remove line breakers
+    text = re.sub(r'[\r\n\t]', ' ', text)
+    # pad spaces to the left and right of special punctuations
+    text = re.sub(r'[_<>,\(\)\.\'%]', ' \g<0> ', text)
+    # tokenize by non-letters (new-added + # & *, but don't pad spaces, to make them as one whole word)
+    tokens = list(filter(lambda w: len(w) > 0, re.split(r'[^a-zA-Z0-9_<>,#&\+\*\(\)\.\'%]', text)))
+
+    # TODO: should be moved out
+    # replace the digit terms with <digit>
+    # tokens = [w if not re.match('^\d+$', w) else DIGIT for w in tokens]
+
+    return tokens
+
+
 # mix this with partial
 def _feature_tokenize(
-        string, layer=0, tok_delim=None, feat_delim=None, truncate=None):
+        string, layer=0, tok_delim=None, feat_delim=None, truncate=None, lower=False):
     """Split apart word features (like POS/NER tags) from the tokens.
 
     Args:
@@ -160,8 +200,9 @@ def _feature_tokenize(
     Returns:
         List[str] of tokens.
     """
-
-    tokens = string.split(tok_delim)
+    if lower:
+        string = string.lower()
+    tokens = copyseq_tokenize(string)
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
@@ -244,8 +285,11 @@ class TextMultiField(RawField):
                 lists of tokens/feature tags for the sentence. The output
                 is ordered like ``self.fields``.
         """
-
-        return [f.preprocess(x) for _, f in self.fields]
+        # if x is a list of strings (multiple keyphrases)
+        if isinstance(x, list):
+            return [[f.preprocess(x_) for _, f in self.fields] for x_ in x]
+        else:
+            return [f.preprocess(x) for _, f in self.fields]
 
     def __getitem__(self, item):
         return self.fields[item]
@@ -273,6 +317,7 @@ def keyphrase_fields(base_name, **kwargs):
     bos = kwargs.get("bos", "<s>")
     eos = kwargs.get("eos", "</s>")
     truncate = kwargs.get("truncate", None)
+    lower = kwargs.get("lower", None)
     fields_ = []
     feat_delim = u"￨" if n_feats > 0 else None
     for i in range(n_feats + 1):
@@ -281,12 +326,13 @@ def keyphrase_fields(base_name, **kwargs):
             _feature_tokenize,
             layer=i,
             truncate=truncate,
-            feat_delim=feat_delim)
+            feat_delim=feat_delim,
+            lower = lower)
         use_len = i == 0 and include_lengths
         feat = Field(
             init_token=bos, eos_token=eos,
             pad_token=pad, tokenize=tokenize,
-            include_lengths=use_len)
+            include_lengths=use_len, lower=lower)
         fields_.append((name, feat))
     assert fields_[0][0] == base_name  # sanity check
     field = TextMultiField(fields_[0][0], fields_[0][1], fields_[1:])

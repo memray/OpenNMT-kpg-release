@@ -5,13 +5,15 @@ valid_src: data/summarization/cnndm/val.txt.src
 valid_tgt: data/summarization/cnndm/val.txt.tgt.tagged
 
 save_data: data/summarization/cnndm/cnndm
+shard_size: 100000
 dynamic_dict: 'true'
 share_vocab: 'true'
 
-src_seq_length_trunc: 300
-tgt_seq_length_trunc: 8
+src_seq_length: 10000
+tgt_seq_length: 10000
+src_seq_length_trunc: 400
+tgt_seq_length_trunc: 100
 lower: 'true'
-filter_valid: 'false'
 
 report_every: 1000
 log_file: data/summarization/cnndm/preprocess.log
