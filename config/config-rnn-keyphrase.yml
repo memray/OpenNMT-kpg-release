@@ -1,3 +1,5 @@
+model_type: keyphrase
+
 data: data/keyphrase/kp20k/kp20k.one2one
 save_model: models/keyphrase/kp20k/kp20k.one2one
 save_checkpoint_steps: 10000
@@ -27,6 +29,12 @@ global_attention: mlp
 reuse_copy_attn: 'true'
 copy_loss_by_seqlength: 'true'
 bridge: 'true'
+
+log_file: runs/keyphrase/kp20k/
+log_file_level: DEBUG
+exp: rnn-keyphrase-one2one-bi-GRU512-EMB128-ATTNmlp
+tensorboard: 'true'
+tensorboard_log_dir: runs/keyphrase/kp20k/
 
 world_size: 2
 gpu_ranks:

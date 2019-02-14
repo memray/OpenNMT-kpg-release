@@ -166,11 +166,14 @@ def load_old_vocab(vocab, data_type="text", dynamic_dict=False):
     if _old_style_field_list(vocab):  # upgrade to multifield
         fields = vocab
         for base_name, vals in fields.items():
-            if ((base_name == 'src' and data_type == 'text') or
+            if ((base_name == 'src' and (data_type == 'text' or data_type == 'keyphrase')) or
                     base_name == 'tgt'):
                 assert not isinstance(vals[0][1], TextMultiField)
+                # changed by @memray, to solve the problem of cannot find vocab while loading dataset
                 fields[base_name] = [(base_name, TextMultiField(
-                    vals[0][0], vals[0][1], vals[1:]))]
+                    vals[0][0], vals[0][1].base_field, vals[1:]))]
+                # fields[base_name] = [(base_name, TextMultiField(
+                #     vals[0][0], vals[0][1], vals[1:]))]
         return fields
     vocab = dict(vocab)
     n_src_features = sum('src_feat_' in k for k in vocab)

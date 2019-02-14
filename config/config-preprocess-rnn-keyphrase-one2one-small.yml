@@ -1,0 +1,17 @@
+data_type: keyphrase
+# tgt data is basically ignored
+train_src: data/keyphrase/kp20k/kp20k_train_small.one2one.src
+train_tgt: data/keyphrase/kp20k/kp20k_train_small.one2one.tgt
+
+save_data: data/keyphrase/kp20k/kp20k.one2one.small
+shard_size: 100000
+dynamic_dict: 'true'
+share_vocab: 'true'
+
+src_seq_length_trunc: 300
+tgt_seq_length_trunc: 8
+lower: 'true'
+filter_valid: 'false'
+
+report_every: 1000
+log_file: data/keyphrase/kp20k/preprocess.one2one.small.log

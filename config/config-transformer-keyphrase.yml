@@ -1,3 +1,5 @@
+model_type: keyphrase
+
 data: data/keyphrase/kp20k/kp20k.one2one
 save_model: models/keyphrase/kp20k/kp20k.one2one
 save_checkpoint_steps: 10000

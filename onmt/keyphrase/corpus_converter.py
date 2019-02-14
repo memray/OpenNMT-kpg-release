@@ -208,3 +208,6 @@ if __name__ == '__main__':
         tgt_file.write(json.dumps({k:v for k,v in ex_dict.items() if k in tgt_fields})+'\n')
         # src_file.write(json.dumps(ex_dict['src'])+'\n')
         # tgt_file.write(json.dumps(ex_dict['tgt'])+'\n')
+
+    src_file.close()
+    tgt_file.close()

@@ -116,6 +116,7 @@ def main(opt, device_id):
             except TypeError:
                 f_iter = [(name, f)]
             for sn, sf in f_iter:
+                # bug? change sf.use_vocab to sf.base_field.use_vocab
                 if sf.use_vocab:
                     logger.info(' * %s vocab size = %d' % (sn, len(sf.vocab)))
 

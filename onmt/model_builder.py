@@ -61,7 +61,7 @@ def build_encoder(opt, embeddings):
         opt: the option in current environment.
         embeddings (Embeddings): vocab embeddings for this encoder.
     """
-    enc_type = opt.encoder_type if opt.model_type == "text" else opt.model_type
+    enc_type = opt.encoder_type if opt.model_type == "text" or opt.model_type == "keyphrase" else opt.model_type
     return str2enc[enc_type].from_opt(opt, embeddings)
 
 
@@ -115,7 +115,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         the NMTModel.
     """
 
-    assert model_opt.model_type in ["text", "img", "audio"], \
+    assert model_opt.model_type in ["text", "img", "audio", "keyphrase"], \
         "Unsupported model type %s" % model_opt.model_type
 
     # for backward compatibility
@@ -124,7 +124,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         model_opt.dec_rnn_size = model_opt.rnn_size
 
     # Build embeddings.
-    if model_opt.model_type == "text":
+    if model_opt.model_type == "text" or model_opt.model_type == "keyphrase":
         src_fields = [f for n, f in fields['src']]
         assert len(src_fields) == 1
         src_field = src_fields[0]
