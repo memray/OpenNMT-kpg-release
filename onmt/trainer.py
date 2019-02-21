@@ -16,7 +16,6 @@ import torch
 import onmt.utils
 from onmt.utils.logging import logger
 
-
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     """
     Simplify `Trainer` creation based on user `opt`s*

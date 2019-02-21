@@ -16,7 +16,7 @@ from onmt.inputters import keyphrase_dataset
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.image_dataset import image_fields
 from onmt.inputters.audio_dataset import audio_fields
-from onmt.inputters.keyphrase_dataset import keyphrase_fields
+from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField
 from onmt.utils.logging import logger
 # backwards compatibility
 from onmt.inputters.text_dataset import _feature_tokenize  # noqa: F401
@@ -89,7 +89,7 @@ def get_fields(
             ``src_data_type``'s data reader - see there for more details).
         tgt_truncate: Cut off tgt sequences beyond this (passed to
             :class:`TextDataReader` - see there for more details).
-        lower: Added by Rui. To lower case the src/tgt value if it is a string.
+        lower: Added by @memray. To lower case the src/tgt value if it is a string.
 
     Returns:
         A dictionary. The keys are strings whose names correspond to the
@@ -108,7 +108,7 @@ def get_fields(
     fields_getters = {"text": text_fields,
                       "img": image_fields,
                       "audio": audio_fields,
-                      "keyphrase": keyphrase_fields}
+                      "keyphrase": text_fields}
 
     src_field_kwargs = {"n_feats": n_src_feats,
                         "include_lengths": True,
@@ -119,12 +119,13 @@ def get_fields(
 
     tgt_field_kwargs = {"n_feats": n_tgt_feats,
                         "include_lengths": False,
-                        "pad": pad, "bos": bos, "eos": eos,
+                        "pad": pad, "bos": bos, "eos": eos, "sep": keyphrase_dataset.SEP_token,
                         "truncate": tgt_truncate, "lower": lower}
-    # added by Rui, it might be smarter to add field_name to __init__ in the future
-    tgt_field_name = "keyphrase" if src_data_type == src_data_type else "text"
-    fields['tgt'] = fields_getters[tgt_field_name](
-        'tgt', **tgt_field_kwargs)
+    # added by @memray, it might be smarter to add field_name to __init__ in the future
+    if src_data_type == "keyphrase":
+        fields['tgt'] = keyphrase_fields( 'tgt', **tgt_field_kwargs)
+    else:
+        fields['tgt'] = text_fields( 'tgt', **tgt_field_kwargs)
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
     fields["indices"] = [('indices', indices)]
@@ -140,7 +141,7 @@ def get_fields(
             postprocessing=make_tgt, sequential=False)
         fields["alignment"] = [('alignment', align)]
 
-    # added by Rui, load some other meta information of each data example for keyphrase dataset
+    # added by @memray, load some other meta information of each data example for keyphrase dataset
     if src_data_type == 'keyphrase':
         id = Field(use_vocab=False, dtype=torch.long, sequential=False)
         fields["id"] = [('id', id)]
@@ -168,12 +169,18 @@ def load_old_vocab(vocab, data_type="text", dynamic_dict=False):
         for base_name, vals in fields.items():
             if ((base_name == 'src' and (data_type == 'text' or data_type == 'keyphrase')) or
                     base_name == 'tgt'):
-                assert not isinstance(vals[0][1], TextMultiField)
+                # assert not isinstance(vals[0][1], TextMultiField)
                 # changed by @memray, to solve the problem of cannot find vocab while loading dataset
-                fields[base_name] = [(base_name, TextMultiField(
-                    vals[0][0], vals[0][1].base_field, vals[1:]))]
+                if isinstance(vals[0][1], TextMultiField):
+                    fields[base_name] = [(base_name, TextMultiField(
+                        vals[0][0], vals[0][1].base_field, vals[1:]))]
+                elif isinstance(vals[0][1], KeyphraseField):
+                    fields[base_name] = [(base_name, KeyphraseField(
+                        vals[0][0], vals[0][1].base_field))]
                 # fields[base_name] = [(base_name, TextMultiField(
                 #     vals[0][0], vals[0][1], vals[1:]))]
+                else:
+                    raise NotImplementedError
         return fields
     vocab = dict(vocab)
     n_src_features = sum('src_feat_' in k for k in vocab)
@@ -359,7 +366,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
                     all_data = [getattr(ex, name, None)]
                 else:
                     all_data = getattr(ex, name)
-                    # added by Rui, to support keyphrase task where tgt is a list of tokens
+                    # added by @memray, to support keyphrase task where tgt is a list of tokens
                     if name=='tgt' and isinstance(all_data[0], list) and len(all_data[0]) > 0 and isinstance(all_data[0][0], list):
                         all_data = [[p for d in all_data for p in d]]
                 for (sub_n, sub_f), fd in zip(
@@ -368,7 +375,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
                                 (sub_n == 'tgt' and tgt_vocab)
                     if sub_f.sequential and not has_vocab:
                         val = fd
-                        # added by Rui, to support keyphrase task where tgt is a list of tokens
+                        # added by @memray, to support keyphrase task where tgt is a list of tokens
                         if isinstance(val, list) and len(val) > 0 and isinstance(val[0], list):
                             for v_ in val:
                                 counters[sub_n].update(v_)
@@ -396,7 +403,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
         counters,
         build_fv_args,
         size_multiple=vocab_size_multiple if not share_vocab else 1)
-    # modified by Rui
+    # modified by @memray
     if data_type == 'text' or data_type == 'keyphrase':
         assert len(fields["src"]) == 1
         src_multifield = fields["src"][0][1]
@@ -424,7 +431,7 @@ def _merge_field_vocabs(src_field, tgt_field, vocab_size, min_freq,
     # build_vocab with both the src and tgt data?
     specials = [tgt_field.unk_token, tgt_field.pad_token,
                 tgt_field.init_token, tgt_field.eos_token]
-    # TODO added by Rui. Not elegant, but no elegant way
+    # TODO added by @memray. Not elegant, but no elegant way
     specials.append(keyphrase_dataset.SEP_token)
     merged = sum(
         [src_field.vocab.freqs, tgt_field.vocab.freqs], Counter()
@@ -505,14 +512,27 @@ class OrderedIterator(torchtext.data.Iterator):
         self.batch_size_multiple = batch_size_multiple
 
     def create_batches(self):
+        """
+        Overwrite the Iterator.create_batches
+        :return:
+        """
         if self.train:
             def _pool(data, random_shuffler):
+                # split whole dataset into big batches (size=batch_size*100)
+                # batch_size_fn=None, therefore it's counting on number of examples
                 for p in torchtext.data.batch(data, self.batch_size * 100):
+                    # if it's keyphrase dataset, a preprocess to targets should act here.
+                    if isinstance(self.dataset, KeyphraseDataset):
+                        p = keyphrase_dataset.process_multiple_tgts(p, self.dataset.tgt_type)
+                    # split each big batch into final mini-batches
+                    # batch_size_fn=max_tok_len() for train, counting real batch size (num_batch * max(#words in src/tgt))
+                    # if it is keyphrase dataset, sort examples by number of tgts if one2many, or sort by length of tgt if one2one
                     p_batch = batch_iter(
                         sorted(p, key=self.sort_key),
                         self.batch_size,
                         batch_size_fn=self.batch_size_fn,
                         batch_size_multiple=self.batch_size_multiple)
+                    # shuffle samples in a minibatch before returning
                     for b in random_shuffler(list(p_batch)):
                         yield b
 
@@ -542,7 +562,7 @@ class DatasetLazyIter(object):
 
     def __init__(self, dataset_paths, fields, batch_size, batch_size_fn,
                  batch_size_multiple, device, is_train, repeat=True,
-                 num_batches_multiple=1):
+                 num_batches_multiple=1, opt=None):
         self._paths = dataset_paths
         self.fields = fields
         self.batch_size = batch_size
@@ -552,11 +572,14 @@ class DatasetLazyIter(object):
         self.is_train = is_train
         self.repeat = repeat
         self.num_batches_multiple = num_batches_multiple
+        self.opt = opt
 
     def _iter_dataset(self, path):
         cur_dataset = torch.load(path)
         logger.info('Loading dataset from %s, number of examples: %d' %
                     (path, len(cur_dataset)))
+        if isinstance(cur_dataset, KeyphraseDataset):
+            cur_dataset.load_config(self.opt)
         cur_dataset.fields = self.fields
         cur_iter = OrderedIterator(
             dataset=cur_dataset,
@@ -569,6 +592,7 @@ class DatasetLazyIter(object):
             sort_within_batch=True,
             repeat=False
         )
+        # split into batches and process each batch (pad and numericalize, by field.process)
         for batch in cur_iter:
             yield batch
 
@@ -633,7 +657,15 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True):
     if not dataset_paths:
         return None
     batch_size = opt.batch_size if is_train else opt.valid_batch_size
-    batch_fn = max_tok_len if is_train and opt.batch_type == "tokens" else None
+    # Changed by @memray to accormodate multiple targets
+    # batch_fn = max_tok_len if is_train and opt.batch_type == "tokens" else None
+    if is_train and opt.batch_type == "tokens":
+        if opt.model_dtype == "keyphrase":
+            batch_fn = keyphrase_dataset.max_tok_len
+        else:
+            batch_fn = max_tok_len
+    else:
+        batch_fn = None
     batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
 
     device = "cuda" if opt.gpu_ranks else "cpu"
@@ -647,4 +679,6 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True):
         device,
         is_train,
         repeat=not opt.single_pass,
-        num_batches_multiple=opt.accum_count * opt.world_size)
+        num_batches_multiple=opt.accum_count * opt.world_size,
+        opt=opt
+    )

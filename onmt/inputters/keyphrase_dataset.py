@@ -5,6 +5,7 @@ from functools import partial
 
 import six
 import torch
+import numpy as np
 from torchtext.data import Field, RawField
 
 from onmt.inputters.datareader_base import DataReaderBase
@@ -69,7 +70,17 @@ class KeyphraseDataset(TorchtextDataset):
 
     def __init__(self, fields, readers, data, dirs, sort_key,
                  filter_pred=None):
+        self.tgt_type = None
+        # concatenate multiple tgt sequences with <sep> or keep them separate as a list of seqs (2D tensor)
+        self.concat_tgt = False
+
         self.sort_key = sort_key
+        # if sort_key == None:
+        #     sort_key = kp_sort_key
+        # else:
+        #     self.sort_key = sort_key
+
+        # will be specified before training, one of [one2one, original, random, verbatim]
         can_copy = 'src_map' in fields and 'alignment' in fields
 
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
@@ -108,6 +119,9 @@ class KeyphraseDataset(TorchtextDataset):
         if remove_fields:
             self.fields = []
         torch.save(self, path)
+
+    def load_config(self, opt):
+        self.tgt_type = opt.tgt_type
 
 
 class KeyphraseDataReader(DataReaderBase):
@@ -153,11 +167,77 @@ class KeyphraseDataReader(DataReaderBase):
             yield {side: seq, "indices": i, 'id': id}
 
 
+def process_multiple_tgts(big_batch, tgt_type):
+    assert tgt_type in ['one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
+    np.random.seed(2333)
+
+    new_batch = []
+    for ex in big_batch:
+        if len(ex.tgt) == 0:
+            continue
+
+        if tgt_type == 'one2one':
+            # sample one tgt from multiple tgts and use it as the only tgt
+            rand_idx = np.random.randint(len(ex.tgt))
+            tgt = ex.tgt[rand_idx]
+            alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
+        elif tgt_type == 'no_sort':
+            # return tgts in original order
+            tgt = [t[0]+[SEP_token] for t in ex.tgt[:-1]] + ex.tgt[-1]
+            tgt = [np.concatenate(tgt, axis=None).tolist()]
+            if hasattr(ex, "alignment"):
+                # remove the heading and trailing 0 for <s> and </s>
+                alignment = [a.numpy().tolist()[1:-1] for a in ex.alignment]
+                # add 0s for <sep>, <s> and </s>
+                alignment = [0] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [0]
+                # concatenate alignments to one Tensor
+                alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
+            else:
+                alignment = None
+        else:
+            raise NotImplementedError
+
+        # print(ex.tgt)
+        # print(tgt)
+        ex.tgt = tgt
+        if hasattr(ex, "alignment"):
+            assert len(tgt[0]) + 2 == alignment.size()[0]
+            ex.alignment = alignment
+
+        new_batch.append(ex)
+
+    return new_batch
+
+
 def kp_sort_key(ex):
     """Sort using the number of tokens in the sequence."""
+    # if tgt is available, order by number of phrases in tgt first, then src length
     if hasattr(ex, "tgt"):
-        return len(ex.src[0]), len(ex.tgt[0])
+        return len(ex.tgt), len(ex.src[0])
     return len(ex.src[0])
+
+
+def max_tok_len(new, count, sofar):
+    """
+    Specialized for keyphrase generation task
+    Note that the form of tgt has to be determined beforehand, i.e. shuffle/order/pad should have been done
+    In token batching scheme, the number of sequences is limited
+    such that the total number of src/tgt tokens (including padding)
+    in a batch <= batch_size
+    """
+    # Maintains the longest src and tgt length in the current batch
+    global max_src_in_batch, max_tgt_in_batch  # this is a hack
+    # Reset current longest length at a new batch (count=1)
+    if count == 1:
+        max_src_in_batch = 0
+        max_tgt_in_batch = 0
+    # Src: [<bos> w1 ... wN <eos>]
+    max_src_in_batch = max(max_src_in_batch, len(new.src[0]) + 2)
+    # Tgt: [w1 ... wM <eos>]
+    max_tgt_in_batch = max(max_tgt_in_batch, len(new.tgt[0]) + 1)
+    src_elements = count * max_src_in_batch
+    tgt_elements = count * max_tgt_in_batch
+    return max(src_elements, tgt_elements)
 
 
 def copyseq_tokenize(text):
@@ -210,7 +290,7 @@ def _feature_tokenize(
     return tokens
 
 
-class TextMultiField(RawField):
+class KeyphraseField(RawField):
     """Container for subfields.
 
     Text data might use POS/NER/etc labels in addition to tokens.
@@ -220,8 +300,6 @@ class TextMultiField(RawField):
     Args:
         base_name (str): Name for the base field.
         base_field (Field): The token field.
-        feats_fields (Iterable[Tuple[str, Field]]): A list of name-field
-            pairs.
 
     Attributes:
         fields (Iterable[Tuple[str, Field]]): A list of name-field pairs.
@@ -229,11 +307,9 @@ class TextMultiField(RawField):
             ``feats_fields`` in alphabetical order.
     """
 
-    def __init__(self, base_name, base_field, feats_fields):
-        super(TextMultiField, self).__init__()
+    def __init__(self, base_name, base_field):
+        super(KeyphraseField, self).__init__()
         self.fields = [(base_name, base_field)]
-        for name, ff in sorted(feats_fields, key=lambda kv: kv[0]):
-            self.fields.append((name, ff))
 
     @property
     def base_field(self):
@@ -264,8 +340,7 @@ class TextMultiField(RawField):
             # lengths: batch_size
             base_data, lengths = base_data
 
-        feats = [ff.process(batch_by_feat[i], device=device)
-                 for i, (_, ff) in enumerate(self.fields[1:], 1)]
+        feats = []
         levels = [base_data] + feats
         # data: seq_len x batch_size x len(self.fields)
         data = torch.stack(levels, 2)
@@ -316,6 +391,7 @@ def keyphrase_fields(base_name, **kwargs):
     pad = kwargs.get("pad", "<blank>")
     bos = kwargs.get("bos", "<s>")
     eos = kwargs.get("eos", "</s>")
+    # sep = kwargs.get("sep", "<sep>")
     truncate = kwargs.get("truncate", None)
     lower = kwargs.get("lower", None)
     fields_ = []
@@ -335,5 +411,5 @@ def keyphrase_fields(base_name, **kwargs):
             include_lengths=use_len, lower=lower)
         fields_.append((name, feat))
     assert fields_[0][0] == base_name  # sanity check
-    field = TextMultiField(fields_[0][0], fields_[0][1], fields_[1:])
+    field = KeyphraseField(fields_[0][0], fields_[0][1])
     return [(base_name, field)]

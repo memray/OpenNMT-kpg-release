@@ -1,9 +1,12 @@
 model_type: keyphrase
+#tgt_type: one2one
+tgt_type: no_sort
 
-data: data/keyphrase/kp20k/kp20k.one2one
+#data: data/keyphrase/kp20k/kp20k.one2one
+data: data/keyphrase/kp20k/kp20k.one2many.small
 save_model: models/kp20k/kp20k.one2one.transformer
 save_checkpoint_steps: 10000
-keep_checkpoint: 40
+keep_checkpoint: 10
 seed: 3435
 
 encoder_type: transformer
@@ -27,13 +30,12 @@ normalization: tokens
 max_generator_batches: 2
 accum_count: 4
 
-# batch_size is actually: num_example * max(#word in src/tgt)
-batch_size: 4096
-#batch_size: 8192
+#batch_size: 4096
+batch_size: 1000
 #batch_size: 24576
-valid_batch_size: 512
+valid_batch_size: 20
 
-train_steps: 400000
+train_steps: 200000
 valid_steps: 10000
 report_every: 100
 
@@ -50,8 +52,5 @@ tensorboard: 'true'
 tensorboard_log_dir: runs/kp20k.one2one.transformer/
 
 world_size: 1
-gpu_ranks:
-- 0
-#- 1
-#- 2
+gpu_ranks: []
 master_port: 10000

@@ -513,6 +513,10 @@ def train_opts(parser):
               help="""Using grayscale image can training
                        model faster and smaller""")
 
+    # Option most relevant to keyphrase
+    group.add('--tgt_type', '-tgt_type', default='one2one',
+              choices=['one2one', 'no_sort', 'random', 'verbatim'],
+              help="""Format of targets for model to learn/output""")
 
 def translate_opts(parser):
     """ Translation / inference options """
@@ -532,7 +536,7 @@ def translate_opts(parser):
 
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",
-              help="Type of the source input. Options: [text|img].")
+              help="Type of the source input. Options: [text|img|keyphrase].")
 
     group.add('--src', '-src', required=True,
                        help="""Source sequence to decode (one line per

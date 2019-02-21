@@ -1,11 +1,11 @@
 model_type: keyphrase
 
 data: data/keyphrase/kp20k/kp20k.one2one
-save_model: models/keyphrase/kp20k/kp20k.one2one
+save_model: models/kp20k/kp20k.one2one.birnn.steps_200k
 save_checkpoint_steps: 10000
 keep_checkpoint: 10
 seed: 3435
-train_steps: 100000
+train_steps: 200000
 valid_steps: 10000
 report_every: 100
 
@@ -20,8 +20,8 @@ learning_rate: 0.15
 adagrad_accumulator_init: 0.1
 max_grad_norm: 2
 
-batch_size: 512
-valid_batch_size: 16
+batch_size: 256
+valid_batch_size: 128
 dropout: 0.0
 
 copy_attn: 'true'
@@ -30,13 +30,14 @@ reuse_copy_attn: 'true'
 copy_loss_by_seqlength: 'true'
 bridge: 'true'
 
-log_file: runs/keyphrase/kp20k/
+log_file: output/kp20k/kp20k.one2one.birnn.steps_200k.log
 log_file_level: DEBUG
-exp: rnn-keyphrase-one2one-bi-GRU512-EMB128-ATTNmlp
+exp: keyphrase-one2one-birnn-GRU512-EMB128-ATTNmlp-Dropout0.0-Step200k
 tensorboard: 'true'
-tensorboard_log_dir: runs/keyphrase/kp20k/
+tensorboard_log_dir: runs/kp20k.one2one.birnn.steps_200k/
 
 world_size: 2
 gpu_ranks:
 - 0
 - 1
+master_port: 5000
