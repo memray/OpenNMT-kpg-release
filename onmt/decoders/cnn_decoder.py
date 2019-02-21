@@ -1,6 +1,5 @@
-"""
-Implementation of the CNN Decoder part of
-  "Convolutional Sequence to Sequence Learning"
+"""Implementation of the CNN Decoder part of
+"Convolutional Sequence to Sequence Learning"
 """
 import torch
 import torch.nn as nn
@@ -13,14 +12,15 @@ SCALE_WEIGHT = 0.5 ** 0.5
 
 
 class CNNDecoder(DecoderBase):
-    """
-    Decoder built on CNN, based on :cite:`DBLP:journals/corr/GehringAGYD17`.
+    """Decoder based on "Convolutional Sequence to Sequence Learning"
+    :cite:`DBLP:journals/corr/GehringAGYD17`.
 
     Consists of residual convolutional layers, with ConvMultiStepAttention.
     """
 
     def __init__(self, num_layers, hidden_size, attn_type,
-                 copy_attn, cnn_kernel_width, dropout, embeddings):
+                 copy_attn, cnn_kernel_width, dropout, embeddings,
+                 copy_attn_type):
         super(CNNDecoder, self).__init__()
 
         self.cnn_kernel_width = cnn_kernel_width
@@ -43,12 +43,14 @@ class CNNDecoder(DecoderBase):
         # Set up a separate copy attention layer if needed.
         assert not copy_attn, "Copy mechanism not yet tested in conv2conv"
         if copy_attn:
-            self.copy_attn = GlobalAttention(hidden_size, attn_type=attn_type)
+            self.copy_attn = GlobalAttention(
+                hidden_size, attn_type=copy_attn_type)
         else:
             self.copy_attn = None
 
     @classmethod
     def from_opt(cls, opt, embeddings):
+        """Alternate constructor."""
         return cls(
             opt.dec_layers,
             opt.dec_rnn_size,
@@ -56,12 +58,11 @@ class CNNDecoder(DecoderBase):
             opt.copy_attn,
             opt.cnn_kernel_width,
             opt.dropout,
-            embeddings)
+            embeddings,
+            opt.copy_attn_type)
 
     def init_state(self, _, memory_bank, enc_hidden):
-        """
-        Init decoder state.
-        """
+        """Init decoder state."""
         self.state["src"] = (memory_bank + enc_hidden) * SCALE_WEIGHT
         self.state["previous_input"] = None
 
