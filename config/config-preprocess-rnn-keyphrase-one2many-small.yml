@@ -2,6 +2,8 @@ data_type: keyphrase
 
 train_src: data/keyphrase/kp20k/kp20k_train_small.one2many.src
 train_tgt: data/keyphrase/kp20k/kp20k_train_small.one2many.tgt
+valid_src: data/keyphrase/kp20k/kp20k_valid.one2many.src
+valid_tgt: data/keyphrase/kp20k/kp20k_valid.one2many.tgt
 
 save_data: data/keyphrase/kp20k/kp20k.one2many.small
 shard_size: 100000

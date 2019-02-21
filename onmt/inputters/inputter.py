@@ -119,9 +119,9 @@ def get_fields(
                         "base_name": "tgt"}
     # added by @memray, it might be smarter to add field_name to __init__ in the future
     if src_data_type == "keyphrase":
-        fields['tgt'] = keyphrase_fields('tgt', **tgt_field_kwargs)
+        fields['tgt'] = keyphrase_fields(**tgt_field_kwargs)
     else:
-        fields['tgt'] = text_fields( 'tgt', **tgt_field_kwargs)
+        fields['tgt'] = text_fields(**tgt_field_kwargs)
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
     fields["indices"] = indices
@@ -140,7 +140,7 @@ def get_fields(
     # added by @memray, load some other meta information of each data example for keyphrase dataset
     if src_data_type == 'keyphrase':
         id = Field(use_vocab=False, dtype=torch.long, sequential=False)
-        fields["id"] = [('id', id)]
+        fields["id"] = id
 
     return fields
 
@@ -531,7 +531,7 @@ class OrderedIterator(torchtext.data.Iterator):
                 # split whole dataset into big batches (size=batch_size*100)
                 # batch_size_fn=None, therefore it's counting on number of examples
                 for p in torchtext.data.batch(data, self.batch_size * 100):
-                    # if it's keyphrase dataset, a preprocess to targets should act here.
+                    # if it's keyphrase dataset, a preprocess to targets should act beforehand.
                     if isinstance(self.dataset, KeyphraseDataset):
                         p = keyphrase_dataset.process_multiple_tgts(p, self.dataset.tgt_type)
                     # split each big batch into final mini-batches
@@ -554,6 +554,9 @@ class OrderedIterator(torchtext.data.Iterator):
                     self.batch_size,
                     batch_size_fn=self.batch_size_fn,
                     batch_size_multiple=self.batch_size_multiple):
+                # if it's keyphrase dataset, a preprocess to targets should act beforehand.
+                if isinstance(self.dataset, KeyphraseDataset):
+                    b = keyphrase_dataset.process_multiple_tgts(b, self.dataset.tgt_type)
                 self.batches.append(sorted(b, key=self.sort_key))
 
 

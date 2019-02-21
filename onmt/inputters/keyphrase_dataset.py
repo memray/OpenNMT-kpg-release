@@ -73,12 +73,7 @@ class KeyphraseDataset(TorchtextDataset):
         self.tgt_type = None
         # concatenate multiple tgt sequences with <sep> or keep them separate as a list of seqs (2D tensor)
         self.concat_tgt = False
-
         self.sort_key = sort_key
-        # if sort_key == None:
-        #     sort_key = kp_sort_key
-        # else:
-        #     self.sort_key = sort_key
 
         # will be specified before training, one of [one2one, original, random, verbatim]
         can_copy = 'src_map' in fields and 'alignment' in fields
@@ -91,18 +86,22 @@ class KeyphraseDataset(TorchtextDataset):
         examples = []
         for ex_dict in starmap(_join_dicts, zip(*read_iters)):
             if can_copy:
-                src_field = fields['src'][0][1]
-                tgt_field = fields['tgt'][0][1]
+                src_field = fields['src']
+                tgt_field = fields['tgt']
                 # this assumes src_field and tgt_field are both text
                 src_ex_vocab, ex_dict = _dynamic_dict(
                     ex_dict, src_field.base_field, tgt_field.base_field)
                 self.src_vocabs.append(src_ex_vocab)
-            ex_fields = {k: v for k, v in fields.items() if k in ex_dict}
+            ex_fields = {k: [(k, v)] for k, v in fields.items() if
+                         k in ex_dict}
             ex = Example.fromdict(ex_dict, ex_fields)
             examples.append(ex)
 
-        # the dataset's self.fields should have the same attributes as examples
-        fields = dict(chain.from_iterable(ex_fields.values()))
+        # fields needs to have only keys that examples have as attrs
+        fields = []
+        for _, nf_list in ex_fields.items():
+            assert len(nf_list) == 1
+            fields.append(nf_list[0])
 
         super(KeyphraseDataset, self).__init__(examples, fields, filter_pred)
 
@@ -370,7 +369,7 @@ class KeyphraseField(RawField):
         return self.fields[item]
 
 
-def keyphrase_fields(base_name, **kwargs):
+def keyphrase_fields(**kwargs):
     """Create text fields.
 
     Args:
@@ -383,11 +382,12 @@ def keyphrase_fields(base_name, **kwargs):
         truncate (bool or NoneType, optional): Defaults to ``None``.
 
     Returns:
-        List[Tuple[str, TextMultiField]]
+        List[Tuple[str, KeyphraseField]]
     """
 
     n_feats = kwargs["n_feats"]
     include_lengths = kwargs["include_lengths"]
+    base_name = kwargs["base_name"]
     pad = kwargs.get("pad", "<blank>")
     bos = kwargs.get("bos", "<s>")
     eos = kwargs.get("eos", "</s>")
@@ -412,4 +412,5 @@ def keyphrase_fields(base_name, **kwargs):
         fields_.append((name, feat))
     assert fields_[0][0] == base_name  # sanity check
     field = KeyphraseField(fields_[0][0], fields_[0][1])
-    return [(base_name, field)]
+    return field
+

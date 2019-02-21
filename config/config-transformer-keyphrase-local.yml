@@ -36,8 +36,8 @@ batch_size: 1000
 valid_batch_size: 20
 
 train_steps: 200000
-valid_steps: 100
-report_every: 100
+valid_steps: 10
+report_every: 10
 
 dropout: 0.2
 

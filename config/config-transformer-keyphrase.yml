@@ -1,7 +1,7 @@
 model_type: keyphrase
 
-data: data/keyphrase/kp20k/kp20k.one2one
-save_model: models/kp20k/kp20k.one2one.transformer
+data: data/keyphrase/kp20k/kp20k.one2many
+save_model: models/kp20k/kp20k.one2one.transformer_400k
 save_checkpoint_steps: 10000
 keep_checkpoint: 40
 seed: 3435
@@ -31,7 +31,7 @@ accum_count: 4
 batch_size: 4096
 #batch_size: 8192
 #batch_size: 24576
-valid_batch_size: 512
+valid_batch_size: 256
 
 train_steps: 400000
 valid_steps: 10000
@@ -43,15 +43,15 @@ share_embeddings: 'true'
 copy_attn: 'true'
 param_init_glorot: 'true'
 
-log_file: output/kp20k/kp20k.one2one.transformer.log
+log_file: output/kp20k.one2one.transformer.400k.log
 log_file_level: DEBUG
 exp: keyphrase-one2one-transformer-Layer4-Dim512-Emb512--Dropout0.2
 tensorboard: 'true'
-tensorboard_log_dir: runs/kp20k.one2one.transformer/
+tensorboard_log_dir: runs/kp20k.one2one.transformer.400k/
 
-world_size: 1
+world_size: 2
 gpu_ranks:
 - 0
-#- 1
+- 1
 #- 2
 master_port: 10000
