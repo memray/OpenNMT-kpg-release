@@ -1,7 +1,7 @@
 model_type: keyphrase
 
-data: data/keyphrase/kp20k/kp20k.one2many
-save_model: models/kp20k/kp20k.one2one.birnn.test
+data: data/keyphrase/magkp/magkp.one2many
+save_model: models/magkp/magkp.one2one.birnn.test
 save_checkpoint_steps: 10000
 keep_checkpoint: 20
 seed: 3435
@@ -30,14 +30,14 @@ reuse_copy_attn: 'true'
 copy_loss_by_seqlength: 'true'
 bridge: 'true'
 
-log_file: output/kp20k.one2one.birnn.test.log
+log_file: output/magkp.one2one.birnn.test.log
 log_file_level: DEBUG
-exp: kp20k-one2one-birnn-GRU512-EMB128-ATTNmlp-Dropout0.0-test
+exp: magkp-one2one-birnn-GRU512-EMB128-ATTNmlp-Dropout0.0-test
 tensorboard: 'true'
-tensorboard_log_dir: runs/kp20k.one2one.birnn.test/
+tensorboard_log_dir: runs/magkp.one2one.birnn.test/
 
 world_size: 2
 gpu_ranks:
 - 0
 - 1
-master_port: 5000
+master_port: 5001

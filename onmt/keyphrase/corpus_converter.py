@@ -30,13 +30,15 @@ def heuristic_filter(src, tgts, opt):
     src_tokens = copyseq_tokenize(src)
     # SOURCE FILTER: if length of src is over/under the given length limit, discard
     if opt.max_src_seq_length and len(src_tokens) > opt.max_src_seq_length:
-        print("INVALID: source is too long: \n%s" % src)
+        print("INVALID: source is too long [len=%d]: \n%s" % (len(src_tokens), src))
         return False, None
     if opt.min_src_seq_length and len(src_tokens) < opt.min_src_seq_length:
-        print("INVALID: source is too short: \n%s" % src)
+        print("INVALID: source is too short [len=%d]: \n%s" % (len(src_tokens), src))
         return False, None
 
     filtered_tgts = []
+
+    # Go over each keyphrase and check its validity
     for ori_tgt in tgts:
 
         tgt = ori_tgt
@@ -49,10 +51,10 @@ def heuristic_filter(src, tgts, opt):
         tgt_tokens = copyseq_tokenize(tgt)
         # FILTER 2: if length of tgt exceeds limit, discard
         if opt.max_tgt_seq_length and len(tgt_tokens) > opt.max_tgt_seq_length:
-            print("INVALID: target is too long: %s (originally %s)" % (str(tgt), ori_tgt))
+            print("\tInvalid Target: target is too long: %s (originally %s)" % (str(tgt), ori_tgt))
             continue
         if opt.min_tgt_seq_length and len(tgt_tokens) < opt.min_tgt_seq_length:
-            print("INVALID: target is too short: %s (originally %s)" % (str(tgt), ori_tgt))
+            print("\tInvalid Target: target is too short: %s (originally %s)" % (str(tgt), ori_tgt))
             continue
 
         # FILTER 3: ingore all the keyphrases that contains strange punctuations, very DIRTY data!
@@ -70,29 +72,31 @@ def heuristic_filter(src, tgts, opt):
         if len(tgt_tokens) > 5:
             tgt_set = set(tgt_tokens)
             if len(tgt_set) * 2 < len(tgt_tokens):
+                print('\t Invalid Target: heuristic_rule on long keyphrases (>5 words)')
                 heuristic_rule_flag = True
 
         # FILTER 5: filter keywords like primary 75v05;secondary 76m10;65n30
         if (len(tgt_tokens) > 0 and re.match(r'\d\d[a-zA-Z\-]\d\d', tgt_tokens[0].strip())) or (len(tgt_tokens) > 1 and re.match(r'\d\d\w\d\d', tgt_tokens[1].strip())):
-            print('INVALID: matching template \d\d[a-z]\d\d: %s' % tgt)
+            print('\tInvalid Target: matching template \d\d[a-z]\d\d: %s' % tgt)
             continue
 
         if (punc_flag or heuristic_rule_flag):
-            print('*' * 50)
-            if heuristic_rule_flag:
-                print('INVALID: heuristic_rule on long keyphrases (>5 words)')
-            if punc_flag:
-                print('INVALID: checking punctuation in keyphrases')
-            print('len(src)=%d, len(tgt)=%d' % (len(src_tokens), len(tgt_tokens)))
-            print('src: %s' % str(src))
-            print('tgt: %s' % str(tgts))
-            print('*' * 50)
+            # print('*' * 50)
+            # if heuristic_rule_flag:
+            #     print('\t Invalid Target: heuristic_rule on long keyphrases (>5 words)')
+            # if punc_flag:
+            #     print('\t Invalid Target: found punctuation in keyphrases')
+            # print('len(src)=%d, len(tgt)=%d' % (len(src_tokens), len(tgt_tokens)))
+            # print('src: %s' % str(src))
+            # print('tgt: %s' % str(tgts))
+            # print('*' * 50)
             continue
 
         filtered_tgts.append(ori_tgt)
 
     # ignore the examples that have zero valid targets, for training they are no helpful
     if len(filtered_tgts) == 0:
+        print('INVALID: found no valid targets')
         return False, None
 
     return True, filtered_tgts
@@ -139,9 +143,10 @@ if __name__ == '__main__':
 
     print('*' * 50)
     print("Processing %s, type=%s" % (opt.src_file, opt.target_type))
-    print('*' * 50)
 
     examples = []
+    trg_count = 0
+    valid_trg_count = 0
 
     for line_id, line in enumerate(open(opt.src_file, 'r')):
         if line_id + 1 % opt.report_every == 0:
@@ -166,11 +171,15 @@ if __name__ == '__main__':
             abstract = abstract.lower()
             keywords = [k.lower() for k in keywords]
 
+        trg_count += len(keywords)
+
         if opt.filter:
             valid_flag, filtered_keywords = heuristic_filter(src=title + ' . ' + abstract, tgts=keywords, opt=opt)
             if not valid_flag:
                 continue
             keywords = filtered_keywords
+
+        valid_trg_count += len(keywords)
 
         new_ex_list = []
         if opt.target_type == 'one2one':
@@ -211,3 +220,8 @@ if __name__ == '__main__':
 
     src_file.close()
     tgt_file.close()
+
+    print("Process done")
+    print("#(valid examples)=%d/%d" % (len(examples), line_id+1))
+    print("#(valid trgs)=%d/%d" % (valid_trg_count, trg_count))
+    print('*' * 50)
