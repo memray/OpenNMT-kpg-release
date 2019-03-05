@@ -534,9 +534,9 @@ class OrderedIterator(torchtext.data.Iterator):
                     # if it's keyphrase dataset, a preprocess to targets should act beforehand.
                     if isinstance(self.dataset, KeyphraseDataset):
                         p = keyphrase_dataset.process_multiple_tgts(p, self.dataset.tgt_type)
-                    # split each big batch into final mini-batches
+                    # @memray: split each big batch into final mini-batches
                     # batch_size_fn=max_tok_len() for train, counting real batch size (num_batch * max(#words in src/tgt))
-                    # if it is keyphrase dataset, sort examples by number of tgts if one2many, or sort by length of tgt if one2one
+                    # sort the data before splitting
                     p_batch = batch_iter(
                         sorted(p, key=self.sort_key),
                         self.batch_size,
@@ -557,7 +557,9 @@ class OrderedIterator(torchtext.data.Iterator):
                 # if it's keyphrase dataset, a preprocess to targets should act beforehand.
                 if isinstance(self.dataset, KeyphraseDataset):
                     b = keyphrase_dataset.process_multiple_tgts(b, self.dataset.tgt_type)
-                self.batches.append(sorted(b, key=self.sort_key))
+                # @memray: to keep the original order of test data, only sort inside a batch (is it necessary? why not just sort it before feeding the model?)
+                # self.batches.append(sorted(b, key=self.sort_key))
+                self.batches.append(b)
 
 
 class DatasetLazyIter(object):
@@ -591,6 +593,7 @@ class DatasetLazyIter(object):
         cur_dataset = torch.load(path)
         logger.info('Loading dataset from %s, number of examples: %d' %
                     (path, len(cur_dataset)))
+        # added by @memray, as Dataset is only instantiated here, having to use this plugin setter
         if isinstance(cur_dataset, KeyphraseDataset):
             cur_dataset.load_config(self.opt)
         cur_dataset.fields = self.fields

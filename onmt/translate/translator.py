@@ -13,6 +13,7 @@ import onmt.model_builder
 import onmt.translate.beam
 import onmt.inputters as inputters
 import onmt.decoders.ensemble
+from onmt.inputters import KeyphraseDataset
 from onmt.translate.beam_search import BeamSearch
 from onmt.translate.random_sampling import RandomSampling
 from onmt.utils.misc import tile, set_random_seed
@@ -26,6 +27,10 @@ def build_translator(opt, report_score=True, logger=None, out_file=None):
     load_test_model = onmt.decoders.ensemble.load_test_model \
         if len(opt.models) > 1 else onmt.model_builder.load_test_model
     fields, model, model_opt = load_test_model(opt)
+
+    # added by @memray, ignore alignment field during testing for keyphrase task
+    if opt.data_type == 'keyphrase' and 'alignment' in fields:
+        del fields['alignment']
 
     scorer = onmt.translate.GNMTGlobalScorer.from_opt(opt)
 
@@ -111,7 +116,9 @@ class Translator(object):
             out_file=None,
             report_score=True,
             logger=None,
-            seed=-1):
+            seed=-1,
+            tgt_type=None
+    ):
         self.model = model
         self.fields = fields
         tgt_field = dict(self.fields)["tgt"].base_field
@@ -167,6 +174,9 @@ class Translator(object):
         self.use_filter_pred = False
         self._filter_pred = None
 
+        # added by @memray, to accommodate multiple targets
+        self.tgt_type=tgt_type
+
         # for debugging
         self.beam_trace = self.dump_beam != ""
         self.beam_accum = None
@@ -208,7 +218,12 @@ class Translator(object):
         """
 
         src_reader = inputters.str2reader[opt.data_type].from_opt(opt)
-        tgt_reader = inputters.str2reader["text"].from_opt(opt)
+        if opt.data_type == 'keyphrase':
+            trg_data_type = 'keyphrase'
+        else:
+            trg_data_type = 'text'
+
+        tgt_reader = inputters.str2reader[trg_data_type].from_opt(opt)
         return cls(
             model,
             fields,
@@ -236,7 +251,9 @@ class Translator(object):
             out_file=out_file,
             report_score=report_score,
             logger=logger,
-            seed=opt.seed)
+            seed=opt.seed,
+            tgt_type=opt.tgt_type
+        )
 
     def _log(self, msg):
         if self.logger:
@@ -246,7 +263,7 @@ class Translator(object):
 
     def _gold_score(self, batch, memory_bank, src_lengths, src_vocabs,
                     use_src_map, enc_states, batch_size, src):
-        if "tgt" in batch.__dict__:
+        if "tgt" in batch.__dict__ and self.data_type != 'keyphrase':
             gs = self._score_target(
                 batch, memory_bank, src_lengths, src_vocabs,
                 batch.src_map if use_src_map else None)
@@ -283,7 +300,8 @@ class Translator(object):
         if batch_size is None:
             raise ValueError("batch_size must be set")
 
-        data = inputters.Dataset(
+        # modified by @memray to accormodate keyphrase
+        data = inputters.str2dataset[self.data_type](
             self.fields,
             readers=([self.src_reader, self.tgt_reader]
                      if tgt else [self.src_reader]),
@@ -292,6 +310,9 @@ class Translator(object):
             sort_key=inputters.str2sortkey[self.data_type],
             filter_pred=self._filter_pred
         )
+        # added by @memray, as Dataset is only instantiated here, having to use this plugin setter
+        if isinstance(data, KeyphraseDataset):
+            data.tgt_type=self.tgt_type
 
         data_iter = inputters.OrderedIterator(
             dataset=data,
@@ -299,7 +320,8 @@ class Translator(object):
             batch_size=batch_size,
             train=False,
             sort=False,
-            sort_within_batch=True,
+            # sort_within_batch=True,
+            sort_within_batch=False, #@memray: to keep the original order
             shuffle=False
         )
 
@@ -514,8 +536,19 @@ class Translator(object):
         src, src_lengths = batch.src if isinstance(batch.src, tuple) \
                            else (batch.src, None)
 
+        # added by @memray, resort examples in batch by lengths first
+        sort_idx = torch.argsort(src_lengths, descending=True)
+        sorted_src = src[:,sort_idx,:]
+        sorted_src_lengths = src_lengths[sort_idx]
+        unsort_idx = torch.argsort(sort_idx)
+
         enc_states, memory_bank, src_lengths = self.model.encoder(
-            src, src_lengths)
+            sorted_src, sorted_src_lengths)
+
+        enc_states = enc_states[:, unsort_idx, :]
+        memory_bank = memory_bank[:, unsort_idx, :]
+        src_lengths = src_lengths[unsort_idx]
+
         if src_lengths is None:
             assert not isinstance(memory_bank, tuple), \
                 'Ensemble decoding only supported for text data'

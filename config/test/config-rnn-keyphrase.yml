@@ -1,0 +1,38 @@
+# Translation / inference options
+model: models/keyphrase/kp20k/kp20k.one2one.birnn.test_step_40000.pt
+
+# Data options
+data_type: keyphrase
+src: data/keyphrase/kp20k/kp20k_test_small.one2many.src
+#tgt: data/keyphrase/kp20k/kp20k_test_small.one2many.tgt
+shard_size: 0
+output: output/pred/kp20k/kp20k.one2one_step_40000.pred
+
+# Evaluation options
+report_bleu: 'true'
+report_rouge: 'true'
+report_time: 'true'
+
+# Options most relevant to summarization.
+#dynamic_dict: 'true'
+share_vocab: 'true'
+
+# Beam search
+beam_size: 32
+min_length: 1
+max_length: 8
+
+# Alpha and Beta values for Google Length + Coverage penalty
+stepwise_penalty: 'false'
+
+# Logging
+verbose: 'true'
+log_file: output/pred/kp20k/kp20k.one2one_step_10000.pred.log
+log_file_level: 'DEBUG'
+n_best: 5
+
+# Efficiency
+batch_size: 32
+gpu: -1
+
+tgt_type: test

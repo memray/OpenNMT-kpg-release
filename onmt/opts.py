@@ -519,7 +519,7 @@ def train_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'no_sort', 'random', 'verbatim'],
+              choices=['one2one', 'no_sort', 'random', 'verbatim', 'test'],
               help="""Format of targets for model to learn/output""")
 
 def translate_opts(parser):
@@ -675,6 +675,10 @@ def translate_opts(parser):
               help="Using grayscale image can training "
                    "model faster and smaller")
 
+    # Option most relevant to keyphrase
+    group.add('--tgt_type', '-tgt_type', default='one2one',
+              choices=['one2one', 'no_sort', 'random', 'verbatim', 'test'],
+              help="""Format of targets for model to learn/output""")
 
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be

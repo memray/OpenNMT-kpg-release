@@ -69,14 +69,17 @@ class KeyphraseDataset(TorchtextDataset):
     """
 
     def __init__(self, fields, readers, data, dirs, sort_key,
-                 filter_pred=None):
-        self.tgt_type = None
+                 filter_pred=None, tgt_type=None):
+        # this is set at line 594 in inputter.py and line 303 in translator.py
+        self.tgt_type = tgt_type
         # concatenate multiple tgt sequences with <sep> or keep them separate as a list of seqs (2D tensor)
         self.concat_tgt = False
         self.sort_key = sort_key
 
         # will be specified before training, one of [one2one, original, random, verbatim]
-        can_copy = 'src_map' in fields and 'alignment' in fields
+
+        # build src_map/alignment no matter field is available
+        can_copy = True
 
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
                       in zip(readers, data, dirs)]
@@ -167,40 +170,51 @@ class KeyphraseDataReader(DataReaderBase):
 
 
 def process_multiple_tgts(big_batch, tgt_type):
-    assert tgt_type in ['one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
+    assert tgt_type in ['test', 'one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
     np.random.seed(2333)
 
     new_batch = []
     for ex in big_batch:
-        if len(ex.tgt) == 0:
-            continue
+        tgt = ex.tgt if hasattr(ex, "tgt") else None
+        alignment = ex.alignment if hasattr(ex, "alignment") else None
 
-        if tgt_type == 'one2one':
-            # sample one tgt from multiple tgts and use it as the only tgt
-            rand_idx = np.random.randint(len(ex.tgt))
-            tgt = ex.tgt[rand_idx]
-            alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
-        elif tgt_type == 'no_sort':
-            # return tgts in original order
-            tgt = [t[0]+[SEP_token] for t in ex.tgt[:-1]] + ex.tgt[-1]
-            tgt = [np.concatenate(tgt, axis=None).tolist()]
-            if hasattr(ex, "alignment"):
-                # remove the heading and trailing 0 for <s> and </s>
-                alignment = [a.numpy().tolist()[1:-1] for a in ex.alignment]
-                # add 0s for <sep>, <s> and </s>
-                alignment = [0] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [0]
-                # concatenate alignments to one Tensor
-                alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
+        # no processing for test phrase
+        if tgt_type != 'test':
+            if len(ex.tgt) == 0:
+                continue
+
+            if tgt_type == 'one2one':
+                # sample one tgt from multiple tgts and use it as the only tgt
+                rand_idx = np.random.randint(len(ex.tgt))
+                tgt = ex.tgt[rand_idx]
+                alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
+            elif tgt_type == 'no_sort':
+                # return tgts in original order
+                tgt = [t[0]+[SEP_token] for t in ex.tgt[:-1]] + ex.tgt[-1]
+                tgt = [np.concatenate(tgt, axis=None).tolist()]
+                if hasattr(ex, "alignment"):
+                    # remove the heading and trailing 0 for <s> and </s>
+                    alignment = [a.numpy().tolist()[1:-1] for a in ex.alignment]
+                    # add 0s for <sep>, <s> and </s>
+                    alignment = [0] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [0]
+                    # concatenate alignments to one Tensor
+                    alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
+                else:
+                    alignment = None
             else:
-                alignment = None
-        else:
-            raise NotImplementedError
+                raise NotImplementedError
 
         # print(ex.tgt)
         # print(tgt)
         ex.tgt = tgt
         if hasattr(ex, "alignment"):
-            assert len(tgt[0]) + 2 == alignment.size()[0]
+            if isinstance(alignment, list):
+                # for test, with unprocessed multiple targets
+                assert len(tgt) == len(alignment)
+                assert all([len(t[0])+2==a.size()[0] for t,a in zip(tgt, alignment)])
+            else:
+                # for other cases, with one target sequence
+                assert len(tgt[0]) + 2 == alignment.size()[0]
             ex.alignment = alignment
 
         new_batch.append(ex)
@@ -210,9 +224,8 @@ def process_multiple_tgts(big_batch, tgt_type):
 
 def kp_sort_key(ex):
     """Sort using the number of tokens in the sequence."""
-    # if tgt is available, order by number of phrases in tgt first, then src length
     if hasattr(ex, "tgt"):
-        return len(ex.tgt), len(ex.src[0])
+        return len(ex.src[0]), len(ex.tgt[0])
     return len(ex.src[0])
 
 
@@ -320,7 +333,7 @@ class KeyphraseField(RawField):
         Args:
             batch (List[List[List[str]]]): A list of length batch size.
                 Each element is a list of the preprocess results for each
-                field (which are lists of str "words" or feature tags.
+                field (which are lists of str "words" or lists of "phrases" (lists of str "words").
             device (torch.device or str): The device on which the tensor(s)
                 are built.
 
@@ -331,6 +344,9 @@ class KeyphraseField(RawField):
                 If the base field returns lengths, these are also returned
                 and have shape ``(batch_size,)``.
         """
+        # if batch is lists of "phrases", don't process and numericalize
+        if isinstance(batch[0], list):
+            return batch
 
         # batch (list(list(list))): batch_size x len(self.fields) x seq_len
         batch_by_feat = list(zip(*batch))

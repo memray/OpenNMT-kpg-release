@@ -1,6 +1,6 @@
 model_type: keyphrase
 
-data: data/keyphrase/magkp/magkp.one2many
+data: data/keyphrase/magkp/magkp_train.one2many
 save_model: models/magkp/magkp.one2one.transformer
 save_checkpoint_steps: 10000
 keep_checkpoint: 40
