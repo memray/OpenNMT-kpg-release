@@ -142,6 +142,10 @@ def load_test_model(opt):
                         assert sf.vocab.stoi == sh_f_dict[sn].vocab.stoi, \
                             "Ensemble models must use the same " \
                             "preprocessed data"
+        # @memray, warning: not tested
+        if opt.data_type == "keyphrase":
+            shared_fields["tgt"].type = opt.tgt_type
+
         models.append(model)
         if shared_model_opt is None:
             shared_model_opt = model_opt

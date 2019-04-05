@@ -143,7 +143,7 @@ class BeamSearch(DecodeStrategy):
         # Flatten probs into a list of possibilities.
         curr_scores = log_probs / length_penalty
         curr_scores = curr_scores.reshape(_B, self.beam_size * vocab_size)
-        torch.topk(curr_scores,  self.beam_size, dim=-1,
+        torch.topk(curr_scores, self.beam_size, dim=-1,
                    out=(self.topk_scores, self.topk_ids))
 
         # Recover log probs.
@@ -193,7 +193,7 @@ class BeamSearch(DecodeStrategy):
         self.is_finished = self.topk_ids.eq(self.eos)
         self.ensure_max_length()
 
-    def update_finished(self):
+    def update_finished(self, last_step):
         # Penalize beams that finished.
         _B_old = self.topk_log_probs.shape[0]
         step = self.alive_seq.shape[-1]  # 1 greater than the step in advance
@@ -208,10 +208,11 @@ class BeamSearch(DecodeStrategy):
                 step - 1, _B_old, self.beam_size, self.alive_attn.size(-1))
             if self.alive_attn is not None else None)
         non_finished_batch = []
+        # iterate each batch
         for i in range(self.is_finished.size(0)):
             b = self._batch_offset[i]
             finished_hyp = self.is_finished[i].nonzero().view(-1)
-            # Store finished hypotheses for this batch.
+            # Store finished hypotheses for this batch i
             for j in finished_hyp:
                 self.hypotheses[b].append((
                     self.topk_scores[i, j],
@@ -220,8 +221,8 @@ class BeamSearch(DecodeStrategy):
                     if attention is not None else None))
             # End condition is the top beam finished and we can return
             # n_best hypotheses.
-            if self.top_beam_finished[i] and len(
-                    self.hypotheses[b]) >= self.n_best:
+            if (self.top_beam_finished[i] and len(
+                    self.hypotheses[b]) >= self.n_best) or last_step:
                 best_hyp = sorted(
                     self.hypotheses[b], key=lambda x: x[0], reverse=True)
                 for n, (score, pred, attn) in enumerate(best_hyp):
@@ -238,7 +239,6 @@ class BeamSearch(DecodeStrategy):
         if len(non_finished) == 0:
             self.done = True
             return
-
         _B_new = non_finished.shape[0]
         # Remove finished batches for the next step.
         self.top_beam_finished = self.top_beam_finished.index_select(

@@ -2,6 +2,7 @@
 """ Translator Class and builder """
 from __future__ import print_function
 import codecs
+import json
 import os
 import math
 import time
@@ -110,6 +111,7 @@ class Translator(object):
             verbose=False,
             report_bleu=False,
             report_rouge=False,
+            report_kpeval=False,
             report_time=False,
             copy_attn=False,
             global_scorer=None,
@@ -158,6 +160,7 @@ class Translator(object):
         self.verbose = verbose
         self.report_bleu = report_bleu
         self.report_rouge = report_rouge
+        self.report_kpeval = report_kpeval
         self.report_time = report_time
 
         self.copy_attn = copy_attn
@@ -189,6 +192,7 @@ class Translator(object):
 
         set_random_seed(seed, self._use_cuda)
 
+
     @classmethod
     def from_opt(
             cls,
@@ -218,11 +222,11 @@ class Translator(object):
         """
 
         src_reader = inputters.str2reader[opt.data_type].from_opt(opt)
+        # @memray a different tgt_reader for keyphrase
         if opt.data_type == 'keyphrase':
             trg_data_type = 'keyphrase'
         else:
             trg_data_type = 'text'
-
         tgt_reader = inputters.str2reader[trg_data_type].from_opt(opt)
         return cls(
             model,
@@ -245,6 +249,7 @@ class Translator(object):
             verbose=opt.verbose,
             report_bleu=opt.report_bleu,
             report_rouge=opt.report_rouge,
+            report_kpeval=opt.report_kpeval,
             report_time=opt.report_time,
             copy_attn=model_opt.copy_attn,
             global_scorer=global_scorer,
@@ -263,11 +268,15 @@ class Translator(object):
 
     def _gold_score(self, batch, memory_bank, src_lengths, src_vocabs,
                     use_src_map, enc_states, batch_size, src):
-        if "tgt" in batch.__dict__ and self.data_type != 'keyphrase':
-            gs = self._score_target(
-                batch, memory_bank, src_lengths, src_vocabs,
-                batch.src_map if use_src_map else None)
-            self.model.decoder.init_state(src, memory_bank, enc_states)
+        if "tgt" in batch.__dict__:
+            if self.data_type != 'keyphrase' or self.tgt_type != "multiple":
+                gs = self._score_target(
+                    batch, memory_bank, src_lengths, src_vocabs,
+                    batch.src_map if use_src_map else None)
+                self.model.decoder.init_state(src, memory_bank, enc_states)
+            else:
+                # print("Gold score on multiple keyphrases is not supported yet")
+                gs = [0] * batch_size
         else:
             gs = [0] * batch_size
         return gs
@@ -278,7 +287,9 @@ class Translator(object):
             tgt=None,
             src_dir=None,
             batch_size=None,
-            attn_debug=False):
+            attn_debug=False,
+            opt=None
+    ):
         """Translate content of ``src`` and get gold scores from ``tgt``.
 
         Args:
@@ -300,7 +311,7 @@ class Translator(object):
         if batch_size is None:
             raise ValueError("batch_size must be set")
 
-        # modified by @memray to accormodate keyphrase
+        # modified by @memray to accommodate keyphrase
         data = inputters.str2dataset[self.data_type](
             self.fields,
             readers=([self.src_reader, self.tgt_reader]
@@ -328,7 +339,6 @@ class Translator(object):
         xlation_builder = onmt.translate.TranslationBuilder(
             data, self.fields, self.n_best, self.replace_unk, tgt
         )
-
         # Statistics
         counter = count(1)
         pred_score_total, pred_words_total = 0, 0
@@ -345,6 +355,12 @@ class Translator(object):
             )
             translations = xlation_builder.from_batch(batch_data)
 
+            # @memray, add copied flag
+            if self.data_type == "keyphrase":
+                vocab_size = len(self.fields['src'].base_field.vocab.itos)
+                for t in translations:
+                    t.add_copied_flags(vocab_size)
+
             for trans in translations:
                 all_scores += [trans.pred_scores[:self.n_best]]
                 pred_score_total += trans.pred_scores[0]
@@ -356,16 +372,24 @@ class Translator(object):
                 n_best_preds = [" ".join(pred)
                                 for pred in trans.pred_sents[:self.n_best]]
                 all_predictions += [n_best_preds]
-                self.out_file.write('\n'.join(n_best_preds) + '\n')
+                if self.data_type == "keyphrase":
+                    self.out_file.write(json.dumps(trans.__dict__()) + '\n')
+                else:
+                    self.out_file.write('\n'.join(n_best_preds) + '\n')
                 self.out_file.flush()
 
                 if self.verbose:
                     sent_number = next(counter)
-                    output = trans.log(sent_number)
-                    if self.logger:
-                        self.logger.info(output)
+                    if self.data_type == "keyphrase":
+                        output = trans.log_kp(sent_number)
                     else:
-                        os.write(1, output.encode('utf-8'))
+                        output = trans.log(sent_number)
+
+                    if self.verbose:
+                        if self.logger:
+                            self.logger.info(output)
+                        else:
+                            os.write(1, output.encode('utf-8'))
 
                 if attn_debug:
                     preds = trans.pred_sents[0]
@@ -404,6 +428,11 @@ class Translator(object):
                 if self.report_rouge:
                     msg = self._report_rouge(tgt)
                     self._log(msg)
+                if self.report_kpeval:
+                    # don't run eval here. because in opt.tgt rare words are replaced by <unk>
+                    pass
+                    # msg = self._report_kpeval(opt.src, opt.tgt, opt.output)
+                    # self._log(msg)
 
         if self.report_time:
             total_time = end_time - start_time
@@ -414,10 +443,12 @@ class Translator(object):
                 pred_words_total / total_time))
 
         if self.dump_beam:
-            import json
+            print('dump_beam')
             json.dump(self.translator.beam_accum,
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
+
         return all_scores, all_predictions
+
 
     def _translate_random_sampling(
             self,
@@ -577,6 +608,8 @@ class Translator(object):
         # Decoder forward, takes [tgt_len, batch, nfeats] as input
         # and [src_len, batch, hidden] as memory_bank
         # in case of inference tgt_len = 1, batch = beam times batch_size
+        #   i.e. dec_out is in shape of [1, beam_size * batch_size, hidden]
+        #        dec_attn is a dict which values are in shape of [1, beam_size * batch_size, src_len]
         # in case of Gold Scoring tgt_len = actual length, batch = 1 batch
         dec_out, dec_attn = self.model.decoder(
             decoder_in, memory_bank, memory_lengths=memory_lengths, step=step
@@ -678,8 +711,12 @@ class Translator(object):
             memory_lengths=memory_lengths)
 
         for step in range(max_length):
+            # print("step %d" % step)
+            # [1, beam*batch_size, 1]
             decoder_input = beam.current_predictions.view(1, -1, 1)
 
+            # log_probs: [(batch_size x beam_size) , vocab] when 1 step or [ tgt_len, batch_size, vocab] when full sentence
+            # attn: [1, (batch_size x beam_size), src_len]
             log_probs, attn = self._decode_and_generate(
                 decoder_input,
                 memory_bank,
@@ -693,7 +730,7 @@ class Translator(object):
             beam.advance(log_probs, attn)
             any_beam_is_finished = beam.is_finished.any()
             if any_beam_is_finished:
-                beam.update_finished()
+                beam.update_finished(last_step=(step+1==max_length))
                 if beam.done:
                     break
 
@@ -860,6 +897,16 @@ class Translator(object):
         path = os.path.split(os.path.realpath(__file__))[0]
         msg = subprocess.check_output(
             "python %s/tools/test_rouge.py -r %s -c STDIN" % (path, tgt_path),
+            shell=True, stdin=self.out_file
+        ).decode("utf-8").strip()
+        return msg
+
+    def _report_kpeval(self, src_path, tgt_path, pred_path):
+        import subprocess
+        path = os.path.abspath(__file__ + "/../../..")
+        msg = subprocess.check_output(
+            "python %s/tools/kp_eval.py -src %s -tgt %s -pred %s"
+            % (path, src_path, tgt_path, pred_path),
             shell=True, stdin=self.out_file
         ).decode("utf-8").strip()
         return msg

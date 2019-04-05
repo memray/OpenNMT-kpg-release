@@ -16,7 +16,7 @@ from onmt.inputters import keyphrase_dataset
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.image_dataset import image_fields
 from onmt.inputters.audio_dataset import audio_fields
-from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField
+from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField, extra_special_tokens
 from onmt.utils.logging import logger
 # backwards compatibility
 from onmt.inputters.text_dataset import _feature_tokenize  # noqa: F401
@@ -296,6 +296,10 @@ def _build_field_vocab(field, counter, size_multiple=1, **kwargs):
     all_specials = [
         field.unk_token, field.pad_token, field.init_token, field.eos_token
     ]
+    # @memray
+    if "extra_special_tokens" in kwargs:
+        all_specials.extend(kwargs["extra_special_tokens"])
+        del kwargs["extra_special_tokens"]
     specials = [tok for tok in all_specials if tok is not None]
     field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
     if size_multiple > 1:
@@ -409,6 +413,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
     build_fv_args["tgt"] = dict(
         max_size=tgt_vocab_size, min_freq=tgt_words_min_frequency)
     tgt_multifield = fields["tgt"]
+
     _build_fv_from_multifield(
         tgt_multifield,
         counters,
@@ -427,6 +432,7 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
             logger.info(" * merging src and tgt vocab...")
             src_field = src_multifield.base_field
             tgt_field = tgt_multifield.base_field
+            # special tokens are added here additionally
             _merge_field_vocabs(
                 src_field, tgt_field, vocab_size=src_vocab_size,
                 min_freq=src_words_min_frequency,
@@ -441,8 +447,8 @@ def _merge_field_vocabs(src_field, tgt_field, vocab_size, min_freq,
     # build_vocab with both the src and tgt data?
     specials = [tgt_field.unk_token, tgt_field.pad_token,
                 tgt_field.init_token, tgt_field.eos_token]
-    # TODO added by @memray. Not elegant, but no elegant way
-    specials.append(keyphrase_dataset.SEP_token)
+    # added by @memray, but in a not elegant way
+    specials.extend(extra_special_tokens)
     merged = sum(
         [src_field.vocab.freqs, tgt_field.vocab.freqs], Counter()
     )

@@ -1,17 +1,17 @@
 # Translation / inference options
-#model: models/keyphrase/kp20k/kp20k.one2one.birnn.test_step_40000.pt
+model: models/keyphrase/kp20k/kp20k.one2one.birnn.test_step_40000.pt
 
 # Data options
 data_type: keyphrase
-#src: data/keyphrase/kp20k/kp20k_test_small.meng17.lower.src
-#tgt: data/keyphrase/kp20k/kp20k_test_small.meng17.lower.tgt
+src: data/keyphrase/meng17/kp20k_small/kp20k_small_test.src
+tgt: data/keyphrase/meng17/kp20k_small/kp20k_small_test.tgt
 shard_size: 0
-#output: output/pred/kp20k/kp20k.one2one_step_40000.pred
+output: output/pred/kp20k/kp20k.one2one_step_40000.pred
 
 # Evaluation options
 report_bleu: 'false'
 report_rouge: 'false'
-report_kpeval: 'false'
+report_kpeval: 'true'
 report_time: 'true'
 
 # Options most relevant to summarization.
@@ -28,13 +28,13 @@ max_length: 6
 stepwise_penalty: 'false'
 
 # Logging
-#verbose: 'true'
-#log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
+verbose: 'true'
+log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
 log_file_level: 'DEBUG'
-n_best: 500
+n_best: 100
 
 # Efficiency
-batch_size: 64
+batch_size: 10
 gpu: -1
 
 tgt_type: multiple

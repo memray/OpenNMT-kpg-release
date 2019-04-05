@@ -1,0 +1,19 @@
+data_type: keyphrase
+
+train_src: data/keyphrase/meng17/kp20k/kp20k_train.src
+train_tgt: data/keyphrase/meng17/kp20k/kp20k_train.tgt
+valid_src: data/keyphrase/meng17/kp20k/kp20k_valid.src
+valid_tgt: data/keyphrase/meng17/kp20k/kp20k_valid.tgt
+
+save_data: data/keyphrase/meng17/kp20k
+shard_size: 100000
+dynamic_dict: 'true'
+share_vocab: 'true'
+
+src_seq_length_trunc: 300
+tgt_seq_length_trunc: 8
+lower: 'true'
+filter_valid: 'false'
+
+report_every: 1000
+log_file: data/keyphrase/meng17/preprocess.kp20k.log

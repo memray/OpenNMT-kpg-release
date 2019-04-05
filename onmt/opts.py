@@ -526,7 +526,7 @@ def translate_opts(parser):
     """ Translation / inference options """
     group = parser.add_argument_group('Model')
     group.add('--model', '-model', dest='models', metavar='MODEL',
-              nargs='+', type=str, default=[], required=True,
+              nargs='+', type=str, default=[], #required=True,
               help="Path to model .pt file(s). "
                    "Multiple models can be specified, "
                    "for ensemble decoding.")
@@ -545,7 +545,7 @@ def translate_opts(parser):
     group.add('--data_type', '-data_type', default="text",
               help="Type of the source input. Options: [text|img|keyphrase].")
 
-    group.add('--src', '-src', required=True,
+    group.add('--src', '-src', #required=True,
               help="Source sequence to decode (one line per "
                    "sequence)")
     group.add('--src_dir', '-src_dir', default="",
@@ -569,6 +569,9 @@ def translate_opts(parser):
     group.add('--report_rouge', '-report_rouge', action='store_true',
               help="Report rouge 1/2/3/L/SU4 score after translation "
                    "call tools/test_rouge.py on command line")
+    group.add('--report_kpeval', '-report_kpeval', action='store_true',
+              help="Report keyphrase generation scores after translation "
+                   "call tools/kp_eval.py on command line")
     group.add('--report_time', '-report_time', action='store_true',
               help="Report some translation time metrics")
 
@@ -677,7 +680,7 @@ def translate_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'no_sort', 'random', 'verbatim', 'test'],
+              choices=['one2one', 'no_sort', 'random', 'verbatim', 'multiple'],
               help="""Format of targets for model to learn/output""")
 
 # Copyright 2016 The Chromium Authors. All rights reserved.

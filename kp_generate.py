@@ -12,11 +12,21 @@ import onmt.opts as opts
 from onmt.utils.parse import ArgumentParser
 
 
-def main(opt):
-    ArgumentParser.validate_translate_opts(opt)
-    logger = init_logger(opt.log_file)
+def _get_parser():
+    parser = ArgumentParser(description='kp_generate.py')
 
-    translator = build_translator(opt, report_score=True, logger=logger)
+    opts.config_opts(parser)
+    opts.translate_opts(parser)
+    return parser
+
+
+if __name__ == "__main__":
+    parser = _get_parser()
+
+    opt = parser.parse_args()
+    logger = init_logger(opt.log_file)
+    translator = init_generator(opt, logger)
+
     src_shards = split_corpus(opt.src, opt.shard_size)
     tgt_shards = split_corpus(opt.tgt, opt.shard_size) \
         if opt.tgt is not None else repeat(None)
@@ -32,18 +42,3 @@ def main(opt):
             attn_debug=opt.attn_debug,
             opt=opt
         )
-
-
-def _get_parser():
-    parser = ArgumentParser(description='translate.py')
-
-    opts.config_opts(parser)
-    opts.translate_opts(parser)
-    return parser
-
-
-if __name__ == "__main__":
-    parser = _get_parser()
-
-    opt = parser.parse_args()
-    main(opt)

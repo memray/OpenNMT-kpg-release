@@ -94,6 +94,9 @@ def load_test_model(opt, model_path=None):
         )
     else:
         fields = vocab
+    # @memray, to make tgt_field be aware of format of targets (multiple phrases)
+    if opt.data_type == "keyphrase":
+        fields["tgt"].type = opt.tgt_type
 
     model = build_base_model(model_opt, fields, use_gpu(opt), checkpoint,
                              opt.gpu)

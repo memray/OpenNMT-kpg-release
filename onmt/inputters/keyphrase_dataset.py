@@ -20,6 +20,8 @@ from torchtext.data import Example
 from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
 SEP_token = "<sep>"
+DIGIT_token = "<digit>"
+extra_special_tokens = [SEP_token, DIGIT_token]
 
 class KeyphraseDataset(TorchtextDataset):
     """Contain data and process it.
@@ -170,7 +172,7 @@ class KeyphraseDataReader(DataReaderBase):
 
 
 def process_multiple_tgts(big_batch, tgt_type):
-    assert tgt_type in ['test', 'one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
+    assert tgt_type in ['multiple', 'one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
     np.random.seed(2333)
 
     new_batch = []
@@ -178,8 +180,8 @@ def process_multiple_tgts(big_batch, tgt_type):
         tgt = ex.tgt if hasattr(ex, "tgt") else None
         alignment = ex.alignment if hasattr(ex, "alignment") else None
 
-        # no processing for test phrase
-        if tgt_type != 'test':
+        # no processing for 'multiple' (test phrase)
+        if tgt_type in ['one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']:
             if len(ex.tgt) == 0:
                 continue
 
@@ -267,10 +269,6 @@ def copyseq_tokenize(text):
     # tokenize by non-letters (new-added + # & *, but don't pad spaces, to make them as one whole word)
     tokens = list(filter(lambda w: len(w) > 0, re.split(r'[^a-zA-Z0-9_<>,#&\+\*\(\)\.\'%]', text)))
 
-    # TODO: should be moved out
-    # replace the digit terms with <digit>
-    # tokens = [w if not re.match('^\d+$', w) else DIGIT for w in tokens]
-
     return tokens
 
 
@@ -294,7 +292,11 @@ def _feature_tokenize(
     """
     if lower:
         string = string.lower()
-    tokens = copyseq_tokenize(string)
+
+    # @memray 20190308 to make tokenized results same between src/tgt, changed here back to a simple splitter (whitespace)
+    # move complicated tokenization into pre-preprocess
+    tokens = string.split(tok_delim)
+    # tokens = copyseq_tokenize(string)
     if truncate is not None:
         tokens = tokens[:truncate]
     if feat_delim is not None:
@@ -322,10 +324,26 @@ class KeyphraseField(RawField):
     def __init__(self, base_name, base_field):
         super(KeyphraseField, self).__init__()
         self.fields = [(base_name, base_field)]
+        self.type = None
 
     @property
     def base_field(self):
         return self.fields[0][1]
+
+    def pad_seqs(self, batch, max_seq_num, max_seq_len, pad_token):
+        """
+        batch is a list of seqs (each seq is a list of strings)
+        pad empty seqs to each example in batch, to make them equal number and length
+        :param batch:
+        :param max_seq_num:
+        :param max_seq_len:
+        :param pad_token:
+        :return:
+        """
+        padded = []
+        for ex in batch:
+            padded.append([s[0] for s in ex] + [[pad_token] * max_seq_len] * (max_seq_num-len(ex)))
+        return padded
 
     def process(self, batch, device=None):
         """Convert outputs of preprocess into Tensors.
@@ -344,25 +362,54 @@ class KeyphraseField(RawField):
                 If the base field returns lengths, these are also returned
                 and have shape ``(batch_size,)``.
         """
-        # if batch is lists of "phrases", don't process and numericalize
-        if isinstance(batch[0], list):
-            return batch
-
         # batch (list(list(list))): batch_size x len(self.fields) x seq_len
-        batch_by_feat = list(zip(*batch))
-        base_data = self.base_field.process(batch_by_feat[0], device=device)
-        if self.base_field.include_lengths:
-            # lengths: batch_size
-            base_data, lengths = base_data
+        if self.type and self.type == 'multiple':
+            # print(self.type)
+            # data: a list of phrases (list of words), [batch_size,seq_num,seq_len]
+            batch_size = len(batch)
+            max_seq_num = max([len(tgts) for tgts in batch])
+            max_seq_len = max([len(p[0]) for e in batch for p in e])
+            # make all examples have equal number of tgts, [batch_size, max_seq_num, max_seq_len]
+            padded_data = self.pad_seqs(batch, max_seq_num, max_seq_len, self.base_field.pad_token)
 
-        feats = []
-        levels = [base_data] + feats
-        # data: seq_len x batch_size x len(self.fields)
-        data = torch.stack(levels, 2)
-        if self.base_field.include_lengths:
-            return data, lengths
+            # flatten it to [batch_size*max_seq_num, max_seq_len]
+            batch_by_feat = [seq for e in padded_data for seq in e]
+            # base_data: [max_seq_len, batch_size*max_seq_num]
+            base_data = self.base_field.process(batch_by_feat, device=device)
+            # include_lengths is typically False (KeyphraseField is a target field)
+            if self.base_field.include_lengths:
+                # base_data: [max_seq_len, batch_size], lengths: batch_size
+                base_data, lengths = base_data
+
+            # feature is actually not supported
+            feats = []
+            levels = [base_data] + feats
+            # data: [seq_len, batch_size*max_seq_num, len(self.fields)=1]
+            data = torch.stack(levels, 2)
+            # reshape it back to [seq_len, batch_size, max_seq_num, len(self.fields)=1]
+            data = torch.reshape(data, shape=(-1, batch_size, max_seq_num, 1))
+
+            if self.base_field.include_lengths:
+                return data, lengths
+            else:
+                return data
+
         else:
-            return data
+            # [batch_size, seq_num=1, seq_len] -> [1, batch_size, seq_len]
+            batch_by_feat = list(zip(*batch))
+            base_data = self.base_field.process(batch_by_feat[0], device=device)
+            if self.base_field.include_lengths:
+                # base_data: [max_seq_len, batch_size], lengths: batch_size
+                base_data, lengths = base_data
+
+            feats = []
+            levels = [base_data] + feats
+            # data: seq_len x batch_size x len(self.fields) (usually only words, so num_feat=1)
+            data = torch.stack(levels, 2)
+            if self.base_field.include_lengths:
+                return data, lengths
+            else:
+                return data
 
     def preprocess(self, x):
         """Preprocess data.
@@ -386,7 +433,7 @@ class KeyphraseField(RawField):
 
 
 def keyphrase_fields(**kwargs):
-    """Create text fields.
+    """Create keyphrase fields.
 
     Args:
         base_name (str): Name associated with the field.
@@ -407,6 +454,7 @@ def keyphrase_fields(**kwargs):
     pad = kwargs.get("pad", "<blank>")
     bos = kwargs.get("bos", "<s>")
     eos = kwargs.get("eos", "</s>")
+    # manually added in create_vocab()
     # sep = kwargs.get("sep", "<sep>")
     truncate = kwargs.get("truncate", None)
     lower = kwargs.get("lower", None)

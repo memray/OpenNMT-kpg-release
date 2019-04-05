@@ -3,7 +3,7 @@ model_type: keyphrase
 tgt_type: no_sort
 
 #data: data/keyphrase/kp20k/kp20k.one2one
-data: data/keyphrase/kp20k/kp20k.one2many.small
+data: data/keyphrase/kp20k/kp20k.one2many.small.meng17
 save_model: models/kp20k/kp20k.one2one.transformer
 save_checkpoint_steps: 10000
 keep_checkpoint: 10
