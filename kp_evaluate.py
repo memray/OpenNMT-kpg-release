@@ -127,9 +127,13 @@ def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=Tru
            np.asarray(duplicate_flags)
 
 
-def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False):
+def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False, report_path=None):
     # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
 
+    if report_path:
+        report_file = open(report_path, 'w+')
+    else:
+        report_file = None
     # 'k' means the number of phrases in ground-truth
     topk_range = [5, 10, 'k']
     absent_topk_range = [10, 30, 50]
@@ -307,6 +311,9 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             else:
                 print(print_out)
 
+        if report_file:
+            report_file.write(print_out)
+
         # add phrase count for computing average performance on non-empty items
         results_names = ['present_num', 'absent_num']
         results_list = [{'present_num': len(present_tgts)}, {'absent_num': len(absent_tgts)}]
@@ -314,6 +321,9 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
 
     # for k, v in score_dict.items():
     #     print('%s, num=%d, mean=%f' % (k, len(v), np.average(v)))
+
+    if report_file:
+        report_file.close()
 
     return score_dict
 
@@ -543,14 +553,14 @@ def kp_results_to_str(results_dict):
     return json.dumps(summary_dict)
 
 
-def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None):
+def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None, report_path=None):
     src_data = [json.loads(l) for l in open(src_path, "r")]
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
-    preds = [json.loads(l) for l in open(pred_path, "r")]
+    pred_data = [json.loads(l) for l in open(pred_path, "r")]
 
-    assert len(preds) == len(src_data) == len(tgt_data)
+    assert len(pred_data) == len(src_data) == len(tgt_data)
 
-    results_dict = evaluate(src_data, tgt_data, preds, unk_token=unk_token, logger=logger, verbose=verbose)
+    results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path)
 
     return results_dict
 

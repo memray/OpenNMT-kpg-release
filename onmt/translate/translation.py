@@ -182,11 +182,18 @@ class Translation(object):
         :return:
         """
         ret = {slot: getattr(self, slot) for slot in self.__slots__}
-        ret['src'] = ret['src'].numpy().tolist()
-        ret['pred_scores'] = [t.numpy().tolist() for t in ret['pred_scores']]
-        ret['preds'] = [t.numpy().tolist() for t in ret['preds']]
-        if self.copied_flags:
-            ret['copied_flags'] = [t.numpy().tolist() for t in ret['copied_flags']]
+        if torch.cuda.is_available():
+            ret['src'] = ret['src'].cpu().numpy().tolist()
+            ret['pred_scores'] = [t.cpu().numpy().tolist() for t in ret['pred_scores']]
+            ret['preds'] = [t.cpu().numpy().tolist() for t in ret['preds']]
+            if self.copied_flags:
+                ret['copied_flags'] = [t.cpu().numpy().tolist() for t in ret['copied_flags']]
+        else:
+            ret['src'] = ret['src'].numpy().tolist()
+            ret['pred_scores'] = [t.numpy().tolist() for t in ret['pred_scores']]
+            ret['preds'] = [t.numpy().tolist() for t in ret['preds']]
+            if self.copied_flags:
+                ret['copied_flags'] = [t.numpy().tolist() for t in ret['copied_flags']]
 
         return ret
 
@@ -211,7 +218,8 @@ class Translation(object):
         if len(self.pred_sents) > 1:
             msg.append('\nBEST HYP:\n')
             for t_id, (score, sent, pred, copied_flag) in enumerate(zip(self.pred_scores, self.pred_sents, self.preds, self.copied_flags)):
-                msg.append("[{}][{:.4f}] {} {} {}\n".format(t_id + 1, score, sent, pred.numpy().tolist(), '[Copy!]' if any(copied_flag) else ''))
+                tmp_pred = pred.cpu().numpy().tolist() if torch.cuda.is_available() else pred.numpy().tolist()
+                msg.append("[{}][{:.4f}] {} {} {}\n".format(t_id + 1, score, sent, tmp_pred, '[Copy!]' if any(copied_flag) else ''))
 
         return "".join(msg)
 
