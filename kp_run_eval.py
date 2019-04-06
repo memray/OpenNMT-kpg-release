@@ -157,8 +157,8 @@ if __name__ == "__main__":
                         translator = build_translator(opt, report_score=opt.verbose, logger=logger)
 
                     logger.info("Start translating %s." % dataname)
-                    # set output_file here for each dataset
-                    translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                    # set output_file for each dataset, store path here and open it when used
+                    translator.out_file = pred_path
                     _, _ = translator.translate(
                         src=src_shard,
                         tgt=tgt_shard,

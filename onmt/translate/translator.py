@@ -417,8 +417,9 @@ class Translator(object):
 
         # don't output until the end, because it's easier to handle interrupted eval results
         if self.data_type == "keyphrase":
-            for trans in all_trans:
-                self.out_file.write(json.dumps(trans.__dict__()) + '\n')
+            with codecs.open(self.out_file, 'w+', 'utf-8') as out_file:
+                for trans in all_trans:
+                    out_file.write(json.dumps(trans.__dict__()) + '\n')
 
         if self.report_score:
             msg = self._report_score('PRED', pred_score_total,
