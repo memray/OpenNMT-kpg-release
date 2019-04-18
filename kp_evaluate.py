@@ -12,6 +12,8 @@ from nltk.stem.porter import *
 import numpy as np
 from collections import Counter
 
+import pandas as pd
+
 import os
 
 from torch.autograd import Variable
@@ -137,7 +139,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     # 'k' means the number of phrases in ground-truth
     topk_range = [5, 10, 'k']
     absent_topk_range = [10, 30, 50]
-    metric_names = ['precision', 'recall', 'f_score']
+    metric_names = ['correct', 'precision', 'recall', 'f_score']
 
     score_dict = {}  # {'precision@5':[],'recall@5':[],'f1score@5':[], 'precision@10':[],'recall@10':[],'f1score@10':[]}
 
@@ -145,11 +147,13 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     process each example in current batch
     '''
     for i, (src_dict, tgt_dict, pred_dict) in enumerate(zip(src_list, tgt_list, pred_list)):
-        src_seq = pred_dict["src_raw"]
+        src_seq = src_dict["src"].split()
         tgt_seqs =[t.split() for t in tgt_dict["tgt"]]
         pred_sents = pred_dict["pred_sents"]
-        pred_idxs = pred_dict["preds"]
-        pred_scores = pred_dict["pred_scores"]
+        pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
+        pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
+        copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
+
         # src, src_str, tgt, tgt_str_seqs, tgt_copy, pred_seq, oov
         print_out = '======================  %d =========================' % (i)
         print_out += '\n[Title]: %s \n' % (src_dict["title"])
@@ -180,24 +184,26 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
         match_scores_mixed = get_match_result(true_seqs=tgt_seqs, pred_seqs=pred_sents, type='mixed')
 
         # sanity check of pred
-        num_pred = len(pred_dict["preds"])
+        num_pred = len(pred_dict["pred_sents"])
         for d in [pred_idxs, pred_sents, pred_scores,
                   match_scores_exact, valid_pred_flags,
-                  present_pred_flags, pred_dict["copied_flags"]]:
-            assert len(d) == num_pred
+                  present_pred_flags, copied_flags]:
+            if d is not None:
+                assert len(d) == num_pred
 
         '''
         Print and export predictions
         '''
         preds_out = ''
-        for p_id, (pred_idx, word, score,
-                   match, match_soft,
-                   is_valid, is_present, copied_flag) in enumerate(
-                zip(pred_idxs, pred_sents, pred_scores,
-                    match_scores_exact, match_scores_partial,
-                    valid_pred_flags, present_pred_flags, pred_dict["copied_flags"])):
+        for p_id, (word, match, match_soft,
+                   is_valid, is_present) in enumerate(
+                zip(pred_sents, match_scores_exact, match_scores_partial,
+                    valid_pred_flags, present_pred_flags)):
             # if p_id > 5:
             #     break
+            score = pred_scores[p_id] if pred_scores else "Score N/A"
+            pred_idx = pred_idxs[p_id] if pred_idxs else "Index N/A"
+            copied_flag = copied_flags[p_id] if copied_flags else "CopyFlag N/A"
 
             preds_out += '%s\n' % (' '.join(word))
             if is_present:
@@ -215,7 +221,9 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             else:
                 copy_str = ''
 
-            pred_str = '\t\t[%.4f]\t%s \t %s %s%s\n' % (-score, print_phrase, str(pred_idx), correct_str, copy_str)
+            pred_str = '\t\t%s\t%s \t %s %s%s\n' % ('[%.4f]' % (-score) if pred_scores else "Score N/A",
+                                                    print_phrase, str(pred_idx),
+                                                    correct_str, copy_str)
             if not is_valid:
                 pred_str = '\t%s' % pred_str
 
@@ -264,7 +272,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             for result_name, result_dict in zip(results_names, results_dicts):
                 for metric_name, score in result_dict.items():
                     if metric_name.endswith('_num'):
-                        # if it's 'present_num' or 'absent_num', leave as is
+                        # if it's 'present_tgt_num' or 'absent_tgt_num', leave as is
                         field_name = result_name
                     else:
                         # if it's other score like 'precision@5' is renamed to like 'present_exact_precision@'
@@ -294,14 +302,16 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             else:
                 topk = 50
 
-            print_out += "\n --- batch {} P/R/F1 @{}: \t".format(name, topk) \
-                         + " {:.4f} , {:.4f} , {:.4f}".format(resutls['precision@{}'.format(topk)],
+            print_out += "\n --- batch {} P/R/F1/Corr @{}: \t".format(name, topk) \
+                         + " {:.4f} , {:.4f} , {:.4f} , {:2f}".format(resutls['precision@{}'.format(topk)],
                                                            resutls['recall@{}'.format(topk)],
-                                                           resutls['f_score@{}'.format(topk)])
-            print_out += "\n --- total {} P/R/F1 @{}: \t".format(name, topk) \
-                         + " {:.4f} , {:.4f} , {:.4f}".format(np.average(score_dict['{}_precision@{}'.format(name, topk)]),
+                                                           resutls['f_score@{}'.format(topk)],
+                                                           resutls['correct@{}'.format(topk)])
+            print_out += "\n --- total {} P/R/F1/Corr @{}: \t".format(name, topk) \
+                         + " {:.4f} , {:.4f} , {:.4f} , {:2f}".format(np.average(score_dict['{}_precision@{}'.format(name, topk)]),
                                                            np.average(score_dict['{}_recall@{}'.format(name, topk)]),
-                                                           np.average(score_dict['{}_f_score@{}'.format(name, topk)]))
+                                                           np.average(score_dict['{}_f_score@{}'.format(name, topk)]),
+                                                           np.sum(score_dict['{}_correct@{}'.format(name, topk)]))
 
         print_out += "\n ======================================================="
 
@@ -314,13 +324,15 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
         if report_file:
             report_file.write(print_out)
 
-        # add phrase count for computing average performance on non-empty items
-        results_names = ['present_num', 'absent_num']
-        results_list = [{'present_num': len(present_tgts)}, {'absent_num': len(absent_tgts)}]
+        # add tgt/pred count for computing average performance on non-empty items
+        results_names = ['present_tgt_num', 'absent_tgt_num']
+        results_list = [{'present_tgt_num': len(present_tgts)},
+                        {'absent_tgt_num': len(absent_tgts)},
+                        ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
-    # for k, v in score_dict.items():
-    #     print('%s, num=%d, mean=%f' % (k, len(v), np.average(v)))
+    for k, v in score_dict.items():
+        print('%s, num=%d, mean=%f' % (k, len(v), np.average(v)))
 
     if report_file:
         report_file.close()
@@ -430,8 +442,8 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
     """
     score_dict = {}
     if len(tgt_list) == 0:
-        for score_name in score_names:
-            for topk in topk_range:
+        for topk in topk_range:
+            for score_name in score_names:
                 score_dict['{}@{}'.format(score_name, topk)] = 0.0
         return score_dict
 
@@ -468,6 +480,7 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
             '''
 
         # Micro-Averaged Method
+        correct_num = int(sum(match_list_k))
         micro_pk = float(sum(match_list_k)) / float(len(pred_list_k)) if len(pred_list_k) > 0 else 0.0
         micro_rk = float(sum(match_list_k)) / float(len(tgt_list)) if len(tgt_list) > 0 else 0.0
 
@@ -476,7 +489,7 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
         else:
             micro_f1 = 0.0
 
-        for score_name, v in zip(score_names, [micro_pk, micro_rk, micro_f1]):
+        for score_name, v in zip(score_names, [correct_num, micro_pk, micro_rk, micro_f1]):
             score_dict['{}@{}'.format(score_name, topk)] = v
 
     return score_dict
@@ -515,28 +528,6 @@ def self_redundancy(_input):
     return res
 
 
-def init_opt():
-
-    parser = argparse.ArgumentParser()
-    # Input/output options
-    parser.add_argument('--src', '-src', required=True,
-                        help="Source file of groundtruth data.")
-    parser.add_argument('--tgt', '-tgt', required=True,
-                        help="Target file of groundtruth data.")
-    parser.add_argument('--pred', '-pred', required=True,
-                        help="File of predicted keyphrases, each line is a JSON dict.")
-    parser.add_argument('--output_dir', '-output_dir',
-                        help="Path to output log/results.")
-    parser.add_argument('--unk_token', '-unk_token', default="<unk>",
-                        help=".")
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help=".")
-
-    opt = parser.parse_args()
-
-    return opt
-
-
 def kp_results_to_str(results_dict):
     """
     return ">> ROUGE(1/2/3/L/SU4): {:.2f}/{:.2f}/{:.2f}/{:.2f}/{:.2f}".format(
@@ -565,10 +556,135 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
     return results_dict
 
 
+def summarize_scores(ckpt_name, score_dict):
+    avg_dict = {}
+    avg_dict['checkpoint_name'] = ckpt_name
+    # doc stat
+    avg_dict['#doc'] = len(score_dict['present_tgt_num'])
+    avg_dict['#present_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
+    avg_dict['#absent_doc'] = len([x for x in score_dict['absent_tgt_num'] if x > 0])
+
+    # tgt stat
+    avg_dict['#tgt'] = sum(score_dict['present_tgt_num'])
+    avg_dict['#present_tgt'] = sum([x for x in score_dict['present_tgt_num'] if x > 0])
+    avg_dict['#absent_tgt'] = sum([x for x in score_dict['absent_tgt_num'] if x > 0])
+
+
+    present_num = score_dict['present_tgt_num']
+    absent_num = score_dict['absent_tgt_num']
+    del score_dict['present_tgt_num'], score_dict['absent_tgt_num']
+
+    for score_name, score_list in score_dict.items():
+        # number of correct phrases
+        if score_name.find('correct') > 0:
+            # only keep exact results (partial count is trivial)
+            if score_name.find('exact') > 0:
+                avg_dict[score_name] = np.sum(score_list)
+            continue
+
+        # various scores (precision, recall, f-score)
+        if score_name.startswith('present'):
+            tmp_scores = [score for score, num in zip(score_list, present_num) if num > 0]
+            avg_dict[score_name] = np.average(tmp_scores)
+        elif score_name.startswith('absent'):
+            tmp_scores = [score for score, num in zip(score_list, absent_num) if num > 0]
+            avg_dict[score_name] = np.average(tmp_scores)
+        else:
+            raise NotImplementedError
+
+    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()
+
+    return summary_df
+
+
+def export_summary_to_csv(json_root_dir, output_csv_path):
+    dataset_scores_dict = {}
+
+    for subdir, dirs, files in os.walk(json_root_dir):
+        for file in files:
+            if not file.endswith('.json'):
+                continue
+
+            file_name = file[: file.find('.json')]
+            ckpt_name = file_name[: file.rfind('-')]
+            dataset_name = file_name[file.rfind('-')+1: ]
+            # key is dataset name, value is a dict whose key is metric name and value is a list of floats
+            score_dict = json.load(open(os.path.join(subdir, file), 'r'))
+            # ignore scores where no tgts available and return the average
+            score_df = summarize_scores(ckpt_name, score_dict)
+
+            if dataset_name in dataset_scores_dict:
+                dataset_scores_dict[dataset_name] = dataset_scores_dict[dataset_name].append(score_df)
+            else:
+                dataset_scores_dict[dataset_name] = score_df
+
+    for dataset, score_df in dataset_scores_dict.items():
+        print("Writing summary to: %s" % output_csv_path % dataset)
+        score_df.to_csv(output_csv_path % dataset)
+
+
+def init_opt():
+
+    parser = argparse.ArgumentParser()
+    # Input/output options
+    parser.add_argument('--data', '-data', required=True,
+                        help="Path to the source/target file of groundtruth data.")
+    parser.add_argument('--pred', '-pred', required=True,
+                        help="File of predicted keyphrases, each line is a JSON dict.")
+    parser.add_argument('--output_dir', '-output_dir',
+                        help="Path to output log/results.")
+    parser.add_argument('--unk_token', '-unk_token', default="<unk>",
+                        help=".")
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help=".")
+    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
+    # parser.add_argument('-testsets', nargs='+', type=str, default=["duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
+
+    opt = parser.parse_args()
+
+    return opt
+
+
 if __name__ == '__main__':
     opt = init_opt()
-    logger = init_logger(opt.pred + ".eval.log")
+    score_dicts = {}
 
-    results_dict = keyphrase_eval(opt, logger)
+    for dataname in opt.testsets:
+        src_path = os.path.join(opt.data, dataname, "%s_test.src" % dataname)
+        tgt_path = os.path.join(opt.data, dataname, "%s_test.tgt" % dataname)
+        pred_path = os.path.join(opt.pred, "%s.pred" % dataname)
 
-    logger.info(kp_results_to_str(results_dict))
+        ckpt_name = opt.pred[opt.pred.find('pred/') + 5: ].strip(string.punctuation)
+
+        if not os.path.exists(opt.output_dir):
+            os.makedirs(opt.output_dir)
+        if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
+            os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
+        if not os.path.exists(os.path.join(opt.output_dir, 'eval')):
+            os.makedirs(os.path.join(opt.output_dir, 'eval'))
+
+        logger = init_logger(opt.output_dir + "kp_evaluate.%s.eval.log" % dataname)
+        report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
+        score_path = os.path.join(opt.output_dir, 'eval', ckpt_name + '-%s.json' % dataname)
+
+        logger.info("Evaluating %s" % dataname)
+
+        if not os.path.exists(score_path):
+            score_dict = keyphrase_eval(src_path=src_path,
+                                          tgt_path=tgt_path,
+                                          pred_path=pred_path,
+                                          unk_token = '<unk>',
+                                          verbose = opt.verbose,
+                                          logger = logger,
+                                          report_path = report_path)
+            logger.info(kp_results_to_str(score_dict))
+
+            with open(score_path, 'w') as output_json:
+                output_json.write(json.dumps(score_dict))
+
+            score_dicts[dataname] = score_dict
+
+    export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'),
+                          output_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+
+    logger.info("Done!")

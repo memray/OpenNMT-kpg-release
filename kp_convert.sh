@@ -4,8 +4,9 @@ TOKENIZER="meng17"
 OUTPUT_DIR="data/keyphrase/$TOKENIZER"
 
 declare -a train_sets=("kp20k" "magkp" "kp20k_small")
-declare -a valid_sets=("kp20k" "duc" "inspec" "krapivin" "nus" "semeval")
-declare -a test_sets=("kp20k" "kp20k_small" "duc" "inspec" "krapivin" "nus" "semeval")
+declare -a valid_sets=("kp20k" "inspec" "krapivin" "semeval")
+declare -a test_sets=("kp20k" "kp20k_valid2k" "kp20k_small" "duc" "inspec" "krapivin" "nus" "semeval")
+#declare -a test_sets=("kp20k_valid2k")
 
 train_param="-filter -max_src_seq_length 1000 -min_src_seq_length 10 -max_tgt_seq_length 8 -min_src_seq_length 1 -lower -shuffle -tokenizer $TOKENIZER -replace_digit"
 valid_param="-lower -include_original -tokenizer $TOKENIZER -replace_digit"

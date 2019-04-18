@@ -22,7 +22,7 @@ from onmt.modules.copy_generator import collapse_copy_scores
 
 
 def build_translator(opt, report_score=True, logger=None, out_file=None):
-    if out_file is None:
+    if out_file is None and opt.data_type != 'keyphrase':
         out_file = codecs.open(opt.output, 'w+', 'utf-8')
 
     load_test_model = onmt.decoders.ensemble.load_test_model \

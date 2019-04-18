@@ -19,8 +19,8 @@ report_time: 'true'
 share_vocab: 'true'
 
 # Beam search
-beam_size: 32
-#beam_size: 200
+#beam_size: 32
+beam_size: 200
 min_length: 1
 max_length: 6
 

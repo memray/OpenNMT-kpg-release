@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import codecs
 import json
+import shutil
 
 from onmt.translate.translator import build_translator
 from onmt.utils.parse import ArgumentParser
@@ -49,57 +50,6 @@ def _get_parser():
     return parser
 
 
-def summarize_scores(ckpt_name, score_dict):
-    avg_dict = {}
-    avg_dict['checkpoint_name'] = ckpt_name
-    avg_dict['total_num'] = len(score_dict['present_num'])
-    avg_dict['present_num'] = len([x for x in score_dict['present_num'] if x > 0])
-    avg_dict['absent_num'] = len([x for x in score_dict['absent_num'] if x > 0])
-    present_num = score_dict['present_num']
-    absent_num = score_dict['absent_num']
-    del score_dict['present_num'], score_dict['absent_num']
-
-    for score_name, score_list in score_dict.items():
-        if score_name.startswith('present'):
-            tmp_scores = [score for score, num in zip(score_list, present_num) if num > 0]
-            avg_dict[score_name] = np.average(tmp_scores)
-        elif score_name.startswith('absent'):
-            tmp_scores = [score for score, num in zip(score_list, absent_num) if num > 0]
-            avg_dict[score_name] = np.average(tmp_scores)
-        else:
-            raise NotImplementedError
-
-    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()
-
-    return summary_df
-
-
-def export_summary_to_csv(json_root_dir, output_csv_path):
-    dataset_scores_dict = {}
-
-    for subdir, dirs, files in os.walk(json_root_dir):
-        for file in files:
-            if not file.endswith('.json'):
-                continue
-
-            file_name = file[: file.find('.json')]
-            ckpt_name = file_name[: file.rfind('-')]
-            dataset_name = file_name[file.rfind('-')+1: ]
-            # key is dataset name, value is a dict whose key is metric name and value is a list of floats
-            score_dict = json.load(open(os.path.join(subdir, file), 'r'))
-            # ignore scores where no tgts available and return the average
-            score_df = summarize_scores(ckpt_name, score_dict)
-
-            if dataset_name in dataset_scores_dict:
-                dataset_scores_dict[dataset_name] = dataset_scores_dict[dataset_name].append(score_df)
-            else:
-                dataset_scores_dict[dataset_name] = score_df
-
-    for dataset, score_df in dataset_scores_dict.items():
-        print("Writing summary to: %s" % output_csv_path % dataset)
-        score_df.to_csv(output_csv_path % dataset)
-
-
 if __name__ == "__main__":
     parser = _get_parser()
 
@@ -117,8 +67,11 @@ if __name__ == "__main__":
         os.makedirs(os.path.join(opt.output_dir, 'eval'))
     if not os.path.exists(os.path.join(opt.output_dir, 'pred')):
         os.makedirs(os.path.join(opt.output_dir, 'pred'))
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
     logger = init_logger(opt.output_dir + 'autoeval_%s.log' % current_time)
+
+    shutil.copy2(opt.config, opt.output_dir)
+    logger.info(opt)
 
     testset_path_dict = {}
     for testset in opt.testsets:
@@ -129,8 +82,8 @@ if __name__ == "__main__":
                                       opt.data_dir + '/%s/%s_test.tgt' % (testset, testset),
                                       src_shard, tgt_shard)
 
-    if True:
-    # while True:
+    # if True:
+    while True:
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
         # print(new_ckpts.items())
         # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
@@ -168,19 +121,18 @@ if __name__ == "__main__":
                         opt=opt
                     )
 
-                if not os.path.exists(score_path):
-                    logger.info("Start evaluating generated results of %s" % ckpt_name)
-                    score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
-                                                            pred_path=pred_path, logger=logger,
-                                                            verbose=opt.verbose,
-                                                            report_path=report_path)
-                    score_dicts[dataname] = score_dict
+                # if not os.path.exists(score_path):
+                logger.info("Start evaluating generated results of %s" % ckpt_name)
+                score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
+                                                        pred_path=pred_path, logger=logger,
+                                                        verbose=opt.verbose,
+                                                        report_path=report_path)
+                score_dicts[dataname] = score_dict
 
-                # print(score_dict)
-                    with open(score_path, 'w') as output_json:
-                        output_json.write(json.dumps(score_dict))
+                with open(score_path, 'w') as output_json:
+                    output_json.write(json.dumps(score_dict))
 
-        export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
+        kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
 
         # scan again for every 5min
         sleep_time = 600

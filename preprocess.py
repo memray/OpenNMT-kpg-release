@@ -5,6 +5,8 @@
 """
 import codecs
 import glob
+import os
+import shutil
 import sys
 import gc
 import torch
@@ -38,6 +40,7 @@ def build_save_dataset(corpus_type, fields, src_reader, tgt_reader, opt):
         src = opt.valid_src
         tgt = opt.valid_tgt
 
+    logger.info(opt)
     logger.info("Reading source and target files: %s %s." % (src, tgt))
 
     src_shards = split_corpus(src, opt.shard_size)
@@ -108,6 +111,9 @@ def main(opt):
     check_existing_pt_files(opt)
 
     init_logger(opt.log_file)
+
+    shutil.copy2(opt.config, os.path.dirname(opt.log_file))
+    logger.info(opt)
     logger.info("Extracting features...")
 
     src_nfeats = count_features(opt.train_src) if opt.data_type == 'text' \
