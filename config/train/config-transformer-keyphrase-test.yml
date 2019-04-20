@@ -7,9 +7,9 @@ seed: 3435
 
 encoder_type: transformer
 decoder_type: transformer
-#word_vec_size: 512
-#rnn_size: 512
-#layers: 4
+word_vec_size: 512
+rnn_size: 512
+layers: 4
 
 position_encoding: true
 
@@ -44,10 +44,10 @@ param_init_glorot: 'true'
 log_file_level: DEBUG
 tensorboard: 'true'
 
-#exp: kp20k-one2one-transformer-Layer4-Dim512-Emb512-Dropout0.2
-#save_model: models/kp20k/kp20k.one2one.transformer
-#log_file: output/kp20k.one2one.transformer.log
-#tensorboard_log_dir: runs/kp20k.one2one.transformer/
+exp: kp20k-one2one-transformer-Layer4-Dim512-Emb512-Dropout0.2
+save_model: models/kp20k/kp20k.one2one.transformer
+log_file: output/kp20k.one2one.transformer.log
+tensorboard_log_dir: runs/kp20k.one2one.transformer/
 
 world_size: 2
 gpu_ranks:

@@ -11,19 +11,13 @@ from onmt.utils.logging import logger
 from onmt.train_single import main as single_main
 from onmt.utils.parse import ArgumentParser
 
-import shutil
-
 def main(opt):
     ArgumentParser.validate_train_opts(opt)
     ArgumentParser.update_model_opts(opt)
     ArgumentParser.validate_model_opts(opt)
 
     nb_gpu = len(opt.gpu_ranks)
-
-    # save training settings
-    shutil.copy2(opt.config, os.path.dirname(opt.log_file))
-    print(opt)
-    logger.info(opt)
+    print(os.environ['PATH'])
 
     if opt.world_size > 1:
         mp = torch.multiprocessing.get_context('spawn')

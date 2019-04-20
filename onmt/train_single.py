@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Training on a single process."""
 import os
+import shutil
 
 import torch
 
@@ -44,6 +45,11 @@ def main(opt, device_id):
     # at this point.
     configure_process(opt, device_id)
     init_logger(opt.log_file)
+
+    # save training settings
+    shutil.copy2(opt.config, os.path.dirname(opt.log_file))
+    logger.info(vars(opt))
+
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
         logger.info('Loading checkpoint from %s' % opt.train_from)
