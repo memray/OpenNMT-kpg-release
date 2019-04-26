@@ -99,6 +99,7 @@ class Translator(object):
             n_best=1,
             min_length=0,
             max_length=100,
+            ratio=0.,
             beam_size=30,
             random_sampling_topk=1,
             random_sampling_temp=1,
@@ -107,6 +108,7 @@ class Translator(object):
             block_ngram_repeat=0,
             ignore_when_blocking=frozenset(),
             replace_unk=False,
+            phrase_table="",
             data_type="text",
             verbose=False,
             report_bleu=False,
@@ -144,6 +146,7 @@ class Translator(object):
         self.sample_from_topk = random_sampling_topk
 
         self.min_length = min_length
+        self.ratio = ratio
         self.stepwise_penalty = stepwise_penalty
         self.dump_beam = dump_beam
         self.block_ngram_repeat = block_ngram_repeat
@@ -156,6 +159,7 @@ class Translator(object):
         if self.replace_unk and not self.model.decoder.attentional:
             raise ValueError(
                 "replace_unk requires an attentional decoder.")
+        self.phrase_table = phrase_table
         self.data_type = data_type
         self.verbose = verbose
         self.report_bleu = report_bleu
@@ -191,7 +195,6 @@ class Translator(object):
                 "log_probs": []}
 
         set_random_seed(seed, self._use_cuda)
-
 
     @classmethod
     def from_opt(
@@ -237,6 +240,7 @@ class Translator(object):
             n_best=opt.n_best,
             min_length=opt.min_length,
             max_length=opt.max_length,
+            ratio=opt.ratio,
             beam_size=opt.beam_size,
             random_sampling_topk=opt.random_sampling_topk,
             random_sampling_temp=opt.random_sampling_temp,
@@ -245,6 +249,7 @@ class Translator(object):
             block_ngram_repeat=opt.block_ngram_repeat,
             ignore_when_blocking=set(opt.ignore_when_blocking),
             replace_unk=opt.replace_unk,
+            phrase_table=opt.phrase_table,
             data_type=opt.data_type,
             verbose=opt.verbose,
             report_bleu=opt.report_bleu,
@@ -288,6 +293,7 @@ class Translator(object):
             src_dir=None,
             batch_size=None,
             attn_debug=False,
+            phrase_table="",
             opt=None
     ):
         """Translate content of ``src`` and get gold scores from ``tgt``.
@@ -337,7 +343,8 @@ class Translator(object):
         )
 
         xlation_builder = onmt.translate.TranslationBuilder(
-            data, self.fields, self.n_best, self.replace_unk, tgt
+            data, self.fields, self.n_best, self.replace_unk, tgt,
+            self.phrase_table
         )
         # Statistics
         counter = count(1)
@@ -411,7 +418,10 @@ class Translator(object):
                             "{:*>10.7f} ", "{:>10.7f} ", max_index)
                         output += row_format.format(word, *row) + '\n'
                         row_format = "{:>10.10} " + "{:>10.7f} " * len(srcs)
-                    os.write(1, output.encode('utf-8'))
+                    if self.logger:
+                        self.logger.info(output)
+                    else:
+                        os.write(1, output.encode('utf-8'))
 
         end_time = time.time()
 
@@ -444,7 +454,6 @@ class Translator(object):
                 pred_words_total / total_time))
 
         if self.dump_beam:
-            print('dump_beam')
             json.dump(self.translator.beam_accum,
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
 
@@ -561,6 +570,7 @@ class Translator(object):
                     src_vocabs,
                     self.max_length,
                     min_length=self.min_length,
+                    ratio=self.ratio,
                     n_best=self.n_best,
                     return_attention=attn_debug or self.replace_unk)
 
@@ -655,6 +665,7 @@ class Translator(object):
             src_vocabs,
             max_length,
             min_length=0,
+            ratio=0.,
             n_best=1,
             return_attention=False):
         # TODO: support these blacklisted features.
@@ -703,6 +714,7 @@ class Translator(object):
             eos=self._tgt_eos_idx,
             bos=self._tgt_bos_idx,
             min_length=min_length,
+            ratio=ratio,
             max_length=max_length,
             mb_device=mb_device,
             return_attention=return_attention,

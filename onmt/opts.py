@@ -219,6 +219,8 @@ def preprocess_opts(parser):
     # Dictionary options, for text corpus
 
     group = parser.add_argument_group('Vocab')
+    # if you want to pass an existing vocab.pt file, pass it to
+    # -src_vocab alone as it already contains tgt vocab.
     group.add('--src_vocab', '-src_vocab', default="",
               help="Path to an existing source vocabulary. Format: "
                    "one word per line.")
@@ -383,11 +385,14 @@ def train_opts(parser):
     group.add('--normalization', '-normalization', default='sents',
               choices=["sents", "tokens"],
               help='Normalization method of the gradient.')
-    group.add('--accum_count', '-accum_count', type=int, default=1,
+    group.add('--accum_count', '-accum_count', type=int, nargs='+',
+              default=[1],
               help="Accumulate gradient this many times. "
                    "Approximately equivalent to updating "
                    "batch_size * accum_count batches at once. "
                    "Recommended for Transformer.")
+    group.add('--accum_steps', '-accum_steps', type=int, nargs='+',
+              default=[0], help="Steps at which accum_count values change")
     group.add('--valid_steps', '-valid_steps', type=int, default=10000,
               help='Perfom validation every X steps')
     group.add('--valid_batch_size', '-valid_batch_size', type=int, default=32,
@@ -403,6 +408,11 @@ def train_opts(parser):
               help="Make a single pass over the training dataset.")
     group.add('--epochs', '-epochs', type=int, default=0,
               help='Deprecated epochs see train_steps')
+    group.add('--early_stopping', '-early_stopping', type=int, default=0,
+              help='Number of validation steps without improving.')
+    group.add('--early_stopping_criteria', '-early_stopping_criteria',
+              nargs="*", default=None,
+              help='Criteria to use for early stopping.')
     group.add('--optim', '-optim', default='sgd',
               choices=['sgd', 'adagrad', 'adadelta', 'adam',
                        'sparseadam', 'adafactor', 'fusedadam'],
@@ -477,7 +487,7 @@ def train_opts(parser):
               help="Decay every decay_steps")
 
     group.add('--decay_method', '-decay_method', type=str, default="none",
-              choices=['noam', 'rsqrt', 'none'],
+              choices=['noam', 'noamwd', 'rsqrt', 'none'],
               help="Use a custom decay rate.")
     group.add('--warmup_steps', '-warmup_steps', type=int, default=4000,
               help="Number of warmup steps for custom decay.")
@@ -614,6 +624,8 @@ def translate_opts(parser):
     group.add('--length_penalty', '-length_penalty', default='none',
               choices=['none', 'wu', 'avg'],
               help="Length Penalty to use.")
+    group.add('--ratio', '-ratio', type=float, default=-0.,
+              help="Ratio based beam stop condition")
     group.add('--coverage_penalty', '-coverage_penalty', default='none',
               choices=['none', 'wu', 'summary'],
               help="Coverage Penalty to use.")
@@ -632,12 +644,17 @@ def translate_opts(parser):
     group.add('--replace_unk', '-replace_unk', action="store_true",
               help="Replace the generated UNK tokens with the "
                    "source token that had highest attention weight. If "
-                   "phrase_table is provided, it will lookup the "
+                   "phrase_table is provided, it will look up the "
                    "identified source token and give the corresponding "
-                   "target token. If it is not provided(or the identified "
-                   "source token does not exist in the table) then it "
-                   "will copy the source token")
-
+                   "target token. If it is not provided (or the identified "
+                   "source token does not exist in the table), then it "
+                   "will copy the source token.")
+    group.add('--phrase_table', '-phrase_table', type=str, default="",
+              help="If phrase_table is provided (with replace_unk), it will "
+                   "look up the identified source token and give the "
+                   "corresponding target token. If it is not provided "
+                   "(or the identified source token does not exist in "
+                   "the table), then it will copy the source token.")
     group = parser.add_argument_group('Logging')
     group.add('--verbose', '-verbose', action="store_true",
               help='Print scores and predictions for each sentence')

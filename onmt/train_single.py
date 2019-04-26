@@ -50,6 +50,8 @@ def main(opt, device_id):
     shutil.copy2(opt.config, os.path.dirname(opt.log_file))
     logger.info(vars(opt))
 
+    assert len(opt.accum_count) == len(opt.accum_steps), \
+        'Number of accum_count values must match number of accum_steps'
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
         logger.info('Loading checkpoint from %s' % opt.train_from)
