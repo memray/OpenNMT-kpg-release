@@ -1,6 +1,6 @@
 model_type: keyphrase
 
-data: data/keyphrase/meng17/kp20k
+data: data/keyphrase/meng17/magkp
 save_checkpoint_steps: 10000
 keep_checkpoint: 40
 seed: 3435
@@ -49,9 +49,9 @@ save_model: models/kp20k/kp20k.one2one.transformer
 log_file: output/kp20k.one2one.transformer.log
 tensorboard_log_dir: runs/kp20k.one2one.transformer/
 
-world_size: 2
+world_size: 1
 gpu_ranks:
 - 0
-- 1
+#- 1
 #- 2
 master_port: 10000

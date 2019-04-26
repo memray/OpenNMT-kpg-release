@@ -19,8 +19,8 @@ report_time: 'true'
 share_vocab: 'true'
 
 # Beam search
-beam_size: 32
-#beam_size: 200
+#beam_size: 32
+beam_size: 200
 min_length: 1
 max_length: 6
 
@@ -28,7 +28,7 @@ max_length: 6
 stepwise_penalty: 'false'
 
 # Logging
-#verbose: 'true'
+verbose: 'false'
 #log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
 log_file_level: 'DEBUG'
 n_best: 500

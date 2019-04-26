@@ -346,7 +346,6 @@ class Translator(object):
 
         all_scores = []
         all_predictions = []
-        all_trans = []
 
         start_time = time.time()
 
@@ -374,7 +373,8 @@ class Translator(object):
                                 for pred in trans.pred_sents[:self.n_best]]
                 all_predictions += [n_best_preds]
                 if self.data_type == "keyphrase":
-                    all_trans.append(trans)
+                    self.out_file.write(json.dumps(trans.__dict__()) + '\n')
+                    self.out_file.flush()
                 else:
                     self.out_file.write('\n'.join(n_best_preds) + '\n')
                     self.out_file.flush()
@@ -414,12 +414,6 @@ class Translator(object):
                     os.write(1, output.encode('utf-8'))
 
         end_time = time.time()
-
-        # don't output until the end, because it's easier to handle interrupted eval results
-        if self.data_type == "keyphrase":
-            with codecs.open(self.out_file, 'w+', 'utf-8') as out_file:
-                for trans in all_trans:
-                    out_file.write(json.dumps(trans.__dict__()) + '\n')
 
         if self.report_score:
             msg = self._report_score('PRED', pred_score_total,
