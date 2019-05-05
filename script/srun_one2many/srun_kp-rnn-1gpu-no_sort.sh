@@ -59,7 +59,7 @@ export MODEL_PATH="models/keyphrase/$TOKEN_NAME/$EXP_NAME"
 export LOG_PATH="output/keyphrase/$TOKEN_NAME/$EXP_NAME.log"
 export TENSORBOARD_PATH="runs/keyphrase/$TOKEN_NAME/$EXP_NAME/"
 
-cmd="python train.py -config config/train/config-rnn-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -save_model $MODEL_PATH -log_file $LOG_PATH -tensorboard_log_dir $TENSORBOARD_PATH -tgt_type $TARGET_TYPE -batch_size $BatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate  -input_feed $InputFeed -master_port $MASTER_PORT"
+cmd="python train.py -config config/train/config-rnn-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -save_model $MODEL_PATH -log_file $LOG_PATH -tensorboard_log_dir $TENSORBOARD_PATH -tgt_type $TARGET_TYPE -batch_size $BatchSize -valid_batch_size $ValidBatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate  -input_feed $InputFeed -master_port $MASTER_PORT"
 
 if [ "$Copy" = true ] ; then
     cmd+=" -copy_attn"
