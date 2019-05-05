@@ -126,7 +126,7 @@ if __name__ == "__main__":
                         translator = build_translator(opt, report_score=opt.verbose, logger=logger)
                     # create an empty file to indicate that the translator is working on it
                     codecs.open(pred_path, 'w+', 'utf-8').close()
-                    # set output_file for each dataset (instead of opt.out_file)
+                    # set output_file for each dataset (instead of outputting to opt.output)
                     translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
                     logger.info("Start translating %s." % dataname)
                     _, _ = translator.translate(

@@ -49,7 +49,7 @@ export CopyLossBySeqLength=false
 export ContextGate="both"
 export InputFeed=1
 
-export EXP_NAME="$DATA_NAME-$TOKEN_NAME-$TARGET_TYPE-transformer-BS$BatchSize-Layer$LAYER-Heads$HEADS-Dim$HIDDEN-Emb$EMBED-Dropout$Dropout-Copy$Copy-Cov$Cov-Context$ContextGate-IF$InputFeed"
+export EXP_NAME="$DATA_NAME-$TOKEN_NAME-$TARGET_TYPE-transformer-BS$BatchSize-LR$LearningRate-Layer$LAYER-Heads$HEADS-Dim$HIDDEN-Emb$EMBED-Dropout$Dropout-Copy$Copy-Reuse$ReuseCopy-Cov$Cov-PE$PositionEncoding-Context$ContextGate-IF$InputFeed"
 
 export PATHON_PATH="/ihome/pbrusilovsky/rum20/.conda/envs/py36/bin/"
 export ROOT_PATH="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg"
@@ -59,7 +59,7 @@ export LOG_PATH="output/keyphrase/$TOKEN_NAME/$EXP_NAME.log"
 mkdir -p "output/keyphrase/$TOKEN_NAME/"
 export TENSORBOARD_PATH="runs/keyphrase/$TOKEN_NAME/$EXP_NAME/"
 
-cmd="python train.py -config config/train/config-transformer-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -save_model $MODEL_PATH -log_file $LOG_PATH -tensorboard_log_dir $TENSORBOARD_PATH -batch_size $BatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -heads $HEADS -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate -input_feed $InputFeed -master_port $MASTER_PORT"
+cmd="python train.py -config config/train/config-transformer-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -save_model $MODEL_PATH -log_file $LOG_PATH -tensorboard_log_dir $TENSORBOARD_PATH -tgt_type $TARGET_TYPE -batch_size $BatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -heads $HEADS -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate -input_feed $InputFeed -master_port $MASTER_PORT"
 
 if [ "$Copy" = true ] ; then
     cmd+=" -copy_attn"
@@ -82,6 +82,7 @@ fi
 
 #cmd+=" > output/keyphrase/$TOKEN_NAME/nohup_$EXP_NAME.log &"
 
+echo $TARGET_TYPE
 echo $cmd
 
 $cmd

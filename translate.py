@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 from __future__ import unicode_literals
+
+import codecs
 from itertools import repeat
 
 from onmt.utils.logging import init_logger
@@ -17,6 +19,7 @@ def main(opt):
     logger = init_logger(opt.log_file)
 
     translator = build_translator(opt, report_score=True, logger=logger)
+    translator.out_file = codecs.open(opt.output, 'w+', 'utf-8')
     src_shards = split_corpus(opt.src, opt.shard_size)
     tgt_shards = split_corpus(opt.tgt, opt.shard_size) \
         if opt.tgt is not None else repeat(None)

@@ -20,7 +20,6 @@ from torch.autograd import Variable
 
 import config
 from nltk.translate.bleu_score import sentence_bleu as bleu
-from onmt.keyphrase.utils import Progbar
 from onmt.utils.logging import init_logger
 
 stemmer = PorterStemmer()
@@ -90,9 +89,7 @@ def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=Tru
     if lowercase:
         src_seq = [w.lower() for w in src_seq]
     if stemming:
-        src_to_match = stem_word_list(src_seq)
-    else:
-        src_to_match = src_seq
+        src_seq = stem_word_list(src_seq)
 
     present_indices = []
     present_flags = []
@@ -101,26 +98,24 @@ def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=Tru
 
     for tgt_seq in tgt_seqs:
         if lowercase:
-            tgt_to_match = [w.lower() for w in tgt_seq]
+            tgt_seq = [w.lower() for w in tgt_seq]
         if stemming:
-            tgt_to_match = stem_word_list(tgt_to_match)
-        else:
-            tgt_to_match = tgt_to_match
+            tgt_seq = stem_word_list(tgt_seq)
 
         # check if the phrase appears in source text
         # iterate each word in source
-        match_flag, match_pos_idx = if_present_phrase(src_to_match, tgt_to_match)
+        match_flag, match_pos_idx = if_present_phrase(src_seq, tgt_seq)
 
         # if it reaches the end of source and no match, means it doesn't appear in the source
         present_flags.append(match_flag)
         present_indices.append(match_pos_idx)
 
         # check if it is duplicate
-        if '_'.join(tgt_to_match) in phrase_set:
+        if '_'.join(tgt_seq) in phrase_set:
             duplicate_flags.append(True)
         else:
             duplicate_flags.append(False)
-        phrase_set.add('_'.join(tgt_to_match))
+        phrase_set.add('_'.join(tgt_seq))
 
     assert len(present_flags) == len(present_indices)
 

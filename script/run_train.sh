@@ -41,4 +41,5 @@ sbatch script/kpeval_duc.sh
 sbatch script/kpeval_nus.sh
 sbatch script/kpeval_inspec.sh
 sbatch script/kpeval_krapivin.sh
+sbatch script/kpeval_semeval.sh
 sbatch script/kpeval_kp20k_valid2k.sh

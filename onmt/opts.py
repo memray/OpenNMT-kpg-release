@@ -529,8 +529,8 @@ def train_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'no_sort', 'random', 'verbatim', 'test'],
-              help="""Format of targets for model to learn/output""")
+              choices=['one2one', 'no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length', 'multiple'],
+              help="""Format of targets for model to learn/output, 'multiple' is used during test phase""")
 
 def translate_opts(parser):
     """ Translation / inference options """

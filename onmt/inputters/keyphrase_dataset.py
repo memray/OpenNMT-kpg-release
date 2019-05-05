@@ -8,6 +8,7 @@ import torch
 import numpy as np
 from torchtext.data import Field, RawField
 
+from kp_evaluate import if_present_duplicate_phrases
 from onmt.inputters.datareader_base import DataReaderBase
 
 from itertools import chain, starmap
@@ -171,25 +172,82 @@ class KeyphraseDataReader(DataReaderBase):
             yield {side: seq, "indices": i, 'id': id}
 
 
+def obtain_sorted_indices(src, tgt_seqs, sort_by):
+    """
+
+    :param src: used for verbatim and alphabetical
+    :param tgt_seqs:
+    :param sort_by:
+    :param absent_pos: must be one of [prepend, append and ignore], ignore means simply drop absent kps
+    :return:
+    """
+    num_tgt = len(tgt_seqs)
+    src = src[0]
+    tgt_seqs = [tgt[0] for tgt in tgt_seqs]
+
+    if sort_by == 'no_sort':
+        sorted_id = list(range(len(tgt_seqs)))
+    elif sort_by == 'random':
+        sorted_id = np.random.permutation(num_tgt)
+    elif sort_by.startswith('verbatim'):
+        # obtain present flags as well their positions, lowercase should be done beforehand
+        present_tgt_flags, present_indices, _ = if_present_duplicate_phrases(src, tgt_seqs, stemming=False, lowercase=False)
+        # separate present/absent phrases
+        present_tgt_idx = np.arange(num_tgt)[present_tgt_flags]
+        absent_tgt_idx  = [t_id for t_id, present in zip(range(num_tgt), present_tgt_flags) if ~present]
+        absent_tgt_idx  = np.random.permutation(absent_tgt_idx)
+        # sort present phrases by their positions
+        present_indices = present_indices[present_tgt_flags]
+        present_tgt_idx = sorted(zip(present_tgt_idx, present_indices), key=lambda x: x[1])
+        present_tgt_idx = [t[0] for t in present_tgt_idx]
+
+        if sort_by.endswith('append'):
+            sorted_id = np.concatenate((present_tgt_idx, absent_tgt_idx), axis=None)
+        elif sort_by.endswith('prepend'):
+            sorted_id = np.concatenate((absent_tgt_idx, present_tgt_idx), axis=None)
+        else:
+            sorted_id = present_tgt_idx
+
+    elif sort_by == 'alphabetical':
+        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:'_'.join(x[1]))
+        sorted_id = [t[0] for t in sorted_tgts]
+    elif sort_by == 'length':
+        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:len(x[1]))
+        sorted_id = [t[0] for t in sorted_tgts]
+
+    return sorted_id
+
+
 def process_multiple_tgts(big_batch, tgt_type):
-    assert tgt_type in ['multiple', 'one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']
     np.random.seed(2333)
 
     new_batch = []
     for ex in big_batch:
-        tgt = ex.tgt if hasattr(ex, "tgt") else None
-        alignment = ex.alignment if hasattr(ex, "alignment") else None
+        # tgt = ex.tgt if hasattr(ex, "tgt") else None
+        # alignment = ex.alignment if hasattr(ex, "alignment") else None
 
-        # no processing for 'multiple' (test phrase)
-        if tgt_type in ['one2one', 'no_sort', 'random', 'verbatim', 'alphabetical']:
-            if len(ex.tgt) == 0:
-                continue
-
-            if tgt_type == 'one2one':
-                # sample one tgt from multiple tgts and use it as the only tgt
-                rand_idx = np.random.randint(len(ex.tgt))
-                tgt = ex.tgt[rand_idx]
-                alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
+        if tgt_type == 'one2one':
+            # sample one tgt from multiple tgts and use it as the only tgt
+            rand_idx = np.random.randint(len(ex.tgt))
+            tgt = ex.tgt[rand_idx]
+            alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
+        elif tgt_type in ['no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length']:
+            # generate one2many training data points
+            order = obtain_sorted_indices(ex.src, ex.tgt, sort_by=tgt_type)
+            tgt = [ex.tgt[idx] for idx in order]
+            tgt = [t[0]+[SEP_token] for t in tgt[:-1]] + tgt[-1]
+            tgt = [np.concatenate(tgt, axis=None).tolist()]
+            if hasattr(ex, "alignment"):
+                alignment = [ex.alignment[idx] for idx in order]
+                # remove the heading and trailing 0 for <s> and </s> in each subsequence
+                alignment = [a.numpy().tolist()[1:-1] for a in alignment]
+                # add pads for <sep> between subsequences, <s> and </s> for whole final sequence
+                alignment = [0] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [0]
+                # concatenate alignments to one Tensor, length should be len(tgt)+2
+                alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
+            else:
+                alignment = None
+            '''
             elif tgt_type == 'no_sort':
                 # return tgts in original order
                 tgt = [t[0]+[SEP_token] for t in ex.tgt[:-1]] + ex.tgt[-1]
@@ -203,19 +261,21 @@ def process_multiple_tgts(big_batch, tgt_type):
                     alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
                 else:
                     alignment = None
-            else:
-                raise NotImplementedError
+            '''
+        # no processing for 'multiple' (test phrase)
+        elif tgt_type == 'multiple':
+            tgt = ex.tgt
+        else:
+            raise NotImplementedError
 
-        # print(ex.tgt)
-        # print(tgt)
         ex.tgt = tgt
         if hasattr(ex, "alignment"):
             if isinstance(alignment, list):
-                # for test, with unprocessed multiple targets
+                # for test phase (tgt_type='multiple'), with unprocessed multiple targets
                 assert len(tgt) == len(alignment)
                 assert all([len(t[0])+2==a.size()[0] for t,a in zip(tgt, alignment)])
             else:
-                # for other cases, with one target sequence
+                # for other training cases, with one target sequence
                 assert len(tgt[0]) + 2 == alignment.size()[0]
             ex.alignment = alignment
 
