@@ -28,7 +28,8 @@ export MASTER_PORT=5000
 export LAYER=1
 export EMBED=100
 export HIDDEN=150
-export BatchSize=128
+export BatchSize=64
+export ValidBatchSize=64
 export TrainSteps=100000
 export CheckpointSteps=5000
 

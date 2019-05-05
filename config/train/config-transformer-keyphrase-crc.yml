@@ -30,7 +30,7 @@ accum_count: 4
 #batch_size: 4096
 #batch_size: 8192
 #batch_size: 24576
-valid_batch_size: 256
+#valid_batch_size: 256
 
 #train_steps: 300000
 #valid_steps: 10000

@@ -20,7 +20,7 @@ adagrad_accumulator_init: 0.1
 max_grad_norm: 2
 
 #batch_size: 128
-valid_batch_size: 128
+#valid_batch_size: 128
 #dropout: 0.0
 
 global_attention: mlp

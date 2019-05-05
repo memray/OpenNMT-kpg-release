@@ -31,7 +31,8 @@ export HEADS=4
 export EMBED=128
 export HIDDEN=128
 export BatchSize=4096
-export TrainSteps=300000
+export ValidBatchSize=64
+export TrainSteps=200000
 export CheckpointSteps=10000
 
 #export LearningRate="2.0"

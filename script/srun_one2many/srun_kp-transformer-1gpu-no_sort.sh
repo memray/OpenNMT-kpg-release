@@ -2,7 +2,6 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --partition=titanx
 #SBATCH --job-name=train-no_sort-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1
 #SBATCH --output=slurm_output/train-no_sort-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1.out
 #SBATCH --nodes=1
@@ -31,7 +30,8 @@ export HEADS=4
 export EMBED=128
 export HIDDEN=128
 export BatchSize=4096
-export TrainSteps=300000
+export ValidBatchSize=64
+export TrainSteps=200000
 export CheckpointSteps=10000
 
 #export LearningRate="2.0"

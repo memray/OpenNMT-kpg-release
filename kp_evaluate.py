@@ -60,6 +60,7 @@ def if_present_phrase(src_str_tokens, phrase_str_tokens):
     :param phrase_str_tokens: a list of strings (words) of a phrase
     :return:
     """
+    match_flag = False
     match_pos_idx = -1
     for src_start_idx in range(len(src_str_tokens) - len(phrase_str_tokens) + 1):
         match_flag = True

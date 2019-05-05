@@ -215,7 +215,7 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
         sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:len(x[1]))
         sorted_id = [t[0] for t in sorted_tgts]
 
-    return sorted_id
+    return np.asarray(sorted_id, dtype=int)
 
 
 def process_multiple_tgts(big_batch, tgt_type):
@@ -223,6 +223,12 @@ def process_multiple_tgts(big_batch, tgt_type):
 
     new_batch = []
     for ex in big_batch:
+        if len(ex.tgt) > 8:
+            random_choise = np.random.choice(len(ex.tgt), 8)
+            if hasattr(ex, "tgt"):
+                ex.tgt = [ex.tgt[idx] for idx in random_choise]
+            if hasattr(ex, "alignment"):
+                ex.alignment = [ex.alignment[idx] for idx in random_choise]
         # tgt = ex.tgt if hasattr(ex, "tgt") else None
         # alignment = ex.alignment if hasattr(ex, "alignment") else None
 

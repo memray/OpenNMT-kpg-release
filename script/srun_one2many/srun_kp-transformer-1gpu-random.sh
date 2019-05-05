@@ -2,9 +2,8 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --partition=titanx
-#SBATCH --job-name=train-length-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1
-#SBATCH --output=slurm_output/train-length-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1.out
+#SBATCH --job-name=train-random-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1
+#SBATCH --output=slurm_output/train-random-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -23,7 +22,7 @@
 # Run the job
 export DATA_NAME="magkp"
 export TOKEN_NAME="meng17"
-export TARGET_TYPE="length"
+export TARGET_TYPE="random"
 export MASTER_PORT=10000
 
 export LAYER=2
@@ -31,7 +30,8 @@ export HEADS=4
 export EMBED=128
 export HIDDEN=128
 export BatchSize=4096
-export TrainSteps=300000
+export ValidBatchSize=64
+export TrainSteps=200000
 export CheckpointSteps=10000
 
 #export LearningRate="2.0"
@@ -44,7 +44,7 @@ export Cov=true
 export PositionEncoding=true
 
 export ShareEmbeddings=true
-export CopyLossBySeqLength=false
+export CopyLossBySeqrandom=false
 
 export ContextGate="both"
 export InputFeed=1
@@ -76,8 +76,8 @@ fi
 if [ "$ShareEmbeddings" = true ] ; then
     cmd+=" -share_embeddings"
 fi
-if [ "$CopyLossBySeqLength" = true ] ; then
-    cmd+=" -copy_loss_by_seqlength"
+if [ "$CopyLossBySeqrandom" = true ] ; then
+    cmd+=" -copy_loss_by_seqrandom"
 fi
 
 #cmd+=" > output/keyphrase/$TOKEN_NAME/nohup_$EXP_NAME.log &"

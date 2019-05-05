@@ -43,3 +43,17 @@ sbatch script/kpeval_inspec.sh
 sbatch script/kpeval_krapivin.sh
 sbatch script/kpeval_semeval.sh
 sbatch script/kpeval_kp20k_valid2k.sh
+
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-alphabetical.sh
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-length.sh
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-no_sort.sh
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-random.sh
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-verbatim_append.sh
+sbatch script/srun_one2many/srun_kp-rnn-1gpu-verbatim_prepend.sh
+
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-alphabetical.sh
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-length.sh
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-no_sort.sh
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-random.sh
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_append.sh
+sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_prepend.sh
