@@ -181,10 +181,15 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
 
         # sanity check of pred
         num_pred = len(pred_dict["pred_sents"])
-        for d in [pred_idxs, pred_sents, pred_scores,
-                  match_scores_exact, valid_pred_flags,
-                  present_pred_flags, copied_flags]:
+        for d_name, d in zip(['pred_idxs', 'pred_sents', 'pred_scores',
+                      'match_scores_exact', 'valid_pred_flags',
+                      'present_pred_flags', 'copied_flags'],
+                      [pred_idxs, pred_sents, pred_scores,
+                      match_scores_exact, valid_pred_flags,
+                      present_pred_flags, copied_flags]):
             if d is not None:
+                if len(d) != num_pred:
+                    logger.error('%s number does not match' % d_name)
                 assert len(d) == num_pred
 
         '''
@@ -321,9 +326,11 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             report_file.write(print_out)
 
         # add tgt/pred count for computing average performance on non-empty items
-        results_names = ['present_tgt_num', 'absent_tgt_num']
+        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num']
         results_list = [{'present_tgt_num': len(present_tgts)},
                         {'absent_tgt_num': len(absent_tgts)},
+                        {'present_pred_num': len(present_preds)},
+                        {'absent_pred_num': len(absent_preds)},
                         ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
@@ -400,8 +407,11 @@ def get_match_result(true_seqs, pred_seqs, do_stem=True, type='exact'):
             for true_id, true_seq in enumerate(true_seqs):
                 true_seq_set = set(true_seq)
                 true_seq_set.update(set([true_seq[i]+'_'+true_seq[i+1] for i in range(len(true_seq)-1)]))
-                similarity = len(set.intersection(*[set(true_seq_set), set(pred_seq_set)])) \
-                          / float(len(set.union(*[set(true_seq_set), set(pred_seq_set)])))
+                if float(len(set.union(*[set(true_seq_set), set(pred_seq_set)]))) > 0:
+                    similarity = len(set.intersection(*[set(true_seq_set), set(pred_seq_set)])) \
+                              / float(len(set.union(*[set(true_seq_set), set(pred_seq_set)])))
+                else:
+                    similarity = 0.0
                 match_score[pred_id, true_id] = similarity
         elif type == 'mixed':
             # similar to jaccard, but addtional to 1+2 grams we also put in the full string, serves like a exact+partial surrogate
@@ -412,8 +422,11 @@ def get_match_result(true_seqs, pred_seqs, do_stem=True, type='exact'):
                 true_seq_set = set(true_seq)
                 true_seq_set.update(set([true_seq[i]+'_'+true_seq[i+1] for i in range(len(true_seq)-1)]))
                 true_seq_set.update(set(['_'.join(true_seq)]))
-                similarity = len(set.intersection(*[set(true_seq_set), set(pred_seq_set)])) \
-                          / float(len(set.union(*[set(true_seq_set), set(pred_seq_set)])))
+                if float(len(set.union(*[set(true_seq_set), set(pred_seq_set)]))) > 0:
+                    similarity = len(set.intersection(*[set(true_seq_set), set(pred_seq_set)])) \
+                              / float(len(set.union(*[set(true_seq_set), set(pred_seq_set)])))
+                else:
+                    similarity = 0.0
                 match_score[pred_id, true_id] = similarity
 
         elif type == 'bleu':
@@ -497,9 +510,9 @@ def f1_score(prediction, ground_truth):
     num_same = sum(common.values())
     if num_same == 0:
         return 0
-    precision = 1.0 * num_same / len(prediction)
-    recall = 1.0 * num_same / len(ground_truth)
-    f1 = (2 * precision * recall) / (precision + recall)
+    precision = 1.0 * num_same / len(prediction) if len(prediction) > 0 else 0.0
+    recall = 1.0 * num_same / len(ground_truth) if len(ground_truth) > 0 else 0.0
+    f1 = (2 * precision * recall) / (precision + recall) if len(precision + recall) > 0 else 0.0
     return f1
 
 
@@ -557,18 +570,20 @@ def summarize_scores(ckpt_name, score_dict):
     avg_dict['checkpoint_name'] = ckpt_name
     # doc stat
     avg_dict['#doc'] = len(score_dict['present_tgt_num'])
-    avg_dict['#present_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
-    avg_dict['#absent_doc'] = len([x for x in score_dict['absent_tgt_num'] if x > 0])
+    avg_dict['#pre_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
+    avg_dict['#ab_doc'] = len([x for x in score_dict['absent_tgt_num'] if x > 0])
 
-    # tgt stat
-    avg_dict['#tgt'] = sum(score_dict['present_tgt_num'])
-    avg_dict['#present_tgt'] = sum([x for x in score_dict['present_tgt_num'] if x > 0])
-    avg_dict['#absent_tgt'] = sum([x for x in score_dict['absent_tgt_num'] if x > 0])
+    # tgt & pred stat
+    avg_dict['#tgt'] = sum(score_dict['present_tgt_num']) + sum(score_dict['absent_tgt_num'])
+    avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_tgt_num'])
+    avg_dict['#pre_tgt'] = sum(score_dict['present_tgt_num'])
+    avg_dict['#pre_pred'] = sum(score_dict['present_pred_num'])
+    avg_dict['#ab_tgt'] = sum(score_dict['absent_tgt_num'])
+    avg_dict['#ab_pred'] = sum(score_dict['absent_pred_num'])
 
-
-    present_num = score_dict['present_tgt_num']
-    absent_num = score_dict['absent_tgt_num']
-    del score_dict['present_tgt_num'], score_dict['absent_tgt_num']
+    present_tgt_num = score_dict['present_tgt_num']
+    absent_tgt_num = score_dict['absent_tgt_num']
+    del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], score_dict['present_pred_num'], score_dict['absent_pred_num']
 
     for score_name, score_list in score_dict.items():
         # number of correct phrases
@@ -580,10 +595,10 @@ def summarize_scores(ckpt_name, score_dict):
 
         # various scores (precision, recall, f-score)
         if score_name.startswith('present'):
-            tmp_scores = [score for score, num in zip(score_list, present_num) if num > 0]
+            tmp_scores = [score for score, num in zip(score_list, present_tgt_num) if num > 0]
             avg_dict[score_name] = np.average(tmp_scores)
         elif score_name.startswith('absent'):
-            tmp_scores = [score for score, num in zip(score_list, absent_num) if num > 0]
+            tmp_scores = [score for score, num in zip(score_list, absent_tgt_num) if num > 0]
             avg_dict[score_name] = np.average(tmp_scores)
         else:
             raise NotImplementedError

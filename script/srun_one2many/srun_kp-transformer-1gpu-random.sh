@@ -44,7 +44,7 @@ export Cov=true
 export PositionEncoding=true
 
 export ShareEmbeddings=true
-export CopyLossBySeqrandom=false
+export CopyLossBySeqLength=false
 
 export ContextGate="both"
 export InputFeed=1
@@ -76,8 +76,8 @@ fi
 if [ "$ShareEmbeddings" = true ] ; then
     cmd+=" -share_embeddings"
 fi
-if [ "$CopyLossBySeqrandom" = true ] ; then
-    cmd+=" -copy_loss_by_seqrandom"
+if [ "$CopyLossBySeqLength" = true ] ; then
+    cmd+=" -copy_loss_by_seqlength"
 fi
 
 #cmd+=" > output/keyphrase/$TOKEN_NAME/nohup_$EXP_NAME.log &"

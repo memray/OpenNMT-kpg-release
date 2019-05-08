@@ -2,7 +2,6 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --partition=titanx
 #SBATCH --job-name=train-alphabetical-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1
 #SBATCH --output=slurm_output/train-alphabetical-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1.out
 #SBATCH --nodes=1

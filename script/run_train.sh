@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=1 nohup sh run_script/kp-transformer-1gpu-bs4096-train300k.
 CUDA_VISIBLE_DEVICES=2 nohup sh run_script/kp-transformer-1gpu-bs4096-train300k.sh > output/keyphrase/meng17/nohup_magkp-meng17-on2one-transformer-Layer2-Heads4-Dim128-Emb128-Dropout0.1-Copytrue-Covtrue-Contextboth.log &
 
 # test (use CPU is safer)
-# kp20k kp20k_valid2k duc inspec krapivin nus semeval
+# kp20k kp20k_valid500 duc inspec krapivin nus semeval
 # nus & semeval
 mkdir -p "output/keyphrase/meng17-bs32/"
 nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/ -output_dir output/keyphrase/meng17-bs32/ -testsets nus semeval -batch_size 64 > output/keyphrase/meng17-bs32/kp_run_eval-nus_semeval.log &
@@ -27,14 +27,14 @@ nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_
 nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/ -output_dir output/keyphrase/meng17-bs32/ -testsets inspec -batch_size 64 > output/keyphrase/meng17-bs32/kp_run_eval-inspec.log &
 #krapivin
 nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/ -output_dir output/keyphrase/meng17-bs32/ -testsets krapivin -batch_size 64 > output/keyphrase/meng17-bs32/kp_run_eval-krapivin.log &
-# kp20k_valid2k
-nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/ -output_dir output/keyphrase/meng17-bs32/ -testsets kp20k_valid2k -batch_size 64 > output/keyphrase/meng17-bs32/kp_run_eval-kp20k_valid2k.log &
+# kp20k_valid500
+nohup python kp_run_eval.py -config config/test/config-test-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/ -output_dir output/keyphrase/meng17-bs32/ -testsets kp20k_valid500 -batch_size 64 > output/keyphrase/meng17-bs32/kp_run_eval-kp20k_valid500.log &
 
 # kp20k
 nohup python kp_run_eval.py -config config/test/config-rnn-keyphrase.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17/selected/ -output_dir output/keyphrase/meng17/ -testsets kp20k -batch_size 64 > output/keyphrase/meng17/kp_run_eval-kp20k.log &
 
 
-# CRC
+# CRC one2one
 sbatch script/srun_kp-transformer-1gpu-bs4096-train300k.sh
 
 sbatch script/kpeval_duc.sh
@@ -42,8 +42,9 @@ sbatch script/kpeval_nus.sh
 sbatch script/kpeval_inspec.sh
 sbatch script/kpeval_krapivin.sh
 sbatch script/kpeval_semeval.sh
-sbatch script/kpeval_kp20k_valid2k.sh
+sbatch script/kpeval_kp20k_valid500.sh
 
+# CRC one2many
 sbatch script/srun_one2many/srun_kp-rnn-1gpu-alphabetical.sh
 sbatch script/srun_one2many/srun_kp-rnn-1gpu-length.sh
 sbatch script/srun_one2many/srun_kp-rnn-1gpu-no_sort.sh
@@ -57,3 +58,10 @@ sbatch script/srun_one2many/srun_kp-transformer-1gpu-no_sort.sh
 sbatch script/srun_one2many/srun_kp-transformer-1gpu-random.sh
 sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_append.sh
 sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_prepend.sh
+
+sbatch script/srun_one2many/kpeval/kpeval_semeval.sh
+sbatch script/srun_one2many/kpeval/kpeval_nus.sh
+sbatch script/srun_one2many/kpeval/kpeval_duc.sh
+sbatch script/srun_one2many/kpeval/kpeval_krapivin.sh
+sbatch script/srun_one2many/kpeval/kpeval_inspec.sh
+sbatch script/srun_one2many/kpeval/kpeval_kp20k_valid500.sh

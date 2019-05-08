@@ -20,6 +20,7 @@ from torchtext.data import Example
 
 from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
+np.random.seed(2333)
 SEP_token = "<sep>"
 DIGIT_token = "<digit>"
 extra_special_tokens = [SEP_token, DIGIT_token]
@@ -174,7 +175,6 @@ class KeyphraseDataReader(DataReaderBase):
 
 def obtain_sorted_indices(src, tgt_seqs, sort_by):
     """
-
     :param src: used for verbatim and alphabetical
     :param tgt_seqs:
     :param sort_by:
@@ -219,10 +219,9 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
 
 
 def process_multiple_tgts(big_batch, tgt_type):
-    np.random.seed(2333)
-
     new_batch = []
     for ex in big_batch:
+        # a workaround: truncate to maximum 8 phrases (some noisy data points have many phrases)
         if len(ex.tgt) > 8:
             random_choise = np.random.choice(len(ex.tgt), 8)
             if hasattr(ex, "tgt"):

@@ -2,8 +2,8 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --job-name=train-random-kp20k-rnn-DIM150-EMB100-LR005-DO00-TFFF-TFB1
-#SBATCH --output=slurm_output/train-random-kp20k-rnn-DIM150-EMB100-LR005-DO00-TFFF-TFB1.out
+#SBATCH --job-name=train-realrandom-kp20k-rnn-DIM150-EMB100-LR005-DO00-TTTF-TFB1
+#SBATCH --output=slurm_output/train-realrandom-kp20k-rnn-DIM150-EMB100-LR005-DO00-TTTF-TFB1.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -39,12 +39,12 @@ export Dropout="0.0"
 export MaxGradNorm="2.0"
 
 export Copy=true
-export ReuseCopy=false
-export Cov=false
+export ReuseCopy=true
+export Cov=true
 export PositionEncoding=false
 
 export ShareEmbeddings=true
-export CopyLossBySeqrandom=false
+export CopyLossBySeqLength=false
 
 export ContextGate="both"
 export InputFeed=1
@@ -76,8 +76,8 @@ fi
 if [ "$ShareEmbeddings" = true ] ; then
     cmd+=" -share_embeddings"
 fi
-if [ "$CopyLossBySeqrandom" = true ] ; then
-    cmd+=" -copy_loss_by_seqrandom"
+if [ "$CopyLossBySeqLength" = true ] ; then
+    cmd+=" -copy_loss_by_seqlength"
 fi
 
 #cmd+=" > output/keyphrase/$TOKEN_NAME/nohup_$EXP_NAME.log &"

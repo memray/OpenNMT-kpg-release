@@ -5,32 +5,33 @@ OUTPUT_DIR="data/keyphrase/$TOKENIZER"
 
 declare -a train_sets=("kp20k" "magkp" "kp20k_small")
 declare -a valid_sets=("kp20k" "inspec" "krapivin" "semeval")
-declare -a test_sets=("kp20k" "kp20k_valid2k" "kp20k_small" "duc" "inspec" "krapivin" "nus" "semeval")
-#declare -a test_sets=("kp20k_valid2k")
+declare -a test_sets=("kp20k" "kp20k_valid2k" "kp20k_valid500" "kp20k_small" "duc" "inspec" "krapivin" "nus" "semeval")
+declare -a test_sets=("kp20k_valid500")
 
 train_param="-filter -max_src_seq_length 1000 -min_src_seq_length 10 -max_tgt_seq_length 8 -min_src_seq_length 1 -lower -shuffle -tokenizer $TOKENIZER -replace_digit"
-valid_param="-lower -include_original -tokenizer $TOKENIZER -replace_digit"
-test_param="-lower -include_original -tokenizer $TOKENIZER -replace_digit"
-
 for train in "${train_sets[@]}"
 do
     echo 'Processing train' $train
-    cmd='-src_file '"$BASE_DATA_DIR"'/'"$train"'/'"$train"'_train.json -output_path '"$OUTPUT_DIR"'/'"$train"'/'"$train"'_train'
-    python -m kp_data_converter $cmd $train_param
+    cmd='-src_file '"$BASE_DATA_DIR"'/'"$train"'/'"$train"'_train.json -output_path '"$OUTPUT_DIR"'/'"$train"'/'"$train"'_train "$train_param"'
+    python -m kp_data_converter $cmd
 done
 
+valid_param="-lower -include_original -tokenizer $TOKENIZER -replace_digit"
 for valid in "${valid_sets[@]}"
 do
     echo 'Processing valid' $valid
-    cmd='-src_file '"$BASE_DATA_DIR"'/'"$valid"'/'"$valid"'_valid.json -output_path '"$OUTPUT_DIR"'/'"$valid"'/'"$valid"'_valid'
-    python -m kp_data_converter $cmd $valid_param
+    cmd='-src_file '"$BASE_DATA_DIR"'/'"$valid"'/'"$valid"'_valid.json -output_path '"$OUTPUT_DIR"'/'"$valid"'/'"$valid"'_valid "$valid_param"'
+    python -m kp_data_converter $cmd
 done
 
+# only test part is well tested
+test_param="-lower -include_original -tokenizer $TOKENIZER -replace_digit"
 for test in "${test_sets[@]}"
 do
     echo 'Processing test' $test
-    cmd='-src_file '"$BASE_DATA_DIR"'/'"$test"'/'"$test"'_test.json -output_path '"$OUTPUT_DIR"'/'"$test"'/'"$test"'_test'
-    python -m kp_data_converter $cmd $test_param
+    cmd='python kp_data_converter.py -src_file '"$BASE_DATA_DIR"'/'"$test"'/'"$test"'_test.json -output_path '"$OUTPUT_DIR"'/'"$test"'/'"$test"'_test '"$test_param"
+    echo $cmd
+    eval $cmd
 done
 
 #python -m kp_data_converter -src_file ~/project/kp/OpenNMT-kpg/data/keyphrase/json/kp20k/kp20k_validation.json -output_path ~/project/kp/OpenNMT-kpg/data/keyphrase/kp20k/kp20k_valid -lower -max_src_seq_length 1000 -min_src_seq_length 10 -max_tgt_seq_length 8 -min_src_seq_length 1 -target_type one2many -include_original

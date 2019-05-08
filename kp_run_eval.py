@@ -85,13 +85,17 @@ if __name__ == "__main__":
                                       opt.data_dir + '/%s/%s_test.tgt' % (testset, testset),
                                       src_shard, tgt_shard)
 
+    np.random.seed()
+    sleep_time = np.random.randint(120)
+    logger.info('Sleep for %d sec for avoid conflicting with other threads' % sleep_time)
+    time.sleep(sleep_time)
     # if True:
     while True:
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
         # print(new_ckpts.items())
         # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
         for ckpt_name, ckpt_path in sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])):
-            logger.info("Loading model from checkpoint: %s" % ckpt_path)
+            logger.info("Processing model from checkpoint: %s" % ckpt_path)
             setattr(opt, 'models', [ckpt_path])
 
             translator = None

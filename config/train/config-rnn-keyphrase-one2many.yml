@@ -1,5 +1,5 @@
 model_type: keyphrase
-tgt_type: no_sort
+tgt_type: random
 
 data: data/keyphrase/meng17/kp20k
 save_checkpoint_steps: 10000
@@ -20,7 +20,7 @@ learning_rate: 0.15
 adagrad_accumulator_init: 0.1
 max_grad_norm: 2
 
-batch_size: 128
+batch_size: 8
 valid_batch_size: 128
 dropout: 0.0
 

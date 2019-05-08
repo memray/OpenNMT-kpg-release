@@ -121,7 +121,8 @@ class Translator(object):
             report_score=True,
             logger=None,
             seed=-1,
-            tgt_type=None
+            tgt_type=None,
+            model_tgt_type=None
     ):
         self.model = model
         self.fields = fields
@@ -183,6 +184,7 @@ class Translator(object):
 
         # added by @memray, to accommodate multiple targets
         self.tgt_type=tgt_type
+        self.model_tgt_type=model_tgt_type
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -262,7 +264,8 @@ class Translator(object):
             report_score=report_score,
             logger=logger,
             seed=opt.seed,
-            tgt_type=opt.tgt_type
+            tgt_type=opt.tgt_type,
+            model_tgt_type=model_opt.tgt_type
         )
 
     def _log(self, msg):
@@ -362,8 +365,12 @@ class Translator(object):
             )
             translations = xlation_builder.from_batch(batch_data)
 
-            # @memray, add copied flag
+            # @memray
             if self.data_type == "keyphrase":
+                # post-process for one2many outputs
+                if self.model_tgt_type != 'one2one':
+                    translations = self.segment_one2many_trans(translations)
+                # add copied flag
                 vocab_size = len(self.fields['src'].base_field.vocab.itos)
                 for t in translations:
                     t.add_copied_flags(vocab_size)
@@ -923,3 +930,44 @@ class Translator(object):
             shell=True, stdin=self.out_file
         ).decode("utf-8").strip()
         return msg
+
+    def segment_one2many_trans(self, trans):
+        """
+        For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rank
+        :param trans:
+        :return:
+        """
+        for tran in trans:
+            new_preds = []
+            new_pred_sents = []
+            new_pred_scores = []
+            new_pred_counter = {}
+            for sent_i in range(len(tran.pred_sents)):
+                pred_sent = tran.pred_sents[sent_i]
+                sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == inputters.keyphrase_dataset.SEP_token]
+                sep_indices = [-1] + sep_indices + [len(pred_sent)]
+
+                for kp_i in range(len(sep_indices)-1):
+                    start_idx = sep_indices[kp_i] + 1
+                    end_idx = sep_indices[kp_i + 1]
+                    new_kp = pred_sent[start_idx: end_idx]
+                    new_kp_str = '_'.join(new_kp)
+
+                    if new_kp_str in new_pred_counter:
+                        new_pred_counter[new_kp_str] += 1
+                        continue
+
+                    new_pred_counter[new_kp_str] = 1
+                    new_preds.append(tran.preds[sent_i][start_idx: end_idx])
+                    new_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
+                    new_pred_scores.append(tran.pred_scores[sent_i])
+                    # TODO, no account for attns and copies
+
+            # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
+            # print(new_pred_counter)
+
+            tran.preds = new_preds
+            tran.pred_sents = new_pred_sents
+            tran.pred_scores = new_pred_scores
+
+        return trans
