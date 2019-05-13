@@ -1,0 +1,36 @@
+# Translation / inference options
+
+# Data options
+data_type: keyphrase
+shard_size: 0
+
+# Evaluation options
+report_bleu: 'false'
+report_rouge: 'false'
+report_kpeval: 'false'
+report_time: 'true'
+
+# Options most relevant to summarization.
+#dynamic_dict: 'true'
+share_vocab: 'true'
+
+# Beam search
+beam_size: 10
+max_length: 40
+min_length: 1
+
+# Alpha and Beta values for Google Length + Coverage penalty
+stepwise_penalty: 'false'
+
+# Logging
+verbose: 'false'
+#log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
+log_file_level: 'DEBUG'
+n_best: 500
+
+# Efficiency
+batch_size: 32
+#gpu: 0
+gpu: -1
+
+tgt_type: multiple

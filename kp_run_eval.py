@@ -62,15 +62,20 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
 
+    np.random.seed()
+    sleep_time = np.random.randint(120)
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
+    logger = init_logger(opt.output_dir + 'autoeval_%s_%s.log'
+                         % ('-'.join(opt.testsets), current_time))
+    logger.info('Sleep for %d sec to avoid conflicting with other threads' % sleep_time)
+    time.sleep(sleep_time)
+
     if not os.path.exists(opt.output_dir):
         os.makedirs(opt.output_dir)
     if not os.path.exists(os.path.join(opt.output_dir, 'eval')):
         os.makedirs(os.path.join(opt.output_dir, 'eval'))
     if not os.path.exists(os.path.join(opt.output_dir, 'pred')):
         os.makedirs(os.path.join(opt.output_dir, 'pred'))
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
-    logger = init_logger(opt.output_dir + 'autoeval_%s_%s.log'
-                         % ('-'.join(opt.testsets), current_time))
 
     shutil.copy2(opt.config, opt.output_dir)
     logger.info(opt)
@@ -85,17 +90,13 @@ if __name__ == "__main__":
                                       opt.data_dir + '/%s/%s_test.tgt' % (testset, testset),
                                       src_shard, tgt_shard)
 
-    np.random.seed()
-    sleep_time = np.random.randint(120)
-    logger.info('Sleep for %d sec for avoid conflicting with other threads' % sleep_time)
-    time.sleep(sleep_time)
     # if True:
     while True:
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
         # print(new_ckpts.items())
         # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
         for ckpt_name, ckpt_path in sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])):
-            logger.info("Processing model from checkpoint: %s" % ckpt_path)
+            logger.info("Checking checkpoint: %s" % ckpt_path)
             setattr(opt, 'models', [ckpt_path])
 
             translator = None
@@ -141,6 +142,8 @@ if __name__ == "__main__":
                         attn_debug=opt.attn_debug,
                         opt=opt
                     )
+                else:
+                    logger.info("Skip translating %s." % dataname)
 
                 if do_eval_flag:
                     logger.info("Start evaluating generated results of %s" % ckpt_name)
@@ -152,6 +155,8 @@ if __name__ == "__main__":
 
                     with open(score_path, 'w') as output_json:
                         output_json.write(json.dumps(score_dict))
+                else:
+                    logger.info("Skip evaluating %s." % dataname)
 
         kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
 

@@ -2,8 +2,8 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --job-name=train-realrandom-kp20k-rnn-DIM150-EMB100-LR005-DO00-TTTF-TFB1
-#SBATCH --output=slurm_output/train-realrandom-kp20k-rnn-DIM150-EMB100-LR005-DO00-TTTF-TFB1.out
+#SBATCH --job-name=train-random-kp20k-rnn-DIM512-EMB128-LR005-DO03-TTTF-TFB1
+#SBATCH --output=slurm_output/train-random-kp20k-rnn-DIM512-EMB128-LR005-DO03-TTTF-TFB1.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -26,8 +26,8 @@ export TARGET_TYPE="random"
 export MASTER_PORT=5000
 
 export LAYER=1
-export EMBED=100
-export HIDDEN=150
+export EMBED=128
+export HIDDEN=512
 export BatchSize=64
 export ValidBatchSize=64
 export TrainSteps=100000
@@ -35,7 +35,7 @@ export CheckpointSteps=5000
 
 #export LearningRate="0.15"
 export LearningRate="0.05"
-export Dropout="0.0"
+export Dropout="0.3"
 export MaxGradNorm="2.0"
 
 export Copy=true

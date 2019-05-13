@@ -369,25 +369,25 @@ class Translator(object):
             if self.data_type == "keyphrase":
                 # post-process for one2many outputs
                 if self.model_tgt_type != 'one2one':
-                    translations = self.segment_one2many_trans(translations)
+                    translations = self.segment_one2seq_trans(translations)
                 # add copied flag
                 vocab_size = len(self.fields['src'].base_field.vocab.itos)
                 for t in translations:
                     t.add_copied_flags(vocab_size)
 
-            for trans in translations:
-                all_scores += [trans.pred_scores[:self.n_best]]
-                pred_score_total += trans.pred_scores[0]
-                pred_words_total += len(trans.pred_sents[0])
+            for tran in translations:
+                all_scores += [tran.pred_scores[:self.n_best]]
+                pred_score_total += tran.pred_scores[0]
+                pred_words_total += len(tran.pred_sents[0])
                 if tgt is not None:
-                    gold_score_total += trans.gold_score
-                    gold_words_total += len(trans.gold_sent) + 1
+                    gold_score_total += tran.gold_score
+                    gold_words_total += len(tran.gold_sent) + 1
 
                 n_best_preds = [" ".join(pred)
-                                for pred in trans.pred_sents[:self.n_best]]
+                                for pred in tran.pred_sents[:self.n_best]]
                 all_predictions += [n_best_preds]
                 if self.data_type == "keyphrase":
-                    self.out_file.write(json.dumps(trans.__dict__()) + '\n')
+                    self.out_file.write(json.dumps(tran.__dict__()) + '\n')
                     self.out_file.flush()
                 else:
                     self.out_file.write('\n'.join(n_best_preds) + '\n')
@@ -396,9 +396,9 @@ class Translator(object):
                 if self.verbose:
                     sent_number = next(counter)
                     if self.data_type == "keyphrase":
-                        output = trans.log_kp(sent_number)
+                        output = tran.log_kp(sent_number)
                     else:
-                        output = trans.log(sent_number)
+                        output = tran.log(sent_number)
 
                     if self.verbose:
                         if self.logger:
@@ -407,11 +407,11 @@ class Translator(object):
                             os.write(1, output.encode('utf-8'))
 
                 if attn_debug:
-                    preds = trans.pred_sents[0]
+                    preds = tran.pred_sents[0]
                     preds.append('</s>')
-                    attns = trans.attns[0].tolist()
+                    attns = tran.attns[0].tolist()
                     if self.data_type == 'text':
-                        srcs = trans.src_raw
+                        srcs = tran.src_raw
                     else:
                         srcs = [str(item) for item in range(len(attns[0]))]
                     header_format = "{:>10.10} " + "{:>10.7} " * len(srcs)
@@ -931,17 +931,23 @@ class Translator(object):
         ).decode("utf-8").strip()
         return msg
 
-    def segment_one2many_trans(self, trans):
+    def segment_one2seq_trans(self, trans):
         """
         For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rank
         :param trans:
         :return:
         """
         for tran in trans:
+            dup_pred_tuples = []
+
             new_preds = []
             new_pred_sents = []
             new_pred_scores = []
             new_pred_counter = {}
+
+            topseq_preds = []
+            topseq_pred_sents = []
+            topseq_pred_scores = []
             for sent_i in range(len(tran.pred_sents)):
                 pred_sent = tran.pred_sents[sent_i]
                 sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == inputters.keyphrase_dataset.SEP_token]
@@ -953,21 +959,50 @@ class Translator(object):
                     new_kp = pred_sent[start_idx: end_idx]
                     new_kp_str = '_'.join(new_kp)
 
+                    # keep all preds, even duplicate
+                    dup_pred_tuples.append((tran.preds[sent_i][start_idx: end_idx],
+                                      tran.pred_sents[sent_i][start_idx: end_idx],
+                                      tran.pred_scores[sent_i]))
+
+                    # skip duplicate
                     if new_kp_str in new_pred_counter:
                         new_pred_counter[new_kp_str] += 1
                         continue
 
+                    # TODO, no account for attns and copies
                     new_pred_counter[new_kp_str] = 1
                     new_preds.append(tran.preds[sent_i][start_idx: end_idx])
                     new_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
                     new_pred_scores.append(tran.pred_scores[sent_i])
-                    # TODO, no account for attns and copies
+
+                    # first beam (top-score sequence)
+                    if sent_i == 0:
+                        topseq_preds.append(tran.preds[sent_i][start_idx: end_idx])
+                        topseq_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
+                        topseq_pred_scores.append(tran.pred_scores[sent_i])
 
             # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
             # print(new_pred_counter)
 
+            # still keep the original pred
+            tran.ori_preds = tran.preds
+            tran.ori_pred_sents = tran.pred_sents
+            tran.ori_pred_scores = tran.pred_scores
+
+            # stats of kps
+            tran.unique_pred_num = len(new_pred_counter)
+            tran.dup_pred_num = sum(new_pred_counter.values())
+
+            # segmented predictions from the top-score sequence
+            tran.topseq_preds = topseq_preds
+            tran.topseq_pred_sents = topseq_pred_sents
+            tran.topseq_pred_scores = topseq_pred_scores
+
+            # all segmented predictions
             tran.preds = new_preds
             tran.pred_sents = new_pred_sents
             tran.pred_scores = new_pred_scores
+
+            tran.dup_pred_tuples = dup_pred_tuples
 
         return trans

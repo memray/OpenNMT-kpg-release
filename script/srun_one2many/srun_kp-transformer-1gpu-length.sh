@@ -2,8 +2,8 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --job-name=train-length-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1
-#SBATCH --output=slurm_output/train-length-magkp-transformer-L2H4-DIM128-LR05-DO00-TTTT-TFB1.out
+#SBATCH --job-name=train-length-kp20k-transformer-L4H8-DIM512-LR05-DO02-TTTT-TFB1
+#SBATCH --output=slurm_output/train-length-kp20k-transformer-L4H8-DIM512-LR05-DO02-TTTT-TFB1.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -20,15 +20,15 @@
 #module unload python/anaconda3.6-5.2.0
 
 # Run the job
-export DATA_NAME="magkp"
+export DATA_NAME="kp20k"
 export TOKEN_NAME="meng17"
 export TARGET_TYPE="length"
 export MASTER_PORT=10000
 
-export LAYER=2
-export HEADS=4
-export EMBED=128
-export HIDDEN=128
+export LAYER=4
+export HEADS=8
+export EMBED=512
+export HIDDEN=512
 export BatchSize=4096
 export ValidBatchSize=64
 export TrainSteps=200000
@@ -36,7 +36,7 @@ export CheckpointSteps=10000
 
 #export LearningRate="2.0"
 export LearningRate="0.5"
-export Dropout="0.0"
+export Dropout="0.2"
 
 export Copy=true
 export ReuseCopy=true

@@ -59,9 +59,23 @@ sbatch script/srun_one2many/srun_kp-transformer-1gpu-random.sh
 sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_append.sh
 sbatch script/srun_one2many/srun_kp-transformer-1gpu-verbatim_prepend.sh
 
-sbatch script/srun_one2many/kpeval/kpeval_semeval.sh
-sbatch script/srun_one2many/kpeval/kpeval_nus.sh
-sbatch script/srun_one2many/kpeval/kpeval_duc.sh
-sbatch script/srun_one2many/kpeval/kpeval_krapivin.sh
-sbatch script/srun_one2many/kpeval/kpeval_inspec.sh
-sbatch script/srun_one2many/kpeval/kpeval_kp20k_valid500.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_semeval.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_nus.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_duc.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_krapivin.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_inspec.sh
+sbatch script/srun_one2many/kpeval-beam10-maxlen40/kpeval_kp20k_valid500.sh
+
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_semeval.sh
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_nus.sh
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_duc.sh
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_krapivin.sh
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_inspec.sh
+sbatch script/srun_one2many/kpeval-beam25-maxlen40/kpeval_kp20k_valid500.sh
+
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_semeval.sh
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_nus.sh
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_duc.sh
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_krapivin.sh
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_inspec.sh
+sbatch script/srun_one2many/kpeval-beam50-maxlen40/kpeval_kp20k_valid500.sh

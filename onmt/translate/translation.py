@@ -144,20 +144,34 @@ class Translation(object):
         preds (List[LongTensor]): Original indices of predicted words, added by # @memray
     """
 
-    __slots__ = ["src", "src_raw", "pred_sents", "attns", "pred_scores",
-                 "gold_sent", "gold_score", "preds", "copied_flags"]
+    __slots__ = ["src", "src_raw", "gold_sent", "gold_score",
+                 "attns", "copied_flags",
+                 "unique_pred_num", "dup_pred_num",
+                 "pred_sents", "pred_scores", "preds",
+                 "ori_pred_sents", "ori_pred_scores", "ori_preds",
+                 "topseq_pred_sents", "topseq_pred_scores", "topseq_preds",
+                 "dup_pred_tuples"
+                 ]
 
     def __init__(self, src, src_raw, pred_sents,
-                 attn, pred_scores, tgt_sent, gold_score, preds, copied_flags=None):
+                 attn, pred_scores, tgt_sent, gold_score, preds):
         self.src = src
         self.src_raw = src_raw
-        self.pred_sents = pred_sents
-        self.attns = attn
-        self.pred_scores = pred_scores
         self.gold_sent = tgt_sent
         self.gold_score = gold_score
+        self.attns = attn
+        self.pred_sents = pred_sents
+        self.pred_scores = pred_scores
         self.preds = preds
-        self.copied_flags = copied_flags
+
+        self.copied_flags = None
+        self.ori_pred_sents = None
+        self.ori_pred_scores = None
+        self.ori_preds = None
+        self.topseq_pred_sents = None
+        self.topseq_pred_scores = None
+        self.topseq_preds = None
+        self.dup_pred_tuples = None
 
     def log(self, sent_number):
         """
@@ -188,18 +202,29 @@ class Translation(object):
         :return:
         """
         ret = {slot: getattr(self, slot) for slot in self.__slots__}
-        if torch.cuda.is_available():
-            ret['src'] = ret['src'].cpu().numpy().tolist()
-            ret['pred_scores'] = [t.cpu().numpy().tolist() for t in ret['pred_scores']]
-            ret['preds'] = [t.cpu().numpy().tolist() for t in ret['preds']]
-            if self.copied_flags:
-                ret['copied_flags'] = [t.cpu().numpy().tolist() for t in ret['copied_flags']]
-        else:
-            ret['src'] = ret['src'].numpy().tolist()
-            ret['pred_scores'] = [t.numpy().tolist() for t in ret['pred_scores']]
-            ret['preds'] = [t.numpy().tolist() for t in ret['preds']]
-            if self.copied_flags:
-                ret['copied_flags'] = [t.numpy().tolist() for t in ret['copied_flags']]
+
+        for slot in self.__slots__:
+            if torch.cuda.is_available():
+                if slot.endswith('src'):
+                    ret[slot] = ret[slot].cpu().numpy().tolist()
+                elif slot.endswith('pred_scores'):
+                    ret[slot] = [t.cpu().numpy().tolist() for t in ret[slot]]
+                elif slot.endswith('preds'):
+                    ret[slot] = [t.cpu().numpy().tolist() for t in ret[slot]]
+            else:
+                if slot.endswith('src'):
+                    ret[slot] = ret[slot].numpy().tolist()
+                elif slot.endswith('pred_scores'):
+                    ret[slot] = [t.numpy().tolist() for t in ret[slot]]
+                elif slot.endswith('preds'):
+                    ret[slot] = [t.numpy().tolist() for t in ret[slot]]
+
+        for tid, t in enumerate(ret["dup_pred_tuples"]):
+            if torch.cuda.is_available():
+                nt = (t[0].cpu().numpy().tolist(), t[1], t[2].cpu().item())
+            else:
+                nt = (t[0].numpy().tolist(), t[1], t[2].item())
+            ret["dup_pred_tuples"][tid] = nt
 
         return ret
 
@@ -230,4 +255,10 @@ class Translation(object):
         return "".join(msg)
 
     def add_copied_flags(self, vocab_size):
-        self.copied_flags = [pred.ge(vocab_size) for pred in self.preds]
+        copied_flags = [pred.ge(vocab_size) for pred in self.preds]
+        if torch.cuda.is_available():
+            copied_flags = [t.cpu().numpy().tolist() for t in copied_flags]
+        else:
+            copied_flags = [t.numpy().tolist() for t in copied_flags]
+
+        self.copied_flags = copied_flags

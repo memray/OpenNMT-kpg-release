@@ -135,7 +135,8 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     # 'k' means the number of phrases in ground-truth
     topk_range = [5, 10, 'k']
     absent_topk_range = [10, 30, 50]
-    metric_names = ['correct', 'precision', 'recall', 'f_score']
+    # 'precision_hard' and 'f_score_hard' mean that precision is calculated with denominator strictly as K (say 5 or 10), won't be lessened even number of preds is smaller
+    metric_names = ['correct', 'precision', 'recall', 'f_score', 'precision_hard', 'f_score_hard']
 
     score_dict = {}  # {'precision@5':[],'recall@5':[],'f1score@5':[], 'precision@10':[],'recall@10':[],'f1score@10':[]}
 
@@ -326,11 +327,13 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             report_file.write(print_out)
 
         # add tgt/pred count for computing average performance on non-empty items
-        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num']
+        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num', 'unique_pred_num', 'dup_pred_num']
         results_list = [{'present_tgt_num': len(present_tgts)},
                         {'absent_tgt_num': len(absent_tgts)},
                         {'present_pred_num': len(present_preds)},
                         {'absent_pred_num': len(absent_preds)},
+                        {'unique_pred_num': pred_dict['unique_pred_num'] if 'unique_pred_num' in pred_dict else 0},
+                        {'dup_pred_num': pred_dict['dup_pred_num'] if 'dup_pred_num' in pred_dict else 0},
                         ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
@@ -490,15 +493,22 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
 
         # Micro-Averaged Method
         correct_num = int(sum(match_list_k))
-        micro_pk = float(sum(match_list_k)) / float(len(pred_list_k)) if len(pred_list_k) > 0 else 0.0
-        micro_rk = float(sum(match_list_k)) / float(len(tgt_list)) if len(tgt_list) > 0 else 0.0
+        # Precision, Recall and F-score, with flexible cutoff (if number of pred is smaller)
+        micro_p = float(sum(match_list_k)) / float(len(pred_list_k)) if len(pred_list_k) > 0 else 0.0
+        micro_r = float(sum(match_list_k)) / float(len(tgt_list)) if len(tgt_list) > 0 else 0.0
 
-        if micro_pk + micro_rk > 0:
-            micro_f1 = float(2 * (micro_pk * micro_rk)) / (micro_pk + micro_rk)
+        if micro_p + micro_r > 0:
+            micro_f1 = float(2 * (micro_p * micro_r)) / (micro_p + micro_r)
         else:
             micro_f1 = 0.0
+        # F-score, with a hard cutoff on precision, offset the favor towards fewer preds
+        micro_p_hard = float(sum(match_list_k)) / cutoff if len(pred_list_k) > 0 else 0.0
+        if micro_p_hard + micro_r > 0:
+            micro_f1_hard = float(2 * (micro_p_hard * micro_r)) / (micro_p_hard + micro_r)
+        else:
+            micro_f1_hard = 0.0
 
-        for score_name, v in zip(score_names, [correct_num, micro_pk, micro_rk, micro_f1]):
+        for score_name, v in zip(score_names, [correct_num, micro_p, micro_r, micro_f1, micro_p_hard, micro_f1_hard]):
             score_dict['{}@{}'.format(score_name, topk)] = v
 
     return score_dict
@@ -575,15 +585,19 @@ def summarize_scores(ckpt_name, score_dict):
 
     # tgt & pred stat
     avg_dict['#tgt'] = sum(score_dict['present_tgt_num']) + sum(score_dict['absent_tgt_num'])
-    avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_tgt_num'])
+    avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_pred_num'])
     avg_dict['#pre_tgt'] = sum(score_dict['present_tgt_num'])
     avg_dict['#pre_pred'] = sum(score_dict['present_pred_num'])
     avg_dict['#ab_tgt'] = sum(score_dict['absent_tgt_num'])
     avg_dict['#ab_pred'] = sum(score_dict['absent_pred_num'])
+    avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num'])
+    avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num'])
 
     present_tgt_num = score_dict['present_tgt_num']
     absent_tgt_num = score_dict['absent_tgt_num']
-    del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], score_dict['present_pred_num'], score_dict['absent_pred_num']
+    del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], \
+        score_dict['present_pred_num'], score_dict['absent_pred_num'], \
+        score_dict['unique_pred_num'], score_dict['dup_pred_num']
 
     for score_name, score_list in score_dict.items():
         # number of correct phrases
@@ -601,6 +615,7 @@ def summarize_scores(ckpt_name, score_dict):
             tmp_scores = [score for score, num in zip(score_list, absent_tgt_num) if num > 0]
             avg_dict[score_name] = np.average(tmp_scores)
         else:
+            logger.error("NotImplementedError: found key %s" % score_name)
             raise NotImplementedError
 
     summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()
