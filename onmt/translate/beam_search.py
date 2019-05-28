@@ -236,7 +236,10 @@ class BeamSearch(DecodeStrategy):
                     self.is_finished[i].all()
             else:
                 finish_flag = self.top_beam_finished[i] != 0
+            # Rui: top beam finished means no more better "one sequence" will be generated
+            # TODO Rui: 20190520 consider have both strategies: end until collect enough predictions
             if finish_flag or len(self.hypotheses[b]) >= self.n_best:
+            # if last_step or len(self.hypotheses[b]) >= self.n_best:
                 best_hyp = sorted(
                     self.hypotheses[b], key=lambda x: x[0], reverse=True)
                 for n, (score, pred, attn) in enumerate(best_hyp):

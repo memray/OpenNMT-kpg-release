@@ -731,7 +731,7 @@ class Translator(object):
             memory_lengths=memory_lengths)
 
         for step in range(max_length):
-            # print("step %d" % step)
+            print("step %d" % step)
             # [1, beam*batch_size, 1]
             decoder_input = beam.current_predictions.view(1, -1, 1)
 

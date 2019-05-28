@@ -125,7 +125,7 @@ def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=Tru
            np.asarray(duplicate_flags)
 
 
-def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False, report_path=None):
+def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False, report_path=None, eval_topbeam=False):
     # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
 
     if report_path:
@@ -146,10 +146,17 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     for i, (src_dict, tgt_dict, pred_dict) in enumerate(zip(src_list, tgt_list, pred_list)):
         src_seq = src_dict["src"].split()
         tgt_seqs =[t.split() for t in tgt_dict["tgt"]]
-        pred_sents = pred_dict["pred_sents"]
-        pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
-        pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
-        copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
+
+        if eval_topbeam:
+            pred_sents = pred_dict["topseq_pred_sents"]
+            pred_idxs = pred_dict["topseq_preds"] if "topseq_preds" in pred_dict else None
+            pred_scores = pred_dict["topseq_pred_scores"] if "topseq_pred_scores" in pred_dict else None
+            copied_flags = None
+        else:
+            pred_sents = pred_dict["pred_sents"]
+            pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
+            pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
+            copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
 
         # src, src_str, tgt, tgt_str_seqs, tgt_copy, pred_seq, oov
         print_out = '======================  %d =========================' % (i)
@@ -180,18 +187,18 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
         # simply add full-text to n-grams might not be good as its contribution is not clear
         match_scores_mixed = get_match_result(true_seqs=tgt_seqs, pred_seqs=pred_sents, type='mixed')
 
-        # sanity check of pred
-        num_pred = len(pred_dict["pred_sents"])
-        for d_name, d in zip(['pred_idxs', 'pred_sents', 'pred_scores',
-                      'match_scores_exact', 'valid_pred_flags',
-                      'present_pred_flags', 'copied_flags'],
-                      [pred_idxs, pred_sents, pred_scores,
-                      match_scores_exact, valid_pred_flags,
-                      present_pred_flags, copied_flags]):
-            if d is not None:
-                if len(d) != num_pred:
-                    logger.error('%s number does not match' % d_name)
-                assert len(d) == num_pred
+        # sanity check of pred (does not work for topbeam, discard)
+        # num_pred = len(pred_dict["pred_sents"])
+        # for d_name, d in zip(['pred_idxs', 'pred_sents', 'pred_scores',
+        #               'match_scores_exact', 'valid_pred_flags',
+        #               'present_pred_flags', 'copied_flags'],
+        #               [pred_idxs, pred_sents, pred_scores,
+        #               match_scores_exact, valid_pred_flags,
+        #               present_pred_flags, copied_flags]):
+        #     if d is not None:
+        #         if len(d) != num_pred:
+        #             logger.error('%s number does not match' % d_name)
+        #         assert len(d) == num_pred
 
         '''
         Print and export predictions
@@ -300,7 +307,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
 
         for name, resutls in zip(results_names, results_list):
             if name.startswith('present'):
-                topk = 10
+                topk = 5
             else:
                 topk = 50
 
@@ -314,6 +321,20 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
                                                            np.average(score_dict['{}_recall@{}'.format(name, topk)]),
                                                            np.average(score_dict['{}_f_score@{}'.format(name, topk)]),
                                                            np.sum(score_dict['{}_correct@{}'.format(name, topk)]))
+
+            if name.startswith('present'):
+                topk = 10
+                print_out += "\n --- batch {} P/R/F1/Corr @{}: \t".format(name, topk) \
+                             + " {:.4f} , {:.4f} , {:.4f} , {:2f}".format(resutls['precision@{}'.format(topk)],
+                                                               resutls['recall@{}'.format(topk)],
+                                                               resutls['f_score@{}'.format(topk)],
+                                                               resutls['correct@{}'.format(topk)])
+                print_out += "\n --- total {} P/R/F1/Corr @{}: \t".format(name, topk) \
+                             + " {:.4f} , {:.4f} , {:.4f} , {:2f}".format(np.average(score_dict['{}_precision@{}'.format(name, topk)]),
+                                                               np.average(score_dict['{}_recall@{}'.format(name, topk)]),
+                                                               np.average(score_dict['{}_f_score@{}'.format(name, topk)]),
+                                                               np.sum(score_dict['{}_correct@{}'.format(name, topk)]))
+
 
         print_out += "\n ======================================================="
 
@@ -337,8 +358,8 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
                         ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
-    for k, v in score_dict.items():
-        print('%s, num=%d, mean=%f' % (k, len(v), np.average(v)))
+    # for k, v in score_dict.items():
+    #     print('%s, num=%d, mean=%f' % (k, len(v), np.average(v)))
 
     if report_file:
         report_file.close()
@@ -563,14 +584,14 @@ def kp_results_to_str(results_dict):
     return json.dumps(summary_dict)
 
 
-def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None, report_path=None):
+def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None, report_path=None, eval_topbeam=False):
     src_data = [json.loads(l) for l in open(src_path, "r")]
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
     pred_data = [json.loads(l) for l in open(pred_path, "r")]
 
     assert len(pred_data) == len(src_data) == len(tgt_data)
 
-    results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path)
+    results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
 
     return results_dict
 
@@ -584,17 +605,30 @@ def summarize_scores(ckpt_name, score_dict):
     avg_dict['#ab_doc'] = len([x for x in score_dict['absent_tgt_num'] if x > 0])
 
     # tgt & pred stat
-    avg_dict['#tgt'] = sum(score_dict['present_tgt_num']) + sum(score_dict['absent_tgt_num'])
-    avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_pred_num'])
-    avg_dict['#pre_tgt'] = sum(score_dict['present_tgt_num'])
-    avg_dict['#pre_pred'] = sum(score_dict['present_pred_num'])
-    avg_dict['#ab_tgt'] = sum(score_dict['absent_tgt_num'])
-    avg_dict['#ab_pred'] = sum(score_dict['absent_pred_num'])
-    avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num'])
-    avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num'])
+    if 'present_tgt_num' in score_dict and 'absent_tgt_num' in score_dict:
+        avg_dict['#tgt'] = sum(score_dict['present_tgt_num']) + sum(score_dict['absent_tgt_num'])
+        avg_dict['#pre_tgt'] = sum(score_dict['present_tgt_num'])
+        avg_dict['#ab_tgt'] = sum(score_dict['absent_tgt_num'])
+    else:
+        avg_dict['#tgt'] = 0
+        avg_dict['#pre_tgt'] = 0
+        avg_dict['#ab_tgt'] = 0
 
-    present_tgt_num = score_dict['present_tgt_num']
-    absent_tgt_num = score_dict['absent_tgt_num']
+    if 'present_pred_num' in score_dict and 'absent_pred_num' in score_dict:
+        avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_pred_num'])
+        avg_dict['#pre_pred'] = sum(score_dict['present_pred_num'])
+        avg_dict['#ab_pred'] = sum(score_dict['absent_pred_num'])
+    else:
+        avg_dict['#pred'] = 0
+        avg_dict['#pre_pred'] = 0
+        avg_dict['#ab_pred'] = 0
+
+    avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num']) if 'unique_pred_num' in score_dict else 0
+    avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num']) if 'dup_pred_num' in score_dict else 0
+
+    present_tgt_num = score_dict['present_tgt_num'] if 'present_tgt_num' in score_dict else 0
+    absent_tgt_num = score_dict['absent_tgt_num'] if 'absent_tgt_num' in score_dict else 0
+
     del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], \
         score_dict['present_pred_num'], score_dict['absent_pred_num'], \
         score_dict['unique_pred_num'], score_dict['dup_pred_num']
@@ -655,15 +689,17 @@ def init_opt():
     # Input/output options
     parser.add_argument('--data', '-data', required=True,
                         help="Path to the source/target file of groundtruth data.")
-    parser.add_argument('--pred', '-pred', required=True,
-                        help="File of predicted keyphrases, each line is a JSON dict.")
+    parser.add_argument('--pred_dir', '-pred_dir', required=True,
+                        help="Directory to pred folders, each folder contains .pred files, each line is a JSON dict about predicted keyphrases.")
     parser.add_argument('--output_dir', '-output_dir',
                         help="Path to output log/results.")
     parser.add_argument('--unk_token', '-unk_token', default="<unk>",
                         help=".")
     parser.add_argument('--verbose', '-v', action='store_true',
                         help=".")
-    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
+    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
+    parser.add_argument('-topbeam', action='store_true', required=False, help='Evaluate with all beams or just from top beam.')
+
     # parser.add_argument('-testsets', nargs='+', type=str, default=["duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
 
     opt = parser.parse_args()
@@ -675,42 +711,44 @@ if __name__ == '__main__':
     opt = init_opt()
     score_dicts = {}
 
-    for dataname in opt.testsets:
-        src_path = os.path.join(opt.data, dataname, "%s_test.src" % dataname)
-        tgt_path = os.path.join(opt.data, dataname, "%s_test.tgt" % dataname)
-        pred_path = os.path.join(opt.pred, "%s.pred" % dataname)
+    for ckpt_name in os.listdir(opt.pred_dir):
 
-        ckpt_name = opt.pred[opt.pred.find('pred/') + 5: ].strip(string.punctuation)
+        for dataname in opt.testsets:
+            src_path = os.path.join(opt.data, dataname, "%s_test.src" % dataname)
+            tgt_path = os.path.join(opt.data, dataname, "%s_test.tgt" % dataname)
+            pred_path = os.path.join(opt.pred_dir, ckpt_name, "%s.pred" % dataname)
 
-        if not os.path.exists(opt.output_dir):
-            os.makedirs(opt.output_dir)
-        if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
-            os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
-        if not os.path.exists(os.path.join(opt.output_dir, 'eval')):
-            os.makedirs(os.path.join(opt.output_dir, 'eval'))
+            if not os.path.exists(opt.output_dir):
+                os.makedirs(opt.output_dir)
+            if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
+                os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
+            if not os.path.exists(os.path.join(opt.output_dir, 'eval')):
+                os.makedirs(os.path.join(opt.output_dir, 'eval'))
 
-        logger = init_logger(opt.output_dir + "kp_evaluate.%s.eval.log" % dataname)
-        report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
-        score_path = os.path.join(opt.output_dir, 'eval', ckpt_name + '-%s.json' % dataname)
+            logger = init_logger(opt.output_dir + "kp_evaluate.%s.eval.log" % dataname)
+            report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
+            score_path = os.path.join(opt.output_dir, 'eval', ckpt_name + '-%s.json' % dataname)
 
-        logger.info("Evaluating %s" % dataname)
+            logger.info("Evaluating %s" % dataname)
 
-        if not os.path.exists(score_path):
-            score_dict = keyphrase_eval(src_path=src_path,
-                                          tgt_path=tgt_path,
-                                          pred_path=pred_path,
-                                          unk_token = '<unk>',
-                                          verbose = opt.verbose,
-                                          logger = logger,
-                                          report_path = report_path)
-            logger.info(kp_results_to_str(score_dict))
+            if not os.path.exists(score_path):
+                score_dict = keyphrase_eval(src_path=src_path,
+                                              tgt_path=tgt_path,
+                                              pred_path=pred_path,
+                                              unk_token = '<unk>',
+                                              verbose = opt.verbose,
+                                              logger = logger,
+                                              report_path = report_path,
+                                            eval_topbeam=opt.topbeam
+                                            )
+                logger.info(kp_results_to_str(score_dict))
 
-            with open(score_path, 'w') as output_json:
-                output_json.write(json.dumps(score_dict))
+                with open(score_path, 'w') as output_json:
+                    output_json.write(json.dumps(score_dict))
 
-            score_dicts[dataname] = score_dict
+                score_dicts[dataname] = score_dict
 
-    export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'),
-                          output_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+        export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'),
+                              output_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
 
-    logger.info("Done!")
+        logger.info("Done!")

@@ -68,7 +68,7 @@ if __name__ == "__main__":
     logger = init_logger(opt.output_dir + 'autoeval_%s_%s.log'
                          % ('-'.join(opt.testsets), current_time))
     logger.info('Sleep for %d sec to avoid conflicting with other threads' % sleep_time)
-    time.sleep(sleep_time)
+    # time.sleep(sleep_time)
 
     if not os.path.exists(opt.output_dir):
         os.makedirs(opt.output_dir)
@@ -95,8 +95,8 @@ if __name__ == "__main__":
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
         # print(new_ckpts.items())
         # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
-        for ckpt_name, ckpt_path in sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])):
-            logger.info("Checking checkpoint: %s" % ckpt_path)
+        for ckpt_id, (ckpt_name, ckpt_path) in enumerate(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))):
+            logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts), ckpt_path))
             setattr(opt, 'models', [ckpt_path])
 
             translator = None
