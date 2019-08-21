@@ -146,7 +146,7 @@ class Translation(object):
 
     __slots__ = ["src", "src_raw", "gold_sent", "gold_score",
                  "attns", "copied_flags",
-                 "unique_pred_num", "dup_pred_num",
+                 "unique_pred_num", "dup_pred_num", "beamstep_num",
                  "pred_sents", "pred_scores", "preds",
                  "ori_pred_sents", "ori_pred_scores", "ori_preds",
                  "topseq_pred_sents", "topseq_pred_scores", "topseq_preds",
@@ -163,6 +163,10 @@ class Translation(object):
         self.pred_sents = pred_sents
         self.pred_scores = pred_scores
         self.preds = preds
+
+        self.dup_pred_num = 0 # number of all predicted phrases
+        self.unique_pred_num = 0 # number of unique phrases
+        self.beamstep_num = 0 # number of effective beam search steps
 
         self.copied_flags = None
         self.ori_pred_sents = None

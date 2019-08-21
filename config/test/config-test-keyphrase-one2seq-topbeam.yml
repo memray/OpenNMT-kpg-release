@@ -38,3 +38,4 @@ n_best: 500
 gpu: -1
 
 tgt_type: multiple
+beam_terminate: topbeam

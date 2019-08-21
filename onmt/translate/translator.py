@@ -122,7 +122,8 @@ class Translator(object):
             logger=None,
             seed=-1,
             tgt_type=None,
-            model_tgt_type=None
+            model_tgt_type=None,
+            beam_terminate=None
     ):
         self.model = model
         self.fields = fields
@@ -185,6 +186,8 @@ class Translator(object):
         # added by @memray, to accommodate multiple targets
         self.tgt_type=tgt_type
         self.model_tgt_type=model_tgt_type
+        # beam search termination condition
+        self.beam_terminate=beam_terminate
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -265,7 +268,8 @@ class Translator(object):
             logger=logger,
             seed=opt.seed,
             tgt_type=opt.tgt_type,
-            model_tgt_type=model_opt.tgt_type
+            model_tgt_type=model_opt.tgt_type,
+            beam_terminate=opt.beam_terminate
         )
 
     def _log(self, msg):
@@ -330,7 +334,7 @@ class Translator(object):
             sort_key=inputters.str2sortkey[self.data_type],
             filter_pred=self._filter_pred
         )
-        # added by @memray, as Dataset is only instantiated here, having to use this plugin setter
+        # @memray, as Dataset is only instantiated here, having to use this plugin setter
         if isinstance(data, KeyphraseDataset):
             data.tgt_type=self.tgt_type
 
@@ -367,9 +371,12 @@ class Translator(object):
 
             # @memray
             if self.data_type == "keyphrase":
-                # post-process for one2many outputs
+                # post-process for one2seq outputs, split seq into individual phrases
                 if self.model_tgt_type != 'one2one':
                     translations = self.segment_one2seq_trans(translations)
+                else:
+                    # TODO add statistics for one2one as in segment_one2seq_trans (pred_num, beamstep_num etc.)
+                    pass
                 # add copied flag
                 vocab_size = len(self.fields['src'].base_field.vocab.itos)
                 for t in translations:
@@ -728,7 +735,9 @@ class Translator(object):
             stepwise_penalty=self.stepwise_penalty,
             block_ngram_repeat=self.block_ngram_repeat,
             exclusion_tokens=self._exclusion_idxs,
-            memory_lengths=memory_lengths)
+            memory_lengths=memory_lengths,
+            beam_terminate = self.beam_terminate
+        )
 
         for step in range(max_length):
             print("step %d" % step)
@@ -933,9 +942,9 @@ class Translator(object):
 
     def segment_one2seq_trans(self, trans):
         """
-        For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rank
-        :param trans:
-        :return:
+        For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rerank them
+        :param trans: a list of translations, length=batch_size, each translation contains multiple beams corresponding to one source text
+        :return: a list of translations, each beam in each translation (multiple phrases delimited by <sep>) is a phrase
         """
         for tran in trans:
             dup_pred_tuples = []
@@ -975,7 +984,7 @@ class Translator(object):
                     new_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
                     new_pred_scores.append(tran.pred_scores[sent_i])
 
-                    # first beam (top-score sequence)
+                    # first beam (top-rank sequence)
                     if sent_i == 0:
                         topseq_preds.append(tran.preds[sent_i][start_idx: end_idx])
                         topseq_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
@@ -984,7 +993,7 @@ class Translator(object):
             # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
             # print(new_pred_counter)
 
-            # still keep the original pred
+            # still keep the original pred beams
             tran.ori_preds = tran.preds
             tran.ori_pred_sents = tran.pred_sents
             tran.ori_pred_scores = tran.pred_scores
@@ -992,6 +1001,7 @@ class Translator(object):
             # stats of kps
             tran.unique_pred_num = len(new_pred_counter)
             tran.dup_pred_num = sum(new_pred_counter.values())
+            tran.beamstep_num = sum([len(t) for t in tran.ori_preds])
 
             # segmented predictions from the top-score sequence
             tran.topseq_preds = topseq_preds

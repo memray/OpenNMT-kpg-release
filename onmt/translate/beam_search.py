@@ -56,7 +56,7 @@ class BeamSearch(DecodeStrategy):
     def __init__(self, beam_size, batch_size, pad, bos, eos, n_best, mb_device,
                  global_scorer, min_length, max_length, return_attention,
                  block_ngram_repeat, exclusion_tokens, memory_lengths,
-                 stepwise_penalty, ratio):
+                 stepwise_penalty, ratio, beam_terminate):
         super(BeamSearch, self).__init__(
             pad, bos, eos, batch_size, mb_device, beam_size, min_length,
             block_ngram_repeat, exclusion_tokens, return_attention,
@@ -67,6 +67,8 @@ class BeamSearch(DecodeStrategy):
         self.n_best = n_best
         self.batch_size = batch_size
         self.ratio = ratio
+        # @memray: beam search termination condition. `topbeam` means search stops once the top-score beam is done. `full` means all beams will be finished until reaching the max_length.
+        self.beam_terminate = beam_terminate
 
         # result caching
         self.hypotheses = [[] for _ in range(batch_size)]
@@ -197,7 +199,13 @@ class BeamSearch(DecodeStrategy):
         self.is_finished = self.topk_ids.eq(self.eos)
         self.ensure_max_length()
 
-    def update_finished(self, last_step):
+    def update_finished(self, last_step=None):
+        """
+        @memray
+        A last_step is required from the outside
+        :param last_step: boolean, indicating whether beam search reaches the max_length, otherwise it returns no results (finished beams are abandoned)
+        :return:
+        """
         # Penalize beams that finished.
         _B_old = self.topk_log_probs.shape[0]
         step = self.alive_seq.shape[-1]  # 1 greater than the step in advance
@@ -205,6 +213,7 @@ class BeamSearch(DecodeStrategy):
         # on real data (newstest2017) with the pretrained transformer,
         # it's faster to not move this back to the original device
         self.is_finished = self.is_finished.to('cpu')
+        # TODO @memray: extend to topK beam finished?
         self.top_beam_finished |= self.is_finished[:, 0].eq(1)
         predictions = self.alive_seq.view(_B_old, self.beam_size, step)
         attention = (
@@ -229,17 +238,29 @@ class BeamSearch(DecodeStrategy):
                     if attention is not None else None))
             # End condition is the top beam finished and we can return
             # n_best hypotheses.
-            if self.ratio > 0:
-                pred_len = self._memory_lengths[i] * self.ratio
-                finish_flag = ((self.topk_scores[i, 0] / pred_len)
-                               <= self.best_scores[b]) or \
-                    self.is_finished[i].all()
+            # @memray: beam_terminate is specific to keyphrase task
+            if not self.beam_terminate:
+                if self.ratio > 0:
+                    pred_len = self._memory_lengths[i] * self.ratio
+                    finish_flag = ((self.topk_scores[i, 0] / pred_len)
+                                   <= self.best_scores[b]) or \
+                                self.is_finished[i].all()
+                else:
+                    finish_flag = self.top_beam_finished[i] != 0
             else:
-                finish_flag = self.top_beam_finished[i] != 0
-            # Rui: top beam finished means no more better "one sequence" will be generated
-            # TODO Rui: 20190520 consider have both strategies: end until collect enough predictions
+                # @memray: 20190520 consider have both strategies: end until collect enough predictions
+                if self.beam_terminate == 'topbeam':
+                    # @memray: top beam finished means no more better "one sequence" will be generated
+                    finish_flag = self.top_beam_finished[i] != 0
+                elif self.beam_terminate == 'full':
+                    # @memray: it's the ending step, return all finished beams
+                    if last_step is not None and last_step:
+                        finish_flag = True
+                    else:
+                        finish_flag = False
+                else:
+                    raise NotImplementedError("param not recognized: beam_terminate=%s" % self.beam_terminate)
             if finish_flag or len(self.hypotheses[b]) >= self.n_best:
-            # if last_step or len(self.hypotheses[b]) >= self.n_best:
                 best_hyp = sorted(
                     self.hypotheses[b], key=lambda x: x[0], reverse=True)
                 for n, (score, pred, attn) in enumerate(best_hyp):

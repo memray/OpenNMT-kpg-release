@@ -185,7 +185,15 @@ def model_opts(parser):
               choices=["O0", "O1", "O2", "O3"],
               help="For FP16 training, the opt_level to use."
                    "See https://nvidia.github.io/apex/amp.html#opt-levels.")
-
+    # keyphrase
+    group.add('--orth_reg', '-orth_reg', action="store_true",
+              help='Train with Orthogonal Regularization (3.5.1).')
+    group.add('--sem_cov', '-sem_cov', action="store_true",
+              help='Train with Target Encoding (3.5.2).')
+    # group.add('--tgt_enc', '-tgt_enc',
+    #           type=str, default=None,
+    #           choices=['dot', 'general', 'mlp', 'none'],
+    #           help="Train with Target Encoding.")
 
 def preprocess_opts(parser):
     """ Pre-procesing options """
@@ -567,7 +575,7 @@ def translate_opts(parser):
     """ Translation / inference options """
     group = parser.add_argument_group('Model')
     group.add('--model', '-model', dest='models', metavar='MODEL',
-              nargs='+', type=str, default=[], required=True,
+              nargs='+', type=str, default=[], #required=True,
               help="Path to model .pt file(s). "
                    "Multiple models can be specified, "
                    "for ensemble decoding.")
@@ -586,7 +594,7 @@ def translate_opts(parser):
     group.add('--data_type', '-data_type', default="text",
               help="Type of the source input. Options: [text|img|keyphrase].")
 
-    group.add('--src', '-src', required=True,
+    group.add('--src', '-src', #required=True,
               help="Source sequence to decode (one line per "
                    "sequence)")
     group.add('--src_dir', '-src_dir', default="",
@@ -646,6 +654,13 @@ def translate_opts(parser):
               help='Maximum prediction length.')
     group.add('--max_sent_length', '-max_sent_length', action=DeprecateAction,
               help="Deprecated, use `-max_length` instead")
+    # configs for Keyphrase Decoding
+    group.add('--beam_terminate', '-beam_terminate', default='full',
+              choices=['topbeam', 'full'],
+              help="Termination condition on when beam search stops"
+                   "`topbeam` means the beam search stops once the topbeam is done (top score)"
+                   "`full` means all beams will be explored until reaching max_length, default for one2one but would cause waste on one2seq kp generation"
+              )
 
     # Alpha and Beta values for Google Length + Coverage penalty
     # Described here: https://arxiv.org/pdf/1609.08144.pdf, Section 7
