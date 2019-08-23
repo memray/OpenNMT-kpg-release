@@ -263,6 +263,10 @@ class NMTLossCompute(LossComputeBase):
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
             loss += coverage_loss
+        if self.lambda_orth_reg != 0.0:
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, sep_idx)
+            loss += orthogonal_penalty
+
         stats = self._stats(loss.clone(), scores, gtruth)
 
         return loss, stats
@@ -271,6 +275,42 @@ class NMTLossCompute(LossComputeBase):
         covloss = torch.min(std_attn, coverage_attn).sum(2).view(-1)
         covloss *= self.lambda_coverage
         return covloss
+
+    def orthogonal_penalty(self, _m, I, l_n_norm=2):
+        # _m: h x n
+        # I:  n x n
+        m = torch.mm(torch.t(_m), _m)  # n x n
+        return torch.norm((m - I), p=l_n_norm)
+
+    def _compute_orthogonal_regularization_loss(self, target_indices, decoder_hidden_states, sep_idx):
+        # target_indices: batch x target_len
+        # decoder_hidden_states: batch x target_len x hid
+        # aux loss: make the decoder outputs at all <SEP>s to be orthogonal
+        sep_idx = word2id[pykp.io.SEP_WORD]
+        penalties = []
+        for i in range(len(target_indices)):
+            # per data point in a batch
+            seps = []
+            for j in range(len(target_indices[i])):  # len of target
+                if target_indices[i][j] == sep_idx:
+                    seps.append(decoder_hidden_states[i][j])
+            if len(seps) > 1:
+                seps = torch.stack(seps, -1)  # hid x n
+                identity = torch.eye(seps.size(-1))  # n x n
+                if decoder_hidden_states.is_cuda:
+                    identity = identity.cuda()
+                penalty = self.orthogonal_penalty(seps, identity, 2)  # 1
+                penalties.append(penalty)
+
+        if len(penalties) > 0 and decoder_hidden_states.size(0) > 0:
+            penalties = torch.sum(torch.stack(penalties, -1)) / float(decoder_outputs.size(0))
+        else:
+            penalties = 0.0
+        penalties = penalties * self.lambda_orth_reg
+        return penalties
+
+
+
 
 
 def filter_shard_state(state, shard_size=None):
