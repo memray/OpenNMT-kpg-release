@@ -231,17 +231,24 @@ def process_multiple_tgts(big_batch, tgt_type):
         # tgt = ex.tgt if hasattr(ex, "tgt") else None
         # alignment = ex.alignment if hasattr(ex, "alignment") else None
 
+        # sep_indices, indicating the position of <SEP> and <EOS> after concatenating, only used in one2seq training
+        sep_indices = None
         if tgt_type == 'one2one':
             # sample one tgt from multiple tgts and use it as the only tgt
             rand_idx = np.random.randint(len(ex.tgt))
             tgt = ex.tgt[rand_idx]
             alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
         elif tgt_type in ['no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length']:
-            # generate one2many training data points
+            # generate one2seq training data points
             order = obtain_sorted_indices(ex.src, ex.tgt, sort_by=tgt_type)
             tgt = [ex.tgt[idx] for idx in order]
             tgt = [t[0]+[SEP_token] for t in tgt[:-1]] + tgt[-1]
             tgt = [np.concatenate(tgt, axis=None).tolist()]
+
+            # position of <SEP> and <EOS>
+            sep_indices = [[wid for wid, w in enumerate(t) if w==SEP_token] + [len(t)] for t in tgt]
+            sep_indices = torch.torch.from_numpy(np.concatenate(sep_indices, axis=None))
+
             if hasattr(ex, "alignment"):
                 alignment = [ex.alignment[idx] for idx in order]
                 # remove the heading and trailing 0 for <s> and </s> in each subsequence
@@ -274,6 +281,8 @@ def process_multiple_tgts(big_batch, tgt_type):
             raise NotImplementedError
 
         ex.tgt = tgt
+        setattr(ex, 'sep_indices', sep_indices)
+
         if hasattr(ex, "alignment"):
             if isinstance(alignment, list):
                 # for test phase (tgt_type='multiple'), with unprocessed multiple targets

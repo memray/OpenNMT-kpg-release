@@ -6,7 +6,7 @@ import shutil
 import torch
 
 from onmt.inputters.inputter import build_dataset_iter, \
-    load_old_vocab, old_style_vocab, build_dataset_iter_multiple
+    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt
 from onmt.model_builder import build_model
 from onmt.utils.optimizers import Optimizer
 from onmt.utils.misc import set_random_seed
@@ -15,6 +15,7 @@ from onmt.models import build_model_saver
 from onmt.utils.logging import init_logger, logger
 from onmt.utils.parse import ArgumentParser
 
+from torchtext.data import Field, RawField
 
 def _check_save_model_path(opt):
     save_model_path = os.path.abspath(opt.save_model)
@@ -74,6 +75,13 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
             vocab, opt.model_type, dynamic_dict=opt.copy_attn)
     else:
         fields = vocab
+
+    # @memray: a temporary workaround, as well as train.py line 43
+    if 'sep_indices' not in fields:
+        sep_indices = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=make_tgt, sequential=False)
+        fields["sep_indices"] = sep_indices
 
     # Report src and tgt vocab sizes, including for features
     for side in ['src', 'tgt']:

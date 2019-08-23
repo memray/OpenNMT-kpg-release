@@ -12,9 +12,10 @@ from onmt.utils.logging import init_logger, logger
 from onmt.train_single import main as single_main
 from onmt.utils.parse import ArgumentParser
 from onmt.inputters.inputter import build_dataset_iter, \
-    load_old_vocab, old_style_vocab, build_dataset_iter_multiple
+    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt
 
 from itertools import cycle
+from torchtext.data import Field, RawField
 
 def main(opt):
     ArgumentParser.validate_train_opts(opt)
@@ -38,6 +39,13 @@ def main(opt):
             vocab, opt.model_type, dynamic_dict=opt.copy_attn)
     else:
         fields = vocab
+
+    # @memray: a temporary workaround, as well as train_single.py line 78
+    if 'sep_indices' not in fields:
+        sep_indices = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=make_tgt, sequential=False)
+        fields["sep_indices"] = sep_indices
 
     if len(opt.data_ids) > 1:
         train_shards = []

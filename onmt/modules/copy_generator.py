@@ -202,7 +202,9 @@ class CopyGeneratorLossCompute(NMTLossCompute):
         return shard_state
 
     def _compute_loss(self, batch, output, target, copy_attn, align,
-                      std_attn=None, coverage_attn=None):
+                      std_attn=None, coverage_attn=None
+                      # add hidden_state and index
+                      ):
         """Compute the loss.
 
         The args must match :func:`self._make_shard_state()`.
