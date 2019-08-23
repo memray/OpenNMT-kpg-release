@@ -148,6 +148,12 @@ def get_fields(
         id = Field(use_vocab=False, dtype=torch.long, sequential=False)
         fields["id"] = id
 
+        # for Orthogonal Regularization and Semantic Coverage
+        sep_indices = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=make_tgt, sequential=False)
+        fields["sep_indices"] = sep_indices
+
     return fields
 
 
@@ -555,15 +561,22 @@ def batch_iter(data, batch_size, batch_size_fn=None, batch_size_multiple=1):
 
 
 def _pool(data, batch_size, batch_size_fn, batch_size_multiple,
-          sort_key, random_shuffler, pool_factor):
+          sort_key, random_shuffler, pool_factor, dataset=None):
     for p in torchtext.data.batch(
             data, batch_size * pool_factor,
             batch_size_fn=batch_size_fn):
+        # if it's keyphrase dataset, a preprocess to targets should act beforehand.
+        if dataset and isinstance(dataset, KeyphraseDataset):
+            p = keyphrase_dataset.process_multiple_tgts(p, dataset.tgt_type)
+        # @memray: split each big batch into final mini-batches
+        # batch_size_fn=max_tok_len() for train, counting real batch size (num_batch * max(#words in src/tgt))
+        # sort the data before splitting
         p_batch = list(batch_iter(
             sorted(p, key=sort_key),
             batch_size,
             batch_size_fn=batch_size_fn,
             batch_size_multiple=batch_size_multiple))
+        # shuffle samples in a minibatch before returning
         for b in random_shuffler(p_batch):
             yield b
 
@@ -599,7 +612,9 @@ class OrderedIterator(torchtext.data.Iterator):
                     self.batch_size_multiple,
                     self.sort_key,
                     self.random_shuffler,
-                    self.pool_factor)
+                    self.pool_factor,
+                    self.dataset # @memray
+                )
         else:
             self.batches = []
             for b in batch_iter(
@@ -853,7 +868,9 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
         opt.pool_factor,
         repeat=not opt.single_pass,
         num_batches_multiple=max(opt.accum_count) * opt.world_size,
-        yield_raw_example=multi)
+        yield_raw_example=multi,
+        opt=opt
+    )
 
 
 def build_dataset_iter_multiple(train_shards, fields, opt):

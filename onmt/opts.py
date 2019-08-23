@@ -508,7 +508,7 @@ def train_opts(parser):
                    "if -average_decay is set.")
 
     # learning rate
-    group = parser.add_argument_group('Optimization- Rate')
+    group = parser.add_argument_group('Optimization-Rate')
     group.add('--learning_rate', '-learning_rate', type=float, default=1.0,
               help="Starting learning rate. "
                    "Recommended settings: sgd = 1, adagrad = 0.1, "
