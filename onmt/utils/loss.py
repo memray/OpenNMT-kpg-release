@@ -220,15 +220,38 @@ class LabelSmoothingLoss(nn.Module):
         return F.kl_div(output, model_prob, reduction='sum')
 
 
+class ReplayMemory(object):
+
+    def __init__(self, capacity=300):
+        # vanilla replay memory
+        self.capacity = capacity
+        self.memory = []
+
+    def push(self, stuff):
+        """Saves a transition."""
+        self.memory.append(stuff)
+        if len(self.memory) > self.capacity:
+            self.memory = self.memory[-self.capacity:]
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
+
+
 class NMTLossCompute(LossComputeBase):
     """
     Standard NMT Loss Computation.
     """
 
     def __init__(self, criterion, generator, normalization="sents",
-                 lambda_coverage=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_semantic_coverage=0.0):
         super(NMTLossCompute, self).__init__(criterion, generator)
         self.lambda_coverage = lambda_coverage
+        self.lambda_orth_reg = lambda_orth_reg
+        self.lambda_semantic_coverage = lambda_semantic_coverage
+        self.replay_buffer = ReplayMemory(300)
 
     def _make_shard_state(self, batch, output, range_, attns=None):
         shard_state = {
@@ -264,8 +287,17 @@ class NMTLossCompute(LossComputeBase):
                 std_attn=std_attn, coverage_attn=coverage_attn)
             loss += coverage_loss
         if self.lambda_orth_reg != 0.0:
-            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, sep_idx)
+            # decoder hidden state: output of decoder
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
             loss += orthogonal_penalty
+        if self.lambda_semantic_coverage != 0.0:
+            # model: model, has to include
+            #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
+            #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
+            # source_representations: batch x source_len x source_hid
+            # target_representations: output of target encoder (last state), batch x target_hid
+            semantic_coverage_loss = self._compute_semantic_coverage_loss(model, source_representations, target_representations, target_indices, sep_idx, n_neg)
+            loss += semantic_coverage_loss
 
         stats = self._stats(loss.clone(), scores, gtruth)
 
@@ -285,8 +317,7 @@ class NMTLossCompute(LossComputeBase):
     def _compute_orthogonal_regularization_loss(self, target_indices, decoder_hidden_states, sep_idx):
         # target_indices: batch x target_len
         # decoder_hidden_states: batch x target_len x hid
-        # aux loss: make the decoder outputs at all <SEP>s to be orthogonal
-        sep_idx = word2id[pykp.io.SEP_WORD]
+        # aux loss: make the decoder outputs at all <sep>s to be orthogonal
         penalties = []
         for i in range(len(target_indices)):
             # per data point in a batch
@@ -309,9 +340,51 @@ class NMTLossCompute(LossComputeBase):
         penalties = penalties * self.lambda_orth_reg
         return penalties
 
+    def random_insert(self, _list, elem):
+        insert_before_this = np.random.randint(low=0, high=len(_list) + 1)
+        return _list[:insert_before_this] + [elem] + _list[insert_before_this:], insert_before_this
 
+    def _compute_semantic_coverage_loss(self, model, source_representations, target_representations, target_indices, sep_idx, n_neg):
+        # source_representations: batch x source_hid
+        # target_representations: batch x target_len x target_hid
+        # target_indices: batch x target_len
+        batch_size = target_representations.size(0)
+        # n_neg is how many negative samples to sample
+        batch_inputs_source, batch_inputs_target, batch_labels = [], [], []
+        source_representations = source_representations.detach()
+        for b in range(batch_size):
+            # 0. find sep positions
+            for i in range(len(target_indices[b])):  # target len
+                if target_indices[b][i] == sep_idx:
+                    trg_rep = target_representations[b][i]  # hid
+                    # 1. negative sampling
+                    if len(self.replay_memory) >= n_neg:
+                        neg_list = self.replay_memory.sample(n_neg)
+                        inputs, which = self.random_insert(neg_list, source_representations[b])
+                        inputs = torch.stack(inputs, 0)  # n_neg+1 x hid
+                        batch_inputs_source.append(inputs)
+                        batch_inputs_target.append(trg_rep)
+                        batch_labels.append(which)
+            # 2. push source representations into replay memory
+            self.replay_memory.push(source_representations[b])
+        if len(batch_inputs_source) == 0:
+            return 0.0
+        batch_inputs_source = torch.stack(batch_inputs_source, 0)  # big_batch x n_neg+1 x source_hid
+        batch_inputs_target = torch.stack(batch_inputs_target, 0)  # big_batch x target_hid
+        batch_labels = np.array(batch_labels)  # big_batch
+        batch_labels = torch.autograd.Variable(torch.from_numpy(batch_labels.copy()).type(torch.LongTensor))
+        if target_representations.is_cuda:
+            batch_labels = batch_labels.cuda()
+        # 3. prediction
+        batch_inputs_target = model.target_encoding_mlp(batch_inputs_target)  # big_batch x mlp_hid
+        batch_inputs_target = torch.stack([batch_inputs_target] * batch_inputs_source.size(1), 1)  # big_batch x n_neg+1 x mlp_hid
+        pred = model.bilinear_layer(batch_inputs_source, batch_inputs_target).squeeze(-1)  # batch x n_neg+1
+        pred = torch.nn.functional.log_softmax(pred, dim=-1)  # batch x n_neg+1
 
-
+        # 4. loss compute
+        loss = self.criterion(pred, batch_labels)
+        loss = loss * self.lambda_semantic_coverage
+        return loss
 
 def filter_shard_state(state, shard_size=None):
     for k, v in state.items():
