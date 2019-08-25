@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from onmt.utils.misc import aeq
-from onmt.utils.loss import NMTLossCompute
+from onmt.utils.loss import NMTLossCompute, ReplayMemory
 
 
 def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs=None,
@@ -180,11 +180,15 @@ class CopyGeneratorLoss(nn.Module):
 class CopyGeneratorLossCompute(NMTLossCompute):
     """Copy Generator Loss Computation."""
     def __init__(self, criterion, generator, tgt_vocab, normalize_by_length,
-                 lambda_coverage=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0):
         super(CopyGeneratorLossCompute, self).__init__(
-            criterion, generator, lambda_coverage=lambda_coverage)
+            criterion, generator,
+            lambda_coverage=lambda_coverage,
+            lambda_orth_reg = lambda_orth_reg,
+            lambda_sem_cov = lambda_sem_cov)
         self.tgt_vocab = tgt_vocab
         self.normalize_by_length = normalize_by_length
+        self.replay_buffer = ReplayMemory(300)
 
     def _make_shard_state(self, batch, output, range_, attns):
         """See base class for args description."""
@@ -202,8 +206,8 @@ class CopyGeneratorLossCompute(NMTLossCompute):
         return shard_state
 
     def _compute_loss(self, batch, output, target, copy_attn, align,
-                      std_attn=None, coverage_attn=None
-                      # add hidden_state and index
+                      std_attn=None, coverage_attn=None,
+                      states=None
                       ):
         """Compute the loss.
 
@@ -227,6 +231,15 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             coverage_loss = self._compute_coverage_loss(std_attn,
                                                         coverage_attn)
             loss += coverage_loss
+
+        # compute orthogonal penalty loss
+        target_indices = target
+        decoder_hidden_states = states
+        target_sep_idx = batch.sep_indices
+        if self.lambda_orth_reg != 0.0:
+            # decoder hidden state: output of decoder
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
+            loss += orthogonal_penalty
 
         # this block does not depend on the loss value computed above
         # and is used only for stats

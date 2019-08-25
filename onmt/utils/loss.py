@@ -3,6 +3,9 @@ This includes: LossComputeBase and the standard NMTLossCompute, and
                sharded loss compute stuff.
 """
 from __future__ import division
+
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -53,11 +56,16 @@ def build_loss_compute(model, tgt_field, opt, train=True):
     if opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             criterion, loss_gen, tgt_field.vocab, opt.copy_loss_by_seqlength,
-            lambda_coverage=opt.lambda_coverage
+            lambda_coverage=opt.lambda_coverage,
+            lambda_orth_reg=opt.lambda_orth_reg,
+            lambda_sem_cov=opt.lambda_sem_cov
         )
     else:
         compute = NMTLossCompute(
-            criterion, loss_gen, lambda_coverage=opt.lambda_coverage)
+            criterion, loss_gen,
+            lambda_coverage=opt.lambda_coverage,
+            lambda_orth_reg=opt.lambda_orth_reg,
+            lambda_sem_cov=opt.lambda_sem_cov)
     compute.to(device)
 
     return compute
@@ -246,17 +254,18 @@ class NMTLossCompute(LossComputeBase):
     """
 
     def __init__(self, criterion, generator, normalization="sents",
-                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_semantic_coverage=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0):
         super(NMTLossCompute, self).__init__(criterion, generator)
         self.lambda_coverage = lambda_coverage
         self.lambda_orth_reg = lambda_orth_reg
-        self.lambda_semantic_coverage = lambda_semantic_coverage
+        self.lambda_sem_cov = lambda_sem_cov
         self.replay_buffer = ReplayMemory(300)
 
     def _make_shard_state(self, batch, output, range_, attns=None):
         shard_state = {
             "output": output,
             "target": batch.tgt[range_[0] + 1: range_[1], :, 0],
+            "states": attns.get("states")
         }
         if self.lambda_coverage != 0.0:
             coverage = attns.get("coverage", None)
@@ -273,8 +282,9 @@ class NMTLossCompute(LossComputeBase):
             })
         return shard_state
 
-    def _compute_loss(self, batch, output, target, std_attn=None,
-                      coverage_attn=None):
+    def _compute_loss(self, batch, output, target,
+                      std_attn=None, coverage_attn=None,
+                      states=None):
 
         bottled_output = self._bottle(output)
 
@@ -286,11 +296,16 @@ class NMTLossCompute(LossComputeBase):
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
             loss += coverage_loss
+
+        # compute orthogonal penalty loss
+        target_indices = target
+        decoder_hidden_states = states
+        target_sep_idx = batch.sep_indices
         if self.lambda_orth_reg != 0.0:
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
             loss += orthogonal_penalty
-        if self.lambda_semantic_coverage != 0.0:
+        if self.lambda_sem_cov != 0.0:
             # model: model, has to include
             #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
             #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
@@ -383,7 +398,7 @@ class NMTLossCompute(LossComputeBase):
 
         # 4. loss compute
         loss = self.criterion(pred, batch_labels)
-        loss = loss * self.lambda_semantic_coverage
+        loss = loss * self.lambda_sem_cov
         return loss
 
 def filter_shard_state(state, shard_size=None):

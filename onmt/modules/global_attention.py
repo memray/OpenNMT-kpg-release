@@ -169,6 +169,8 @@ class GlobalAttention(nn.Module):
             aeq(batch, batch_)
             aeq(source_l, source_l_)
 
+        # @memray: the implementation seems not very correct
+        # https://github.com/OpenNMT/OpenNMT-py/issues/867
         if coverage is not None:
             cover = coverage.view(-1).unsqueeze(1)
             memory_bank += self.linear_cover(cover).view_as(memory_bank)

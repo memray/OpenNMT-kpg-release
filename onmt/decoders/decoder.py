@@ -375,6 +375,8 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["copy"] = []
         if self._coverage:
             attns["coverage"] = []
+        # @memray, for Orthogonal regularization and Semantic Coverage, may consume lots of memory
+        attns["states"] = []
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
@@ -418,6 +420,9 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                 attns["copy"] += [copy_attn]
             elif self._reuse_copy_attn:
                 attns["copy"] = attns["std"]
+
+            # use rnn hidden state first, may try attentioned output later
+            attns["states"] += [rnn_output]
 
         return dec_state, dec_outs, attns
 
