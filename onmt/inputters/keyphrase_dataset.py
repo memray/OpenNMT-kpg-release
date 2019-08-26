@@ -253,8 +253,8 @@ def process_multiple_tgts(big_batch, tgt_type):
                 alignment = [ex.alignment[idx] for idx in order]
                 # remove the heading and trailing 0 for <s> and </s> in each subsequence
                 alignment = [a.numpy().tolist()[1:-1] for a in alignment]
-                # add pads for <sep> between subsequences, <s> and </s> for whole final sequence
-                alignment = [0] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [0]
+                # add pads 0 for <sep> between subsequences, <s> and </s> for whole final sequence
+                alignment = [[0]] + [t+[0] for t in alignment[:-1]] + [alignment[-1]] + [[0]]
                 # concatenate alignments to one Tensor, length should be len(tgt)+2
                 alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
             else:

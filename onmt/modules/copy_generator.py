@@ -220,6 +220,10 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             copy_attn: the copy attention value.
             align: the align info.
         """
+        target_indices = target # before flattening
+        decoder_hidden_states = states
+        target_sep_idx = batch.sep_indices
+
         target = target.view(-1)
         align = align.view(-1)
         scores = self.generator(
@@ -233,9 +237,6 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             loss += coverage_loss
 
         # compute orthogonal penalty loss
-        target_indices = target
-        decoder_hidden_states = states
-        target_sep_idx = batch.sep_indices
         if self.lambda_orth_reg != 0.0:
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)

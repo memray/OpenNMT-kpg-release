@@ -330,28 +330,38 @@ class NMTLossCompute(LossComputeBase):
         return torch.norm((m - I), p=l_n_norm)
 
     def _compute_orthogonal_regularization_loss(self, target_indices, decoder_hidden_states, sep_idx):
-        # target_indices: batch x target_len
-        # decoder_hidden_states: batch x target_len x hid
+        """
         # aux loss: make the decoder outputs at all <sep>s to be orthogonal
+
+        :param target_indices: target_len x batch_size
+        :param decoder_hidden_states: target_len x batch_size x hid
+        :param sep_idx: max_num_sep x batch_size
+        :return:
+        """
         penalties = []
-        for i in range(len(target_indices)):
-            # per data point in a batch
-            seps = []
-            for j in range(len(target_indices[i])):  # len of target
-                if target_indices[i][j] == sep_idx:
-                    seps.append(decoder_hidden_states[i][j])
-            if len(seps) > 1:
-                seps = torch.stack(seps, -1)  # hid x n
-                identity = torch.eye(seps.size(-1))  # n x n
+        # make batch first
+        target_indices = target_indices.permute((1, 0)) # batch_size x target_len
+        decoder_hidden_states = decoder_hidden_states.permute((1, 0, 2)) # batch_size x target_len x hidden_dim
+        sep_idx = sep_idx.permute((1, 0)) # batch_size x max_num_sep
+
+        # per data point in a batch
+        for i in range(target_indices.size(0)):
+            # if there's at least two <sep> or <eos> (> 2 phrases)
+            if sep_idx[i].ne(0).sum() > 1:
+                sep_id = sep_idx[i].masked_select(sep_idx[i].ne(0))
+                seps = decoder_hidden_states[i].index_select(dim=0, index=sep_id)
+                seps = seps.permute((1, 0)) # hidden_dim x n_sep
+                identity = torch.eye(sep_id.size(0))  # n x n
                 if decoder_hidden_states.is_cuda:
                     identity = identity.cuda()
                 penalty = self.orthogonal_penalty(seps, identity, 2)  # 1
                 penalties.append(penalty)
 
-        if len(penalties) > 0 and decoder_hidden_states.size(0) > 0:
-            penalties = torch.sum(torch.stack(penalties, -1)) / float(decoder_outputs.size(0))
+        if len(penalties) > 0 and sep_idx.size(0) > 0:
+            penalties = torch.sum(torch.stack(penalties, -1)) / float(sep_idx.size(0))
         else:
             penalties = 0.0
+
         penalties = penalties * self.lambda_orth_reg
         return penalties
 

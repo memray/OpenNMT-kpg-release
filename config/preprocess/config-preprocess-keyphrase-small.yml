@@ -1,11 +1,11 @@
 data_type: keyphrase
 
-train_src: data/keyphrase/kp20k/kp20k_train_small.meng17.lower.src
-train_tgt: data/keyphrase/kp20k/kp20k_train_small.meng17.lower.tgt
-valid_src: data/keyphrase/kp20k/kp20k_valid.meng17.lower.src
-valid_tgt: data/keyphrase/kp20k/kp20k_valid.meng17.lower.tgt
+train_src: data/keyphrase/meng17/kp20k_small/kp20k_small_train.src
+train_tgt: data/keyphrase/meng17/kp20k_small/kp20k_small_train.tgt
+valid_src: data/keyphrase/meng17/kp20k_small/kp20k_small_valid.src
+valid_tgt: data/keyphrase/meng17/kp20k_small/kp20k_small_valid.tgt
 
-save_data: data/keyphrase/kp20k/kp20k.small.meng17
+save_data: data/keyphrase/meng17/kp20k_small
 shard_size: 100000
 dynamic_dict: 'true'
 share_vocab: 'true'
