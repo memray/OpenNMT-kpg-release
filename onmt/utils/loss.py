@@ -346,6 +346,8 @@ class NMTLossCompute(LossComputeBase):
 
         # per data point in a batch
         for i in range(target_indices.size(0)):
+            # if sep_idx.max().item() > decoder_hidden_states.size(1):
+            #     print("BUG!")
             # if there's at least two <sep> or <eos> (> 2 phrases)
             if sep_idx[i].ne(0).sum() > 1:
                 sep_id = sep_idx[i].masked_select(sep_idx[i].ne(0))

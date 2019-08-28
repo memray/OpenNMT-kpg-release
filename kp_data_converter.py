@@ -108,6 +108,7 @@ if __name__ == '__main__':
               help="The prefix for output files after preprocessing")
 
     # Data processing options
+    parser.add_argument('--is_stack', '-is_stack', action='store_true', help='StackExchange data')
     parser.add_argument('--lower', '-lower', action='store_true', help='lowercase data')
     parser.add_argument('--filter', '-filter', action='store_true',
               help='Filter data by heuristics or not')
@@ -161,6 +162,11 @@ if __name__ == '__main__':
             print("Processing %d" % line_id)
 
         json_dict = json.loads(line)
+        if opt.is_stack:
+            json_dict['abstract'] = json_dict['question']
+            json_dict['keywords'] = json_dict['tags']
+            del json_dict['question']
+            del json_dict['tags']
 
         # may add more fields in the future, say dataset_name, keyword-specific features
         if 'id' in json_dict:

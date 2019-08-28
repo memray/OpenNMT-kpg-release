@@ -249,6 +249,9 @@ def process_multiple_tgts(big_batch, tgt_type):
             sep_indices = [[wid for wid, w in enumerate(t) if w==SEP_token] + [len(t)] for t in tgt]
             sep_indices = torch.torch.from_numpy(np.concatenate(sep_indices, axis=None))
 
+            # print("len_tgt=%d" % len(tgt[0]))
+            # print("sep_indices=%s" % str(sep_indices.tolist()))
+
             if hasattr(ex, "alignment"):
                 alignment = [ex.alignment[idx] for idx in order]
                 # remove the heading and trailing 0 for <s> and </s> in each subsequence
