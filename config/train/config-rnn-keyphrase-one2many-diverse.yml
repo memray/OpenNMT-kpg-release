@@ -50,10 +50,10 @@ lambda_sem_cov: 0.0
 tgt_enc: 'none'
 detach_tgt_enc: 'false'
 
-exp: kp20k-one2many-birnn-GRU150-EMB100-ATTNmlp-Dropout00
-save_model: models/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00
-log_file: output/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00.log
-tensorboard_log_dir: runs/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00/
+exp: kp20k-one2seq-birnn-GRU150-EMB100-ATTNmlp-Dropout00
+save_model: models/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00
+log_file: output/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00.log
+tensorboard_log_dir: runs/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00/
 
 world_size: 1
 gpu_ranks: []
