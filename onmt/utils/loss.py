@@ -330,11 +330,19 @@ class NMTLossCompute(LossComputeBase):
         covloss *= self.lambda_coverage
         return covloss
 
-    def orthogonal_penalty(self, _m, I, l_n_norm=2):
+    def orthogonal_penalty(self, _m, l_n_norm=2):
         # _m: h x n
         # I:  n x n
         m = torch.mm(torch.t(_m), _m)  # n x n
-        return torch.norm((m - I), p=l_n_norm)
+        _ones = torch.ones([m.size(0), m.size(0)])  # n x n
+        _eyes = torch.eye(m.size(0))  # n x n
+        if m.is_cuda:
+            _ones = _ones.cuda()
+            _eyes = _eyes.cuda()
+        # mask off the diagonal elements
+        m = torch.mul(m, _ones-_eyes)
+        # compute the element-wise norm and return average
+        return torch.pow(m, l_n_norm).mean()
 
     def _compute_orthogonal_regularization_loss(self, target_indices, decoder_hidden_states, sep_idx):
         """
@@ -361,14 +369,11 @@ class NMTLossCompute(LossComputeBase):
                 sep_id = sep_idx[i].masked_select(sep_idx[i].ne(0))
                 seps = decoder_hidden_states[i].index_select(dim=0, index=sep_id)
                 seps = seps.permute((1, 0)) # hidden_dim x n_sep
-                identity = torch.eye(sep_id.size(0))  # n x n
-                if decoder_hidden_states.is_cuda:
-                    identity = identity.cuda()
-                penalty = self.orthogonal_penalty(seps, identity, 2)  # 1
+                penalty = self.orthogonal_penalty(seps, 2)  # 1
                 penalties.append(penalty)
 
         if len(penalties) > 0 and sep_idx.size(0) > 0:
-            penalties = torch.sum(torch.stack(penalties, -1)) / float(sep_idx.size(0))
+            penalties = torch.sum(torch.stack(penalties, -1)) / float(len(penalties))
         else:
             penalties = 0.0
 

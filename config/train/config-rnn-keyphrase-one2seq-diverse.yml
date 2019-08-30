@@ -1,9 +1,9 @@
 model_type: keyphrase
 tgt_type: random
 
-#data: data/keyphrase/meng17/stackexchange
 data: data/keyphrase/meng17/kp20k
 # data: data/keyphrase/meng17/kp20k_small
+#data: data/keyphrase/meng17/stackexchange
 save_checkpoint_steps: 10000
 keep_checkpoint: 20
 seed: 3435
