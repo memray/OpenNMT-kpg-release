@@ -7,7 +7,7 @@ data: data/keyphrase/meng17/kp20k_small
 save_checkpoint_steps: 10000
 keep_checkpoint: 20
 seed: 3435
-train_steps: 100000
+train_steps: 200000
 valid_steps: 20000
 report_every: 10
 
