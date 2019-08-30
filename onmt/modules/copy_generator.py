@@ -237,10 +237,22 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             loss += coverage_loss
 
         # compute orthogonal penalty loss
-        if self.lambda_orth_reg != 0.0:
+        if self.lambda_orth_reg > 0.0:
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
             loss += orthogonal_penalty
+
+        # compute semantic coverage loss for target encoder
+        if self.lambda_sem_cov > 0.0:
+            # model: model, has to include
+            #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
+            #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
+            # source_representations: batch x source_len x source_hid
+            # target_representations: output of target encoder (last state), batch x target_hid
+            # semantic_coverage_loss = self._compute_semantic_coverage_loss(model, source_representations, target_representations, target_indices, sep_idx, n_neg)
+            # loss += semantic_coverage_loss
+            pass
+
 
         # this block does not depend on the loss value computed above
         # and is used only for stats

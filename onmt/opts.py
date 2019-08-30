@@ -186,14 +186,22 @@ def model_opts(parser):
               help="For FP16 training, the opt_level to use."
                    "See https://nvidia.github.io/apex/amp.html#opt-levels.")
     # keyphrase
+    group.add('--orth_reg', '-orth_reg', action="store_true",
+              help='Train with orth_reg.')
     group.add('--lambda_orth_reg', '-lambda_orth_reg', type=float, default=0.0,
               help='Train with Orthogonal Regularization (3.5.1).')
+    group.add('--sem_cov', '-sem_cov', action="store_true",
+              help='Train with sem_cov.')
     group.add('--lambda_sem_cov', '-lambda_sem_cov', type=float, default=0.0,
               help='Train with Target Encoding (3.5.2).')
-    # group.add('--tgt_enc', '-tgt_enc',
-    #           type=str, default=None,
-    #           choices=['dot', 'general', 'mlp', 'none'],
-    #           help="Train with Target Encoding.")
+    group.add('--tgt_enc', '-tgt_enc',
+              type=str, default=None,
+              choices=['rnn', 'dot', 'general', 'mlp', 'none'],
+              help="Train with Target Encoding."
+                   "rnn means a GRU encoder")
+    group.add('--detach_tgt_enc', '-detach_tgt_enc', action="store_true",
+              help='Whether to detach the target encoder and train with additional loss only, or train with decoder together.')
+
 
 def preprocess_opts(parser):
     """ Pre-procesing options """

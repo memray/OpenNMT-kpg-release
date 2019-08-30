@@ -39,8 +39,10 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     trunc_size = opt.truncated_decoder  # Badly named...
     shard_size = opt.max_generator_batches if opt.model_dtype == 'fp32' else 0
 
-    # @memray: BPTT is not compatible with Orth and SemCov
-    if opt.lambda_orth_reg != 0 or opt.lambda_sem_cov != 0:
+    # @memray: BPTT is not compatible with Orth and SemCov,
+    # Otherwise will trigger error: raise RuntimeError("grad can be implicitly created only for scalar outputs")
+    #    at function shards() in loss.py (torch.autograd.backward(inputs, grads))
+    if opt.model_type == 'keyphrase':
         trunc_size = 0
         shard_size = 0
 

@@ -53,6 +53,13 @@ def build_loss_compute(model, tgt_field, opt, train=True):
     # loss function of this kind is the sparsemax loss.
     use_raw_logits = isinstance(criterion, SparsemaxLoss)
     loss_gen = model.generator[0] if use_raw_logits else model.generator
+
+    # force lambda to 0.0 when disabled
+    if not opt.orth_reg:
+        opt.lambda_orth_reg = 0.0
+    if not opt.sem_cov:
+        opt.lambda_sem_cov = 0.0
+
     if opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             criterion, loss_gen, tgt_field.vocab, opt.copy_loss_by_seqlength,
@@ -265,7 +272,7 @@ class NMTLossCompute(LossComputeBase):
         shard_state = {
             "output": output,
             "target": batch.tgt[range_[0] + 1: range_[1], :, 0],
-            "states": attns.get("states")
+            "states": attns.get("states") # @memray: dec_hidden_states
         }
         if self.lambda_coverage != 0.0:
             coverage = attns.get("coverage", None)
@@ -301,11 +308,11 @@ class NMTLossCompute(LossComputeBase):
         target_indices = target
         decoder_hidden_states = states
         target_sep_idx = batch.sep_indices
-        if self.lambda_orth_reg != 0.0:
+        if self.lambda_orth_reg > 0.0:
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
             loss += orthogonal_penalty
-        if self.lambda_sem_cov != 0.0:
+        if self.lambda_sem_cov > 0.0:
             # model: model, has to include
             #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
             #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
@@ -347,6 +354,7 @@ class NMTLossCompute(LossComputeBase):
         # per data point in a batch
         for i in range(target_indices.size(0)):
             # if sep_idx.max().item() > decoder_hidden_states.size(1):
+            #     # this error occurs if shard_size is set (BPTT enabled)
             #     print("BUG!")
             # if there's at least two <sep> or <eos> (> 2 phrases)
             if sep_idx[i].ne(0).sum() > 1:

@@ -1,15 +1,15 @@
 model_type: keyphrase
 tgt_type: random
 
-data: data/keyphrase/meng17/stackexchange
+#data: data/keyphrase/meng17/stackexchange
 #data: data/keyphrase/meng17/kp20k
-#data: data/keyphrase/meng17/kp20k_small
+data: data/keyphrase/meng17/kp20k_small
 save_checkpoint_steps: 10000
 keep_checkpoint: 20
 seed: 3435
 train_steps: 100000
 valid_steps: 20000
-report_every: 100
+report_every: 10
 
 encoder_type: brnn
 rnn_type: GRU
@@ -42,8 +42,13 @@ copy_loss_by_seqlength: 'false'
 share_embeddings: 'true'
 bridge: 'true'
 
-lambda_orth_reg: 1.0
-lambda_sem_cov: 1.0
+orth_reg: 'false'
+lambda_orth_reg: 0.1
+sem_cov: 'false'
+lambda_sem_cov: 0.0
+
+tgt_enc: 'none'
+detach_tgt_enc: 'false'
 
 exp: kp20k-one2many-birnn-GRU150-EMB100-ATTNmlp-Dropout00
 save_model: models/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00
