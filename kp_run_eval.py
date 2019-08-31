@@ -90,77 +90,71 @@ if __name__ == "__main__":
                                       opt.data_dir + '/%s/%s_test.tgt' % (testset, testset),
                                       src_shard, tgt_shard)
 
-    # if True:
-    while True:
-        new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
-        # print(new_ckpts.items())
-        # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
-        for ckpt_id, (ckpt_name, ckpt_path) in enumerate(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))):
-            logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts), ckpt_path))
-            setattr(opt, 'models', [ckpt_path])
+    new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
+    # print(new_ckpts.items())
+    # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
+    for ckpt_id, (ckpt_name, ckpt_path) in enumerate(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))):
+        logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts), ckpt_path))
+        setattr(opt, 'models', [ckpt_path])
 
-            translator = None
+        translator = None
 
-            score_dicts = {}
-            for dataname, dataset in testset_path_dict.items():
-                src_path, tgt_path, src_shard, tgt_shard = dataset
+        score_dicts = {}
+        for dataname, dataset in testset_path_dict.items():
+            src_path, tgt_path, src_shard, tgt_shard = dataset
 
-                if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
-                    os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
+            if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
+                os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
 
-                pred_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.pred' % dataname)
-                report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
-                score_path = os.path.join(opt.output_dir, 'eval', ckpt_name+'-%s.json' % dataname)
+            pred_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.pred' % dataname)
+            report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
+            score_path = os.path.join(opt.output_dir, 'eval', ckpt_name+'-%s.json' % dataname)
 
-                # skip translation for this dataset if previous pred exists
-                do_trans_flag = True
-                do_eval_flag = True
-                if os.path.exists(pred_path):
-                    lines = open(pred_path, 'r').readlines()
-                    # count is same means it's done
-                    if len(lines) == len(src_shard):
-                        do_trans_flag = False
-                    # if file is modified less than opt.test_interval min, might be processing by another job
-                    elapsed_time = time.time() - os.stat(pred_path).st_mtime
-                    if elapsed_time < opt.test_interval:
-                        do_trans_flag = False
-                        do_eval_flag = False
+            # skip translation for this dataset if previous pred exists
+            do_trans_flag = True
+            do_eval_flag = True
+            if os.path.exists(pred_path):
+                lines = open(pred_path, 'r').readlines()
+                # count is same means it's done
+                if len(lines) == len(src_shard):
+                    do_trans_flag = False
+                # if file is modified less than opt.test_interval min, might be processing by another job
+                elapsed_time = time.time() - os.stat(pred_path).st_mtime
+                if elapsed_time < opt.test_interval:
+                    do_trans_flag = False
+                    do_eval_flag = False
 
-                if do_trans_flag:
-                    if translator is None:
-                        translator = build_translator(opt, report_score=opt.verbose, logger=logger)
-                    # create an empty file to indicate that the translator is working on it
-                    codecs.open(pred_path, 'w+', 'utf-8').close()
-                    # set output_file for each dataset (instead of outputting to opt.output)
-                    translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                    logger.info("Start translating %s." % dataname)
-                    _, _ = translator.translate(
-                        src=src_shard,
-                        tgt=tgt_shard,
-                        src_dir=opt.src_dir,
-                        batch_size=opt.batch_size,
-                        attn_debug=opt.attn_debug,
-                        opt=opt
-                    )
-                else:
-                    logger.info("Skip translating %s." % dataname)
+            if do_trans_flag:
+                if translator is None:
+                    translator = build_translator(opt, report_score=opt.verbose, logger=logger)
+                # create an empty file to indicate that the translator is working on it
+                codecs.open(pred_path, 'w+', 'utf-8').close()
+                # set output_file for each dataset (instead of outputting to opt.output)
+                translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                logger.info("Start translating %s." % dataname)
+                _, _ = translator.translate(
+                    src=src_shard,
+                    tgt=tgt_shard,
+                    src_dir=opt.src_dir,
+                    batch_size=opt.batch_size,
+                    attn_debug=opt.attn_debug,
+                    opt=opt
+                )
+            else:
+                logger.info("Skip translating %s." % dataname)
 
-                if do_eval_flag:
-                    logger.info("Start evaluating generated results of %s" % ckpt_name)
-                    score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
-                                                            pred_path=pred_path, logger=logger,
-                                                            verbose=opt.verbose,
-                                                            report_path=report_path)
-                    score_dicts[dataname] = score_dict
+            do_eval_flag = False
+            if do_eval_flag:
+                logger.info("Start evaluating generated results of %s" % ckpt_name)
+                score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
+                                                        pred_path=pred_path, logger=logger,
+                                                        verbose=opt.verbose,
+                                                        report_path=report_path)
+                score_dicts[dataname] = score_dict
 
-                    with open(score_path, 'w') as output_json:
-                        output_json.write(json.dumps(score_dict))
-                else:
-                    logger.info("Skip evaluating %s." % dataname)
+                with open(score_path, 'w') as output_json:
+                    output_json.write(json.dumps(score_dict))
+            else:
+                logger.info("Skip evaluating %s." % dataname)
 
-        kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
-
-        # scan again for every 5min
-        sleep_time = 600
-        logger.info('Sleep for %d sec' % sleep_time)
-        time.sleep(sleep_time)
+    kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
