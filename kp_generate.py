@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
     logger = init_logger(opt.log_file)
-    translator = init_generator(opt, logger)
+    translator = build_translator(opt, logger)
 
     src_shards = split_corpus(opt.src, opt.shard_size)
     tgt_shards = split_corpus(opt.tgt, opt.shard_size) \

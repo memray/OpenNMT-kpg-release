@@ -348,13 +348,15 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             report_file.write(print_out)
 
         # add tgt/pred count for computing average performance on non-empty items
-        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num', 'unique_pred_num', 'dup_pred_num']
+        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num', 'unique_pred_num', 'dup_pred_num', 'beam_num', 'beamstep_num']
         results_list = [{'present_tgt_num': len(present_tgts)},
                         {'absent_tgt_num': len(absent_tgts)},
                         {'present_pred_num': len(present_preds)},
                         {'absent_pred_num': len(absent_preds)},
                         {'unique_pred_num': pred_dict['unique_pred_num'] if 'unique_pred_num' in pred_dict else 0},
                         {'dup_pred_num': pred_dict['dup_pred_num'] if 'dup_pred_num' in pred_dict else 0},
+                        {'beam_num': pred_dict['beam_num'] if 'beam_num' in pred_dict else 0},
+                        {'beamstep_num': pred_dict['beamstep_num'] if 'beamstep_num' in pred_dict else 0},
                         ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
@@ -599,6 +601,13 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
 def summarize_scores(ckpt_name, score_dict):
     avg_dict = {}
     avg_dict['checkpoint_name'] = ckpt_name
+    if ckpt_name.index('_') > 0:
+        avg_dict['model_name'] = '_'.join(ckpt_name.rsplit('_')[:-1])
+        avg_dict['#train_step'] = ckpt_name.rsplit('_')[-1]
+    else:
+        avg_dict['model_name'] = ''
+        avg_dict['#train_step'] = ''
+
     # doc stat
     avg_dict['#doc'] = len(score_dict['present_tgt_num'])
     avg_dict['#pre_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
@@ -625,13 +634,16 @@ def summarize_scores(ckpt_name, score_dict):
 
     avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num']) if 'unique_pred_num' in score_dict else 0
     avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num']) if 'dup_pred_num' in score_dict else 0
+    avg_dict['#beam'] = sum(score_dict['beam_num']) if 'beam_num' in score_dict else 0
+    avg_dict['#beamstep'] = sum(score_dict['beamstep_num']) if 'beamstep_num' in score_dict else 0
 
     present_tgt_num = score_dict['present_tgt_num'] if 'present_tgt_num' in score_dict else 0
     absent_tgt_num = score_dict['absent_tgt_num'] if 'absent_tgt_num' in score_dict else 0
 
     del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], \
         score_dict['present_pred_num'], score_dict['absent_pred_num'], \
-        score_dict['unique_pred_num'], score_dict['dup_pred_num']
+        score_dict['unique_pred_num'], score_dict['dup_pred_num'], \
+        score_dict['beam_num'], score_dict['beamstep_num']
 
     for score_name, score_list in score_dict.items():
         # number of correct phrases
@@ -697,9 +709,9 @@ def init_opt():
                         help=".")
     parser.add_argument('--verbose', '-v', action='store_true',
                         help=".")
-    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
     parser.add_argument('-topbeam', action='store_true', required=False, help='Evaluate with all beams or just from top beam.')
 
+    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
 
     opt = parser.parse_args()
@@ -739,7 +751,7 @@ if __name__ == '__main__':
                                               verbose = opt.verbose,
                                               logger = logger,
                                               report_path = report_path,
-                                            eval_topbeam=opt.topbeam
+                                              eval_topbeam=opt.topbeam
                                             )
                 logger.info(kp_results_to_str(score_dict))
 

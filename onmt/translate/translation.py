@@ -146,7 +146,7 @@ class Translation(object):
 
     __slots__ = ["src", "src_raw", "gold_sent", "gold_score",
                  "attns", "copied_flags",
-                 "unique_pred_num", "dup_pred_num", "beamstep_num",
+                 "unique_pred_num", "dup_pred_num", "beam_num", "beamstep_num",
                  "pred_sents", "pred_scores", "preds",
                  "ori_pred_sents", "ori_pred_scores", "ori_preds",
                  "topseq_pred_sents", "topseq_pred_scores", "topseq_preds",
@@ -166,6 +166,7 @@ class Translation(object):
 
         self.dup_pred_num = 0 # number of all predicted phrases
         self.unique_pred_num = 0 # number of unique phrases
+        self.beam_num = 0 # number of effective beams
         self.beamstep_num = 0 # number of effective beam search steps
 
         self.copied_flags = None
@@ -208,6 +209,8 @@ class Translation(object):
         ret = {slot: getattr(self, slot) for slot in self.__slots__}
 
         for slot in self.__slots__:
+            if ret[slot] is None:
+                continue
             if torch.cuda.is_available():
                 if slot.endswith('src'):
                     ret[slot] = ret[slot].cpu().numpy().tolist()
@@ -223,12 +226,13 @@ class Translation(object):
                 elif slot.endswith('preds'):
                     ret[slot] = [t.numpy().tolist() for t in ret[slot]]
 
-        for tid, t in enumerate(ret["dup_pred_tuples"]):
-            if torch.cuda.is_available():
-                nt = (t[0].cpu().numpy().tolist(), t[1], t[2].cpu().item())
-            else:
-                nt = (t[0].numpy().tolist(), t[1], t[2].item())
-            ret["dup_pred_tuples"][tid] = nt
+            if slot == "dup_pred_tuples":
+                for tid, t in enumerate(ret["dup_pred_tuples"]):
+                    if torch.cuda.is_available():
+                        nt = (t[0].cpu().numpy().tolist(), t[1], t[2].cpu().item())
+                    else:
+                        nt = (t[0].numpy().tolist(), t[1], t[2].item())
+                    ret["dup_pred_tuples"][tid] = nt
 
         return ret
 
