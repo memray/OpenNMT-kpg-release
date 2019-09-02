@@ -454,6 +454,8 @@ class NMTLossCompute(LossComputeBase):
                     neg_idx[idx] += 1
             neg_idx = torch.from_numpy(neg_idx).long()
             input_src_idx = torch.cat((pos_idx, neg_idx), dim=0)
+            if src_states.is_cuda:
+                input_src_idx = input_src_idx.cuda()
             # n_sep*(n_neg+1) x src_hid
             input_src_states = src_states.index_select(dim=0, index=input_src_idx)
             # n_sep*1, the pos example is always the 1st
