@@ -474,6 +474,8 @@ class NMTLossCompute(LossComputeBase):
         pred = torch.nn.functional.log_softmax(pred, dim=-1)
 
         # loss compute
+        if src_states.is_cuda:
+            batch_labels = batch_labels.cuda()
         loss = self.semcov_criterion(pred, batch_labels) # pred=[n_sep, n_neg+1], label=[n_sep]
         loss = loss * self.lambda_sem_cov
         return loss
