@@ -326,13 +326,16 @@ class NMTLossCompute(LossComputeBase):
         target_sep_idx = batch.sep_indices
         if self.lambda_orth_reg > 0.0:
             assert dec_states is not None
+            assert target_sep_idx is not None
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target, dec_states, target_sep_idx)
             loss += orthogonal_penalty
             # print("Orth_reg=%.5f" % orthogonal_penalty)
         if self.lambda_sem_cov > 0.0:
+            assert model is not None
             assert src_states is not None
             assert tgtenc_states is not None
+            assert target_sep_idx is not None
             # model: model, has to include
             #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
             #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
@@ -435,6 +438,8 @@ class NMTLossCompute(LossComputeBase):
 
         # per data point in a batch
         for i in range(batch_size):
+            if tgt_sep_idx[i].ne(0).sum() == 0:
+                continue
             sep_id = tgt_sep_idx[i].masked_select(tgt_sep_idx[i].ne(0))
             if semcov_ending_state:
                 sep_tgtenc_states = tgtenc_states[i].index_select(dim=0, index=sep_id[-1]) # 1 x tgtenc_hid

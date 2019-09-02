@@ -311,7 +311,11 @@ class Trainer(object):
         with torch.no_grad():
             stats = onmt.utils.Statistics()
 
+            count = 0
+
             for batch in valid_iter:
+                count += 128
+                print(count)
                 src, src_lengths = batch.src if isinstance(batch.src, tuple) \
                                    else (batch.src, None)
                 tgt = batch.tgt

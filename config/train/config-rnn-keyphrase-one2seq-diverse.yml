@@ -8,7 +8,7 @@ save_checkpoint_steps: 5000
 keep_checkpoint: 10000
 seed: 3435
 train_steps: 100000
-valid_steps: 20000
+valid_steps: 200000 # no validation
 report_every: 100
 
 encoder_type: brnn
@@ -17,9 +17,8 @@ word_vec_size: 100
 rnn_size: 150
 layers: 1
 
-optim: adagrad
-learning_rate: 0.05
-adagrad_accumulator_init: 0.1
+optim: adam
+learning_rate: 1e-3
 max_grad_norm: 2
 
 batch_size: 64
@@ -34,18 +33,16 @@ log_file_level: DEBUG
 copy_attn: 'true'
 reuse_copy_attn: 'true'
 coverage_attn: 'true'
-position_encoding: 'false'
 
 context_gate: 'both'
 input_feed: 1
-copy_loss_by_seqlength: 'false'
 share_embeddings: 'true'
 bridge: 'true'
 
 orth_reg: 'true'
 lambda_orth_reg: 0.1
 sem_cov: 'true'
-lambda_sem_cov: 0.0
+lambda_sem_cov: 0.1
 
 tgt_enc: 'rnn'
 detach_tgt_enc: 'true'
