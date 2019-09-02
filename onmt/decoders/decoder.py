@@ -160,6 +160,7 @@ class RNNDecoderBase(DecoderBase):
                                        num_layers=1,
                                        dropout=dropout)
         self.detach_target_encoder = detach_target_encoder
+        self.bilinear_layer = nn.Bilinear(in1_features=hidden_size, in2_features=hidden_size, out_features=1)
 
     @classmethod
     def from_opt(cls, opt, embeddings):
@@ -208,8 +209,9 @@ class RNNDecoderBase(DecoderBase):
 
         # @memray
         if self.target_encoder is not None:
+            self.state["src_hidden"] = self.state["hidden"][0]
             if self.target_encoder_type == "rnn":
-                self.state["tgt_enc_hidden"] = (_fix_enc_hidden(encoder_final), )
+                self.state["tgt_enc_hidden"] = (self.state["src_hidden"], )
 
     def map_state(self, fn):
         self.state["hidden"] = tuple(fn(h, 1) for h in self.state["hidden"])
@@ -256,7 +258,7 @@ class RNNDecoderBase(DecoderBase):
         # NOTE: v0.3 to 0.4: dec_outs / attns[*] may not be list
         #       (in particular in case of SRU) it was not raising error in 0.3
         #       since stack(Variable) was allowed.
-        #       In 0.4, SRU returns a tensor that shouldn't be stacke
+        #       In 0.4, SRU returns a tensor that shouldn't be stacked
         if type(dec_outs) == list:
             dec_outs = torch.stack(dec_outs)
 
@@ -340,7 +342,7 @@ class StdRNNDecoder(RNNDecoderBase):
 
         # @memray: return rnn hidden states for computing orth_reg and sem_cov
         # TODO not tested, presumably only works for GRU
-        attns["states"] = dec_state
+        attns["dec_states"] = dec_state
 
         # Calculate the context gate.
         if self.context_gate is not None:
@@ -412,7 +414,8 @@ class InputFeedRNNDecoder(RNNDecoderBase):
         if self._coverage:
             attns["coverage"] = []
         # @memray, for Orthogonal regularization and Semantic Coverage, may consume lots of memory
-        attns["states"] = []
+        attns["dec_states"] = []
+        attns["src_states"] = self.state['src_hidden'].squeeze(0)
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
@@ -471,7 +474,11 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                 attns["copy"] = attns["std"]
 
             # @memray: return rnn hidden states for computing orth_reg and sem_cov
-            attns["states"] += [rnn_output]
+            attns["dec_states"] += [rnn_output]
+            if self.target_encoder is not None:
+                if "tgtenc_states" not in attns:
+                    attns["tgtenc_states"] = []
+                attns["tgtenc_states"] += [tgt_enc_output]
 
         return dec_state, dec_outs, attns
 

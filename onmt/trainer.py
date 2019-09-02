@@ -373,7 +373,9 @@ class Trainer(object):
                         normalization=normalization,
                         shard_size=self.shard_size,
                         trunc_start=j,
-                        trunc_size=trunc_size)
+                        trunc_size=trunc_size,
+                        model=self.model
+                    )
 
                     if loss is not None:
                         self.optim.backward(loss)

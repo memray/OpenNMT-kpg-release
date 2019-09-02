@@ -31,7 +31,7 @@ global_attention: mlp
 tensorboard: 'true'
 log_file_level: DEBUG
 
-copy_attn: 'true'
+copy_attn: 'false'
 reuse_copy_attn: 'true'
 coverage_attn: 'true'
 position_encoding: 'true'
@@ -44,11 +44,13 @@ bridge: 'true'
 
 orth_reg: 'true'
 lambda_orth_reg: 0.1
+num_negsample: 16
+use_ending_state: 'true'
 
 tgt_enc: 'rnn'
 detach_tgt_enc: 'true'
 sem_cov: 'true'
-lambda_sem_cov: 0.1
+lambda_sem_cov: 0.2
 
 exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
 save_model: models/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00

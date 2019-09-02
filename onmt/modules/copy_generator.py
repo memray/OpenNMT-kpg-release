@@ -180,15 +180,18 @@ class CopyGeneratorLoss(nn.Module):
 class CopyGeneratorLossCompute(NMTLossCompute):
     """Copy Generator Loss Computation."""
     def __init__(self, criterion, generator, tgt_vocab, normalize_by_length,
-                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0,
+                 n_neg=32, semcov_ending_state=False):
         super(CopyGeneratorLossCompute, self).__init__(
             criterion, generator,
             lambda_coverage=lambda_coverage,
             lambda_orth_reg = lambda_orth_reg,
-            lambda_sem_cov = lambda_sem_cov)
+            lambda_sem_cov = lambda_sem_cov,
+            n_neg=n_neg,
+            semcov_ending_state = semcov_ending_state
+        )
         self.tgt_vocab = tgt_vocab
         self.normalize_by_length = normalize_by_length
-        self.replay_buffer = ReplayMemory(300)
 
     def _make_shard_state(self, batch, output, range_, attns):
         """See base class for args description."""
@@ -207,7 +210,8 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
     def _compute_loss(self, batch, output, target, copy_attn, align,
                       std_attn=None, coverage_attn=None,
-                      states=None
+                      src_states=None, dec_states=None, tgtenc_states=None,
+                      model=None
                       ):
         """Compute the loss.
 
@@ -221,7 +225,6 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             align: the align info.
         """
         target_indices = target # before flattening
-        decoder_hidden_states = states
         target_sep_idx = batch.sep_indices
 
         target = target.view(-1)
@@ -230,6 +233,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
         loss = self.criterion(scores, align, target)
+        print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(std_attn,
@@ -238,21 +242,23 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         # compute orthogonal penalty loss
         if self.lambda_orth_reg > 0.0:
+            assert dec_states is not None
             # decoder hidden state: output of decoder
-            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, decoder_hidden_states, target_sep_idx)
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, dec_states, target_sep_idx)
             loss += orthogonal_penalty
+            print("Orth_reg=%.5f" % orthogonal_penalty)
 
         # compute semantic coverage loss for target encoder
         if self.lambda_sem_cov > 0.0:
-            # model: model, has to include
-            #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
-            #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
-            # source_representations: batch x source_len x source_hid
-            # target_representations: output of target encoder (last state), batch x target_hid
-            # semantic_coverage_loss = self._compute_semantic_coverage_loss(model, source_representations, target_representations, target_indices, sep_idx, n_neg)
-            # loss += semantic_coverage_loss
-            pass
-
+            assert src_states is not None
+            assert tgtenc_states is not None
+            semantic_coverage_loss = self._compute_semantic_coverage_loss(model,
+                                                                          src_states, dec_states, tgtenc_states,
+                                                                          target_indices, target_sep_idx,
+                                                                          n_neg=self.n_neg,
+                                                                          semcov_ending_state=self.semcov_ending_state)
+            loss += semantic_coverage_loss
+            print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
         # this block does not depend on the loss value computed above
         # and is used only for stats
