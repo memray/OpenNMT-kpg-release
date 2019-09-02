@@ -320,7 +320,7 @@ class Trainer(object):
                 outputs, attns = valid_model(src, tgt, src_lengths)
 
                 # Compute loss.
-                _, batch_stats = self.valid_loss(batch, outputs, attns)
+                _, batch_stats = self.valid_loss(batch, outputs, attns, model=valid_model)
 
                 # Update statistics.
                 stats.update(batch_stats)
