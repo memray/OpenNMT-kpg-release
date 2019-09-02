@@ -31,7 +31,7 @@ global_attention: mlp
 tensorboard: 'true'
 log_file_level: DEBUG
 
-copy_attn: 'false'
+copy_attn: 'true'
 reuse_copy_attn: 'true'
 coverage_attn: 'true'
 position_encoding: 'true'

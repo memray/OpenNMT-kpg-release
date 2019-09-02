@@ -315,7 +315,7 @@ class NMTLossCompute(LossComputeBase):
         gtruth = target.view(-1)
 
         loss = self.criterion(scores, gtruth)
-        print("loss=%.5f" % loss.mean().item())
+        # print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(
@@ -329,7 +329,7 @@ class NMTLossCompute(LossComputeBase):
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target, dec_states, target_sep_idx)
             loss += orthogonal_penalty
-            print("Orth_reg=%.5f" % orthogonal_penalty)
+            # print("Orth_reg=%.5f" % orthogonal_penalty)
         if self.lambda_sem_cov > 0.0:
             assert src_states is not None
             assert tgtenc_states is not None
@@ -344,7 +344,7 @@ class NMTLossCompute(LossComputeBase):
                                                                           n_neg=self.n_neg,
                                                                           semcov_ending_state=self.semcov_ending_state)
             loss += semantic_coverage_loss
-            print("Sem_cov=%.5f\n" % semantic_coverage_loss)
+            # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
         stats = self._stats(loss.clone(), scores, gtruth)
 

@@ -233,7 +233,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
         loss = self.criterion(scores, align, target)
-        print("loss=%.5f" % loss.mean().item())
+        # print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(std_attn,
@@ -246,7 +246,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             # decoder hidden state: output of decoder
             orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, dec_states, target_sep_idx)
             loss += orthogonal_penalty
-            print("Orth_reg=%.5f" % orthogonal_penalty)
+            # print("Orth_reg=%.5f" % orthogonal_penalty)
 
         # compute semantic coverage loss for target encoder
         if self.lambda_sem_cov > 0.0:
@@ -258,7 +258,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
                                                                           n_neg=self.n_neg,
                                                                           semcov_ending_state=self.semcov_ending_state)
             loss += semantic_coverage_loss
-            print("Sem_cov=%.5f\n" % semantic_coverage_loss)
+            # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
         # this block does not depend on the loss value computed above
         # and is used only for stats
