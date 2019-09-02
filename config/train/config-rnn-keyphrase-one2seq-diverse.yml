@@ -7,9 +7,9 @@ data: data/keyphrase/meng17/kp20k
 save_checkpoint_steps: 5000
 keep_checkpoint: 10000
 seed: 3435
-train_steps: 200000
+train_steps: 100000
 valid_steps: 20000
-report_every: 10
+report_every: 100
 
 encoder_type: brnn
 rnn_type: GRU
@@ -18,11 +18,11 @@ rnn_size: 150
 layers: 1
 
 optim: adagrad
-learning_rate: 0.15
+learning_rate: 0.05
 adagrad_accumulator_init: 0.1
 max_grad_norm: 2
 
-batch_size: 128
+batch_size: 64
 valid_batch_size: 128
 dropout: 0.1
 
@@ -44,11 +44,13 @@ bridge: 'true'
 
 orth_reg: 'true'
 lambda_orth_reg: 0.1
-
-tgt_enc: 'none'
-detach_tgt_enc: 'false'
-sem_cov: 'false'
+sem_cov: 'true'
 lambda_sem_cov: 0.0
+
+tgt_enc: 'rnn'
+detach_tgt_enc: 'true'
+num_negsample: 16
+use_ending_state: 'true'
 
 exp: kp20k-one2seq-birnn-GRU150-EMB100-ATTNmlp-Dropout00
 save_model: models/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00
