@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --cluster=smp
 #SBATCH --partition=smp
-#SBATCH --job-name=eval_kp_kp20k_valid2k
-#SBATCH --output=slurm_output/eval_kp_kp20k_valid2k.out
+#SBATCH --job-name=eval_one2one_kp20k_valid2k
+#SBATCH --output=slurm_output/eval_one2one_kp20k_valid2k.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -11,4 +11,5 @@
 #SBATCH --qos=long
 
 # Run the job
-python kp_run_eval.py -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/ -output_dir output/keyphrase/meng17-one2one/ -testsets kp20k_valid2k -gpu -1 -tasks pred eval
+python kp_gen_eval.py -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/ -output_dir output/keyphrase/meng17-one2one/ -testsets kp20k_valid2k -gpu -1 -tasks pred eval
+

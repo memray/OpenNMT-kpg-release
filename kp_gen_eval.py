@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import codecs
 import json
+import random
 import shutil
 
 from onmt.translate.translator import build_translator
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     parser.add_argument('-ckpt_dir', type=str, required=True, help='Directory to all checkpoints')
     parser.add_argument('-output_dir', type=str, required=True, help='Directory to output results')
     parser.add_argument('-data_dir', type=str, required=True, help='Directory to datasets (ground-truth)')
-    parser.add_argument('-test_interval', type=int, default=7200, help='Minimum time interval the job should wait if a .pred file is not updated by another job (imply another job failed).')
+    parser.add_argument('-test_interval', type=int, default=300, help='Minimum time interval the job should wait if a .pred file is not updated by another job (imply another job failed).')
     parser.add_argument('-testsets', nargs='+', type=str, default=["nus", "semeval"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["kp20k", "duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
     parser.add_argument('-onepass', '--onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop')
@@ -67,14 +68,14 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
 
-    np.random.seed()
+    # np.random.seed()
     sleep_time = np.random.randint(120)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
     logger = init_logger(opt.output_dir + 'autoeval_%s_%s.log'
                          % ('-'.join(opt.testsets), current_time))
     if not opt.onepass:
         logger.info('Sleep for %d sec to avoid conflicting with other threads' % sleep_time)
-        time.sleep(sleep_time)
+        # time.sleep(sleep_time)
 
     if not os.path.exists(opt.output_dir):
         os.makedirs(opt.output_dir)
@@ -98,9 +99,9 @@ if __name__ == "__main__":
 
     while True:
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
-        # print(new_ckpts.items())
-        # print(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:])))
-        for ckpt_id, (ckpt_name, ckpt_path) in enumerate(sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))):
+        new_ckpts_items = sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))
+        random.shuffle(new_ckpts_items)
+        for ckpt_id, (ckpt_name, ckpt_path) in enumerate(new_ckpts_items):
             logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts), ckpt_path))
             setattr(opt, 'models', [ckpt_path])
 
@@ -120,50 +121,80 @@ if __name__ == "__main__":
                 # skip translation for this dataset if previous pred exists
                 do_trans_flag = True
                 if os.path.exists(pred_path):
-                    lines = open(pred_path, 'r').readlines()
-                    # count is same means it's done
-                    if len(lines) == len(src_shard):
-                        do_trans_flag = False
-                    # if file is modified less than opt.test_interval min, it might be processing by another job
-                    elapsed_time = time.time() - os.stat(pred_path).st_mtime
-                    # if onepass mode is on, ignore previous generated result
-                    if not opt.onepass and elapsed_time < opt.test_interval:
-                        do_trans_flag = False
-                        # eval is fast, so doesn't matter
+                    try:
+                        lines = open(pred_path, 'r').readlines()
+                        # count is same means it's done
+                        if len(lines) == len(src_shard):
+                            do_trans_flag = False
+                        else:
+                            # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
+                            elapsed_time = time.time() - os.stat(pred_path).st_mtime
+                            if elapsed_time < opt.test_interval:
+                                do_trans_flag = False
+                            else:
+                                os.remove(pred_path)
+                                logger.info('Removed a bad pred file!: %s' % pred_path)
+                    except Exception as e:
+                        logger.exception('Error while validating or deleting pred file: %s' % pred_path)
 
                 if 'pred' in opt.tasks:
-                    if do_trans_flag:
+                    # if onepass mode is on, ignore previous generated result
+                    if do_trans_flag or opt.onepass:
                         if translator is None:
                             translator = build_translator(opt, report_score=opt.verbose, logger=logger)
-                            # create an empty file to indicate that the translator is working on it
-                            codecs.open(pred_path, 'w+', 'utf-8').close()
-                            # set output_file for each dataset (instead of outputting to opt.output)
-                            translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                            logger.info("Start translating %s." % dataname)
-                            _, _ = translator.translate(
-                                src=src_shard,
-                                tgt=tgt_shard,
-                                src_dir=opt.src_dir,
-                                batch_size=opt.batch_size,
-                                attn_debug=opt.attn_debug,
-                                opt=opt
-                            )
+                        # create an empty file to indicate that the translator is working on it
+                        codecs.open(pred_path, 'w+', 'utf-8').close()
+                        # set output_file for each dataset (instead of outputting to opt.output)
+                        translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                        logger.info("Start translating [%s] for %s." % (dataname, ckpt_name))
+                        _, _ = translator.translate(
+                            src=src_shard,
+                            tgt=tgt_shard,
+                            src_dir=opt.src_dir,
+                            batch_size=opt.batch_size,
+                            attn_debug=opt.attn_debug,
+                            opt=opt
+                        )
+                    else:
+                        logger.info("Skip translating [%s] for %s." % (dataname, ckpt_name))
+
+                do_eval_flag = True
+                if not os.path.exists(pred_path):
+                    do_eval_flag = False
+                if os.path.exists(pred_path) and os.path.exists(score_path):
+                    # do_eval_flag is False as long as the file exists
+                    try:
+                        score_dict = json.load(open(score_path, 'r'))
+                        if 'present_exact_correct@5' in score_dict and len(score_dict['present_exact_correct@5']) == len(src_shard):
+                            do_eval_flag = False
                         else:
-                            logger.info("Skip translating %s." % dataname)
+                            # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
+                            elapsed_time = time.time() - os.stat(score_path).st_mtime
+                            if elapsed_time < opt.test_interval:
+                                do_eval_flag = False
+                            else:
+                                do_eval_flag = False
+                                os.remove(score_path)
+                                logger.info('Removed a bad eval file!: %s' % score_path)
+                    except Exception as e:
+                        logger.exception('Error while validating or deleting eval file: %s' % score_path)
 
-                if 'eval' in opt.tasks:
-                    logger.info("Start evaluating generated results of %s" % ckpt_name)
-                    score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
-                                                            pred_path=pred_path, logger=logger,
-                                                            verbose=opt.verbose,
-                                                            report_path=report_path)
-                    score_dicts[dataname] = score_dict
+                if 'eval' in opt.tasks and do_eval_flag:
+                    # if onepass mode is on, ignore previous generated result
+                    if do_eval_flag or opt.onepass:
+                        logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
+                        score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
+                                                                pred_path=pred_path, logger=logger,
+                                                                verbose=opt.verbose,
+                                                                report_path=report_path)
+                        score_dicts[dataname] = score_dict
 
-                    with open(score_path, 'w') as output_json:
-                        output_json.write(json.dumps(score_dict))
+                        with open(score_path, 'w') as output_json:
+                            output_json.write(json.dumps(score_dict))
 
-                    kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
-
+                        kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
+                    else:
+                        logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
 
         if opt.onepass:
             break

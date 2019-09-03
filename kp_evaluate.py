@@ -591,6 +591,7 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
     pred_data = [json.loads(l) for l in open(pred_path, "r")]
 
+    logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(pred_data), len(src_data), len(tgt_data)))
     assert len(pred_data) == len(src_data) == len(tgt_data)
 
     results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
@@ -640,10 +641,14 @@ def summarize_scores(ckpt_name, score_dict):
     present_tgt_num = score_dict['present_tgt_num'] if 'present_tgt_num' in score_dict else 0
     absent_tgt_num = score_dict['absent_tgt_num'] if 'absent_tgt_num' in score_dict else 0
 
-    del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], \
-        score_dict['present_pred_num'], score_dict['absent_pred_num'], \
-        score_dict['unique_pred_num'], score_dict['dup_pred_num'], \
-        score_dict['beam_num'], score_dict['beamstep_num']
+    if 'unique_pred_num' in score_dict: del score_dict['present_tgt_num']
+    if 'absent_tgt_num' in score_dict: del score_dict['absent_tgt_num']
+    if 'present_pred_num' in score_dict: del score_dict['present_pred_num']
+    if 'absent_pred_num' in score_dict: del score_dict['absent_pred_num']
+    if 'unique_pred_num' in score_dict: del score_dict['unique_pred_num']
+    if 'dup_pred_num' in score_dict: del score_dict['dup_pred_num']
+    if 'beam_num' in score_dict: del score_dict['beam_num']
+    if 'beamstep_num' in score_dict: del score_dict['beamstep_num']
 
     for score_name, score_list in score_dict.items():
         # number of correct phrases

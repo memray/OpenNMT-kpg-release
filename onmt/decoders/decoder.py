@@ -218,6 +218,10 @@ class RNNDecoderBase(DecoderBase):
         self.state["input_feed"] = fn(self.state["input_feed"], 1)
         if self._coverage and self.state["coverage"] is not None:
             self.state["coverage"] = fn(self.state["coverage"], 1)
+        if self.target_encoder is not None:
+            self.state["src_hidden"] = fn(self.state["src_hidden"], 1)
+            if self.target_encoder_type == "rnn":
+                self.state["tgt_enc_hidden"] = tuple(fn(h, 1) for h in self.state["tgt_enc_hidden"])
 
     def detach_state(self):
         self.state["hidden"] = tuple(h.detach() for h in self.state["hidden"])
