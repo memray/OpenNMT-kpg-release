@@ -363,7 +363,11 @@ class Translator(object):
 
         start_time = time.time()
 
+        num_examples = 0
         for batch in data_iter:
+            num_examples += batch_size
+            print("Translating %d/%d" % (num_examples, len(src)))
+
             batch_data = self.translate_batch(
                 batch, data.src_vocabs, attn_debug
             )

@@ -591,7 +591,7 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
     pred_data = [json.loads(l) for l in open(pred_path, "r")]
 
-    logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(pred_data), len(src_data), len(tgt_data)))
+    logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
     assert len(pred_data) == len(src_data) == len(tgt_data)
 
     results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)

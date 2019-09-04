@@ -267,7 +267,7 @@ class RNNDecoderBase(DecoderBase):
             dec_outs = torch.stack(dec_outs)
 
             for k in attns:
-                if type(attns[k]) == list:
+                if type(attns[k]) == list and len(attns[k]) > 0:
                     attns[k] = torch.stack(attns[k])
         return dec_outs, attns
 
@@ -419,7 +419,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["coverage"] = []
         # @memray, for Orthogonal regularization and Semantic Coverage, may consume lots of memory
         attns["dec_states"] = []
-        attns["src_states"] = self.state['src_hidden'].squeeze(0)
+        attns["src_states"] = self.state['src_hidden'].squeeze(0) if 'src_hidden' in self.state else []
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim

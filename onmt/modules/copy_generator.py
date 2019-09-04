@@ -225,7 +225,6 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             align: the align info.
         """
         target_indices = target # before flattening
-        target_sep_idx = batch.sep_indices
 
         target = target.view(-1)
         align = align.view(-1)
@@ -243,6 +242,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         # compute orthogonal penalty loss
         if self.lambda_orth_reg > 0.0:
+            target_sep_idx = batch.sep_indices
             assert dec_states is not None
             assert target_sep_idx is not None
             # decoder hidden state: output of decoder
@@ -252,6 +252,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         # compute semantic coverage loss for target encoder
         if self.lambda_sem_cov > 0.0:
+            target_sep_idx = batch.sep_indices
             assert model is not None
             assert src_states is not None
             assert tgtenc_states is not None
