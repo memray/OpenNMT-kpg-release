@@ -65,6 +65,7 @@ if __name__ == "__main__":
                         required=True,
                         choices=['pred', 'eval'],
                         help='Specify process to run, generation or evaluation')
+    parser.add_argument('--eval_topbeam', '-eval_topbeam',action="store_true", help='Evaluate with top beam only (self-terminating) or all beams (full search)')
 
     opt = parser.parse_args()
 
@@ -197,22 +198,24 @@ if __name__ == "__main__":
                     except Exception as e:
                         logger.exception('Error while validating or deleting eval file: %s' % score_path)
 
-                if 'eval' in opt.tasks and do_eval_flag:
+                if 'eval' in opt.tasks:
                     # if onepass mode is on, ignore previous generated result
                     if do_eval_flag or opt.onepass:
                         logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
                         score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
                                                                 pred_path=pred_path, logger=logger,
                                                                 verbose=opt.verbose,
-                                                                report_path=report_path)
+                                                                report_path=report_path,
+                                                                eval_topbeam=opt.eval_topbeam
+                                                                )
                         score_dicts[dataname] = score_dict
 
                         with open(score_path, 'w') as output_json:
                             output_json.write(json.dumps(score_dict))
-
-                        kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
                     else:
                         logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
+
+                    kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
 
         if opt.onepass:
             break

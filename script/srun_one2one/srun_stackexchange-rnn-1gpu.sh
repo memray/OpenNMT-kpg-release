@@ -2,8 +2,8 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gtx1080
-#SBATCH --job-name=train-stackexchange-rnn-DIM150-EMB100-LR005-DO00-TFTF-TFB1
-#SBATCH --output=slurm_output/train-stackexchange-rnn-DIM150-EMB100-LR005-DO00-TFTF-TFB1.out
+#SBATCH --job-name=train-stackexchange-rnn-DIM150-EMB100-LR005-DO00-TFFF-TFB1
+#SBATCH --output=slurm_output/train-stackexchange-rnn-DIM150-EMB100-LR005-DO00-TFFF-TFB1.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -39,7 +39,7 @@ export MaxGradNorm="2.0"
 
 export Copy=true
 export ReuseCopy=false
-export Cov=true
+export Cov=false
 export PositionEncoding=false
 
 export ShareEmbeddings=true

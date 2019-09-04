@@ -133,7 +133,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     else:
         report_file = None
     # 'k' means the number of phrases in ground-truth
-    topk_range = [5, 10, 'k']
+    topk_range = [5, 10, 'k', 'M']
     absent_topk_range = [10, 30, 50]
     # 'precision_hard' and 'f_score_hard' mean that precision is calculated with denominator strictly as K (say 5 or 10), won't be lessened even number of preds is smaller
     metric_names = ['correct', 'precision', 'recall', 'f_score', 'precision_hard', 'f_score_hard']
@@ -486,6 +486,8 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
     for topk in topk_range:
         if topk == 'k':
             cutoff = len(tgt_list)
+        elif topk == 'M':
+            cutoff = len(pred_list)
         else:
             cutoff = topk
 
@@ -591,7 +593,7 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
     pred_data = [json.loads(l) for l in open(pred_path, "r")]
 
-    logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
+    # logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
     assert len(pred_data) == len(src_data) == len(tgt_data)
 
     results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
@@ -669,7 +671,7 @@ def summarize_scores(ckpt_name, score_dict):
             logger.error("NotImplementedError: found key %s" % score_name)
             raise NotImplementedError
 
-    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()
+    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()[list(avg_dict.keys())]
 
     return summary_df
 
