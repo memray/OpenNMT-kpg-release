@@ -54,17 +54,18 @@ def _get_parser():
 if __name__ == "__main__":
     parser = _get_parser()
 
+    parser.add_argument('--tasks', '-tasks', nargs='+', type=str,
+                        required=True,
+                        choices=['pred', 'eval', 'report'],
+                        help='Specify process to run, generation or evaluation')
     parser.add_argument('-ckpt_dir', type=str, required=True, help='Directory to all checkpoints')
     parser.add_argument('-output_dir', type=str, required=True, help='Directory to output results')
     parser.add_argument('-data_dir', type=str, required=True, help='Directory to datasets (ground-truth)')
     parser.add_argument('-test_interval', type=int, default=600, help='Minimum time interval the job should wait if a .pred file is not updated by another job (imply another job failed).')
     parser.add_argument('-testsets', nargs='+', type=str, default=["nus", "semeval"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["kp20k", "duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
-    parser.add_argument('-onepass', '--onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop')
-    parser.add_argument('--tasks', '-tasks', nargs='+', type=str,
-                        required=True,
-                        choices=['pred', 'eval'],
-                        help='Specify process to run, generation or evaluation')
+    parser.add_argument('--onepass', '-onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop scanning new available ckpts.')
+    parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
     parser.add_argument('--eval_topbeam', '-eval_topbeam',action="store_true", help='Evaluate with top beam only (self-terminating) or all beams (full search)')
 
     opt = parser.parse_args()
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     # np.random.seed()
     sleep_time = np.random.randint(120)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
-    logger = init_logger(opt.output_dir + 'autoeval_%s_%s.log'
+    logger = init_logger(opt.output_dir + '/autoeval_%s_%s.log'
                          % ('-'.join(opt.testsets), current_time))
     if not opt.onepass:
         logger.info('Sleep for %d sec to avoid conflicting with other threads' % sleep_time)
@@ -112,12 +113,17 @@ if __name__ == "__main__":
             for dataname, dataset in testset_path_dict.items():
                 src_path, tgt_path, src_shard, tgt_shard = dataset
 
+                pred_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.pred' % dataname)
+                printout_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
+                eval_path = os.path.join(opt.output_dir, 'eval', 'selfterminating' if opt.eval_topbeam else 'exhaustive')
+                score_path = os.path.join(eval_path, ckpt_name+'-%s.json' % dataname)
+                report_csv_path = os.path.join(eval_path, '%s_summary_%s.csv' % (current_time, '%s'))
+
+                # create dirs
                 if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
                     os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
-
-                pred_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.pred' % dataname)
-                report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
-                score_path = os.path.join(opt.output_dir, 'eval', ckpt_name+'-%s.json' % dataname)
+                if not os.path.exists(eval_path):
+                    os.makedirs(eval_path)
 
                 # skip translation for this dataset if previous pred exists
                 do_trans_flag = True
@@ -141,8 +147,7 @@ if __name__ == "__main__":
                         logger.exception('Error while validating or deleting pred file: %s' % pred_path)
 
                 if 'pred' in opt.tasks:
-                    # if onepass mode is on, ignore previous generated result
-                    if do_trans_flag or opt.onepass:
+                    if do_trans_flag or opt.ignore_existing:
                         if translator is None:
                             translator = build_translator(opt, report_score=opt.verbose, logger=logger)
                         # create an empty file to indicate that the translator is working on it
@@ -199,23 +204,23 @@ if __name__ == "__main__":
                         logger.exception('Error while validating or deleting eval file: %s' % score_path)
 
                 if 'eval' in opt.tasks:
-                    # if onepass mode is on, ignore previous generated result
-                    if do_eval_flag or opt.onepass:
+                    if do_eval_flag or opt.ignore_existing:
                         logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
                         score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
                                                                 pred_path=pred_path, logger=logger,
                                                                 verbose=opt.verbose,
-                                                                report_path=report_path,
+                                                                report_path=printout_path,
                                                                 eval_topbeam=opt.eval_topbeam
                                                                 )
-                        score_dicts[dataname] = score_dict
-
-                        with open(score_path, 'w') as output_json:
-                            output_json.write(json.dumps(score_dict))
+                        if score_dict is not None:
+                            score_dicts[dataname] = score_dict
+                            with open(score_path, 'w') as output_json:
+                                output_json.write(json.dumps(score_dict))
                     else:
                         logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
 
-                    kp_evaluate.export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'), output_csv_path=os.path.join(opt.output_dir, '%s_summary_%s.csv' % (current_time, '%s')))
+                if 'report' in opt.tasks:
+                    kp_evaluate.export_summary_to_csv(json_root_dir=eval_path, report_csv_path=report_csv_path)
 
         if opt.onepass:
             break

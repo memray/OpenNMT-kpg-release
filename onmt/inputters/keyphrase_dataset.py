@@ -8,7 +8,7 @@ import torch
 import numpy as np
 from torchtext.data import Field, RawField
 
-from kp_evaluate import if_present_duplicate_phrases
+from onmt.keyphrase.utils import if_present_duplicate_phrases, SEP_token, DIGIT_token
 from onmt.inputters.datareader_base import DataReaderBase
 
 from itertools import chain, starmap
@@ -21,8 +21,6 @@ from torchtext.data import Example
 from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
 np.random.seed(2333)
-SEP_token = "<sep>"
-DIGIT_token = "<digit>"
 extra_special_tokens = [SEP_token, DIGIT_token]
 
 class KeyphraseDataset(TorchtextDataset):
@@ -153,20 +151,25 @@ class KeyphraseDataReader(DataReaderBase):
             "Cannot use _dir with KeyphraseDataReader."
         if isinstance(sequences, str):
             sequences = DataReaderBase._read_file(sequences)
-        for i, json_line in enumerate(sequences):
-            json_line = json_line.decode("utf-8")
-            json_dict = json.loads(json_line)
-            # Note tgt could be a list of strings
-            seq = json_dict[side]
-
-            # torchtext field only takes numeric features
-            id = json_dict['id']
+        for i, line in enumerate(sequences):
+            try:
+                # default input is a json line
+                line = line.decode("utf-8")
+                json_dict = json.loads(line)
+                # Note tgt could be a list of strings
+                seq = json_dict[side]
+                # torchtext field only takes numeric features
+                id = json_dict['id']
+            except Exception:
+                # temporary measure for plain text input
+                seq = line
+                id = i
 
             try:
                 if id.rfind('_') != -1:
                     id = id[id.rfind('_') + 1:]
                 id = int(id)
-            except ValueError:
+            except Exception:
                 # if not convertible, use indices as id
                 id = i
 
@@ -222,7 +225,7 @@ def process_multiple_tgts(big_batch, tgt_type):
     new_batch = []
     for ex in big_batch:
         # a workaround: truncate to maximum 8 phrases (some noisy data points have many phrases)
-        if len(ex.tgt) > 8:
+        if hasattr(ex, "tgt") and len(ex.tgt) > 8:
             random_choise = np.random.choice(len(ex.tgt), 8)
             if hasattr(ex, "tgt"):
                 ex.tgt = [ex.tgt[idx] for idx in random_choise]
@@ -262,6 +265,7 @@ def process_multiple_tgts(big_batch, tgt_type):
                 alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
             else:
                 alignment = None
+            ex.tgt = tgt
             '''
             elif tgt_type == 'no_sort':
                 # return tgts in original order
@@ -279,11 +283,10 @@ def process_multiple_tgts(big_batch, tgt_type):
             '''
         # no processing for 'multiple' (test phrase)
         elif tgt_type == 'multiple':
-            tgt = ex.tgt
+            pass
         else:
             raise NotImplementedError
 
-        ex.tgt = tgt
         setattr(ex, 'sep_indices', sep_indices)
 
         if hasattr(ex, "alignment"):

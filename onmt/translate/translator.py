@@ -397,12 +397,14 @@ class Translator(object):
                 n_best_preds = [" ".join(pred)
                                 for pred in tran.pred_sents[:self.n_best]]
                 all_predictions += [n_best_preds]
-                if self.data_type == "keyphrase":
-                    self.out_file.write(json.dumps(tran.__dict__()) + '\n')
-                    self.out_file.flush()
-                else:
-                    self.out_file.write('\n'.join(n_best_preds) + '\n')
-                    self.out_file.flush()
+
+                if self.out_file:
+                    if self.data_type == "keyphrase":
+                        self.out_file.write(json.dumps(tran.__dict__()) + '\n')
+                        self.out_file.flush()
+                    else:
+                        self.out_file.write('\n'.join(n_best_preds) + '\n')
+                        self.out_file.flush()
 
                 if self.verbose:
                     sent_number = next(counter)
