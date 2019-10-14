@@ -85,7 +85,8 @@ def build_save_dataset(corpus_type, fields, src_reader, tgt_reader, opt):
         for i, (src_shard, tgt_shard) in enumerate(shard_pairs):
             assert len(src_shard) == len(tgt_shard)
             logger.info("Building shard %d." % i)
-            dataset = inputters.Dataset(
+            # @memray: to be different from normal datasets
+            dataset = inputters.str2dataset[opt.data_type](
                 fields,
                 readers=([src_reader, tgt_reader]
                          if tgt_reader else [src_reader]),
@@ -115,7 +116,12 @@ def build_save_dataset(corpus_type, fields, src_reader, tgt_reader, opt):
                             if (hasattr(sub_f, 'sequential')
                                     and sub_f.sequential and not has_vocab):
                                 val = fd
-                                counters[sub_n].update(val)
+                                if opt.data_type=='keyphrase' and sub_n == 'tgt':
+                                    # in this case, val is a list of phrases (list of strings (words))
+                                    for v in val:
+                                        counters[sub_n].update(v)
+                                else:
+                                    counters[sub_n].update(val)
             if maybe_id:
                 shard_base = corpus_type + "_" + maybe_id
             else:

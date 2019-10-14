@@ -15,7 +15,7 @@ report_time: 'true'
 share_vocab: 'true'
 
 # Beam search
-beam_size: 10
+#beam_size: 10
 max_length: 40
 min_length: 1
 

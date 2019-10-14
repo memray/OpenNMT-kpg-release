@@ -1,13 +1,9 @@
 
 import argparse
 import json
-import math
-import logging
-import string
 
-import nltk
 import scipy
-import torch
+import tqdm
 from nltk.stem.porter import *
 import numpy as np
 from collections import Counter
@@ -16,10 +12,9 @@ import pandas as pd
 
 import os
 
-from torch.autograd import Variable
-
-import config
 from nltk.translate.bleu_score import sentence_bleu as bleu
+
+from onmt.keyphrase.utils import if_present_duplicate_phrases
 from onmt.utils.logging import init_logger
 
 stemmer = PorterStemmer()
@@ -53,78 +48,6 @@ def process_predseqs(pred_seqs, unk_token):
     return np.asarray(valid_flags)
 
 
-def if_present_phrase(src_str_tokens, phrase_str_tokens):
-    """
-
-    :param src_str_tokens: a list of strings (words) of source text
-    :param phrase_str_tokens: a list of strings (words) of a phrase
-    :return:
-    """
-    match_flag = False
-    match_pos_idx = -1
-    for src_start_idx in range(len(src_str_tokens) - len(phrase_str_tokens) + 1):
-        match_flag = True
-        # iterate each word in target, if one word does not match, set match=False and break
-        for seq_idx, seq_w in enumerate(phrase_str_tokens):
-            src_w = src_str_tokens[src_start_idx + seq_idx]
-            if src_w != seq_w:
-                match_flag = False
-                break
-        if match_flag:
-            match_pos_idx = src_start_idx
-            break
-
-    return match_flag, match_pos_idx
-
-
-def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=True):
-    """
-    Check if each given target sequence verbatim appears in the source sequence
-    :param src_seq: 
-    :param tgt_seqs: 
-    :param stemming: 
-    :param lowercase: 
-    :param check_duplicate: 
-    :return: 
-    """
-    if lowercase:
-        src_seq = [w.lower() for w in src_seq]
-    if stemming:
-        src_seq = stem_word_list(src_seq)
-
-    present_indices = []
-    present_flags = []
-    duplicate_flags = []
-    phrase_set = set()  # some phrases are duplicate after stemming, like "model" and "models" would be same after stemming, thus we ignore the following ones
-
-    for tgt_seq in tgt_seqs:
-        if lowercase:
-            tgt_seq = [w.lower() for w in tgt_seq]
-        if stemming:
-            tgt_seq = stem_word_list(tgt_seq)
-
-        # check if the phrase appears in source text
-        # iterate each word in source
-        match_flag, match_pos_idx = if_present_phrase(src_seq, tgt_seq)
-
-        # if it reaches the end of source and no match, means it doesn't appear in the source
-        present_flags.append(match_flag)
-        present_indices.append(match_pos_idx)
-
-        # check if it is duplicate
-        if '_'.join(tgt_seq) in phrase_set:
-            duplicate_flags.append(True)
-        else:
-            duplicate_flags.append(False)
-        phrase_set.add('_'.join(tgt_seq))
-
-    assert len(present_flags) == len(present_indices)
-
-    return np.asarray(present_flags), \
-           np.asarray(present_indices), \
-           np.asarray(duplicate_flags)
-
-
 def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False, report_path=None, eval_topbeam=False):
     # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
 
@@ -133,7 +56,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     else:
         report_file = None
     # 'k' means the number of phrases in ground-truth
-    topk_range = [5, 10, 'k']
+    topk_range = [5, 10, 'k', 'M']
     absent_topk_range = [10, 30, 50]
     # 'precision_hard' and 'f_score_hard' mean that precision is calculated with denominator strictly as K (say 5 or 10), won't be lessened even number of preds is smaller
     metric_names = ['correct', 'precision', 'recall', 'f_score', 'precision_hard', 'f_score_hard']
@@ -143,7 +66,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     '''
     process each example in current batch
     '''
-    for i, (src_dict, tgt_dict, pred_dict) in enumerate(zip(src_list, tgt_list, pred_list)):
+    for i, (src_dict, tgt_dict, pred_dict) in tqdm.tqdm(enumerate(zip(src_list, tgt_list, pred_list))):
         src_seq = src_dict["src"].split()
         tgt_seqs =[t.split() for t in tgt_dict["tgt"]]
 
@@ -176,8 +99,8 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
         # 2nd filtering: if filter out phrases that don't appear in text, and keep unique ones after stemming
         present_pred_flags, _, duplicate_flags = if_present_duplicate_phrases(src_seq, pred_sents)
         # treat duplicates as invalid
-        valid_pred_flags = valid_pred_flags * ~duplicate_flags
-        valid_and_present = valid_pred_flags * present_pred_flags
+        valid_pred_flags = valid_pred_flags * ~duplicate_flags if len(valid_pred_flags) > 0 else []
+        valid_and_present = valid_pred_flags * present_pred_flags if len(valid_pred_flags) > 0 else []
         print_out += '\n[PREDICTION] #(valid)=%d, #(present)=%d, #(retained&present)=%d, #(all)=%d\n' % (sum(valid_pred_flags), sum(present_pred_flags), sum(valid_and_present), len(pred_sents))
         print_out += ''
 
@@ -187,7 +110,7 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
         # simply add full-text to n-grams might not be good as its contribution is not clear
         match_scores_mixed = get_match_result(true_seqs=tgt_seqs, pred_seqs=pred_sents, type='mixed')
 
-        # sanity check of pred (does not work for topbeam, discard)
+        # sanity check of pred (does not work for eval_topbeam, discard)
         # num_pred = len(pred_dict["pred_sents"])
         # for d_name, d in zip(['pred_idxs', 'pred_sents', 'pred_scores',
         #               'match_scores_exact', 'valid_pred_flags',
@@ -252,20 +175,27 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
 
         # split preds by present/absent and exact/partial/mixed
         present_preds = [pred for pred, present in zip(valid_pred_sents, present_pred_flags) if present]
-        present_exact_match_scores = match_scores_exact[present_pred_flags]
-        present_partial_match_scores = match_scores_partial[present_pred_flags][:, present_tgt_flags]
-        present_mixed_match_scores = match_scores_mixed[present_pred_flags][:, present_tgt_flags]
-
         absent_preds = [pred for pred, present in zip(valid_pred_sents, present_pred_flags) if ~present]
-        absent_exact_match_scores = match_scores_exact[~present_pred_flags]
-        absent_partial_match_scores = match_scores_partial[~present_pred_flags][:, ~present_tgt_flags]
-        absent_mixed_match_scores = match_scores_mixed[~present_pred_flags][:, ~present_tgt_flags]
+        if len(present_pred_flags) > 0:
+            present_exact_match_scores = match_scores_exact[present_pred_flags]
+            present_partial_match_scores = match_scores_partial[present_pred_flags][:, present_tgt_flags]
+            present_mixed_match_scores = match_scores_mixed[present_pred_flags][:, present_tgt_flags]
+            absent_exact_match_scores = match_scores_exact[~present_pred_flags]
+            absent_partial_match_scores = match_scores_partial[~present_pred_flags][:, ~present_tgt_flags]
+            absent_mixed_match_scores = match_scores_mixed[~present_pred_flags][:, ~present_tgt_flags]
+        else:
+            present_exact_match_scores = []
+            present_partial_match_scores = []
+            present_mixed_match_scores = []
+            absent_exact_match_scores = []
+            absent_partial_match_scores = []
+            absent_mixed_match_scores = []
 
-        assert len(valid_pred_sents) == len(match_scores_exact) == len(present_pred_flags)
-        assert len(present_preds) == len(present_exact_match_scores) == len(present_partial_match_scores) == len(present_mixed_match_scores)
-        assert present_partial_match_scores.shape == present_mixed_match_scores.shape
-        assert len(absent_preds) == len(absent_exact_match_scores) == len(absent_partial_match_scores) == len(absent_mixed_match_scores)
-        assert absent_partial_match_scores.shape == absent_mixed_match_scores.shape
+        # assert len(valid_pred_sents) == len(match_scores_exact) == len(present_pred_flags)
+        # assert len(present_preds) == len(present_exact_match_scores) == len(present_partial_match_scores) == len(present_mixed_match_scores)
+        # assert present_partial_match_scores.shape == present_mixed_match_scores.shape
+        # assert len(absent_preds) == len(absent_exact_match_scores) == len(absent_partial_match_scores) == len(absent_mixed_match_scores)
+        # assert absent_partial_match_scores.shape == absent_mixed_match_scores.shape
 
         # Compute metrics
         print_out += "\n ======================================================="
@@ -348,13 +278,15 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
             report_file.write(print_out)
 
         # add tgt/pred count for computing average performance on non-empty items
-        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num', 'unique_pred_num', 'dup_pred_num']
+        results_names = ['present_tgt_num', 'absent_tgt_num', 'present_pred_num', 'absent_pred_num', 'unique_pred_num', 'dup_pred_num', 'beam_num', 'beamstep_num']
         results_list = [{'present_tgt_num': len(present_tgts)},
                         {'absent_tgt_num': len(absent_tgts)},
                         {'present_pred_num': len(present_preds)},
                         {'absent_pred_num': len(absent_preds)},
                         {'unique_pred_num': pred_dict['unique_pred_num'] if 'unique_pred_num' in pred_dict else 0},
                         {'dup_pred_num': pred_dict['dup_pred_num'] if 'dup_pred_num' in pred_dict else 0},
+                        {'beam_num': pred_dict['beam_num'] if 'beam_num' in pred_dict else 0},
+                        {'beamstep_num': pred_dict['beamstep_num'] if 'beamstep_num' in pred_dict else 0},
                         ]
         score_dict = _gather_scores(score_dict, results_names, results_list)
 
@@ -484,6 +416,8 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
     for topk in topk_range:
         if topk == 'k':
             cutoff = len(tgt_list)
+        elif topk == 'M':
+            cutoff = len(pred_list)
         else:
             cutoff = topk
 
@@ -496,10 +430,11 @@ def run_metrics(match_list, pred_list, tgt_list, score_names, topk_range, type='
 
         if type == 'partial':
             cost_matrix = np.asarray(match_list_k, dtype=float)
-            # convert to a negative matrix because linear_sum_assignment() looks for minimal assignment
-            row_ind, col_ind = scipy.optimize.linear_sum_assignment(-cost_matrix)
-            match_list_k = cost_matrix[row_ind, col_ind]
-            overall_cost = cost_matrix[row_ind, col_ind].sum()
+            if len(match_list_k) > 0:
+                # convert to a negative matrix because linear_sum_assignment() looks for minimal assignment
+                row_ind, col_ind = scipy.optimize.linear_sum_assignment(-cost_matrix)
+                match_list_k = cost_matrix[row_ind, col_ind]
+                overall_cost = cost_matrix[row_ind, col_ind].sum()
             '''
             print("\n%d" % topk)
             print(row_ind, col_ind)
@@ -584,21 +519,54 @@ def kp_results_to_str(results_dict):
     return json.dumps(summary_dict)
 
 
-def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None, report_path=None, eval_topbeam=False):
+def baseline_pred_loader(pred_path, model_name):
+    pred_dict_list = []
+
+    if model_name in ['tfidf', 'textrank', 'singlerank', 'expandrank', 'maui', 'kea']:
+        doc_list = [file_name for file_name in os.listdir(pred_path) if file_name.endswith('txt.phrases')]
+        doc_list = sorted(doc_list, key=lambda k: int(k[:k.index('.txt.phrases')]))
+        for doc_name in doc_list:
+            doc_path = os.path.join(pred_path, doc_name)
+            pred_dict = {}
+            pred_dict['pred_sents'] = []
+
+            for l in open(doc_path, 'r').readlines():
+                pred_dict['pred_sents'].append(l.lower().split())
+            pred_dict_list.append(pred_dict)
+    else:
+        raise NotImplementedError
+
+    return pred_dict_list
+
+
+def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=False, logger=None, report_path=None, eval_topbeam=False, model_name='nn'):
     src_data = [json.loads(l) for l in open(src_path, "r")]
     tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
-    pred_data = [json.loads(l) for l in open(pred_path, "r")]
+    if model_name == 'nn':
+        pred_data = [json.loads(l) for l in open(pred_path, "r")]
+    else:
+        pred_data = baseline_pred_loader(pred_path, model_name)
 
-    assert len(pred_data) == len(src_data) == len(tgt_data)
+    if len(pred_data) == len(src_data) == len(tgt_data):
+        results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
+        return results_dict
+    else:
+        logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
+        return None
 
-    results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
 
-    return results_dict
 
 
 def summarize_scores(ckpt_name, score_dict):
     avg_dict = {}
     avg_dict['checkpoint_name'] = ckpt_name
+    if ckpt_name.find('_') > 0:
+        avg_dict['model_name'] = '_'.join(ckpt_name.rsplit('_')[:-1])
+        avg_dict['#train_step'] = ckpt_name.rsplit('_')[-1]
+    else:
+        avg_dict['model_name'] = ckpt_name
+        avg_dict['#train_step'] = ''
+
     # doc stat
     avg_dict['#doc'] = len(score_dict['present_tgt_num'])
     avg_dict['#pre_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
@@ -625,13 +593,20 @@ def summarize_scores(ckpt_name, score_dict):
 
     avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num']) if 'unique_pred_num' in score_dict else 0
     avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num']) if 'dup_pred_num' in score_dict else 0
+    avg_dict['#beam'] = sum(score_dict['beam_num']) if 'beam_num' in score_dict else 0
+    avg_dict['#beamstep'] = sum(score_dict['beamstep_num']) if 'beamstep_num' in score_dict else 0
 
     present_tgt_num = score_dict['present_tgt_num'] if 'present_tgt_num' in score_dict else 0
     absent_tgt_num = score_dict['absent_tgt_num'] if 'absent_tgt_num' in score_dict else 0
 
-    del score_dict['present_tgt_num'], score_dict['absent_tgt_num'], \
-        score_dict['present_pred_num'], score_dict['absent_pred_num'], \
-        score_dict['unique_pred_num'], score_dict['dup_pred_num']
+    if 'unique_pred_num' in score_dict: del score_dict['present_tgt_num']
+    if 'absent_tgt_num' in score_dict: del score_dict['absent_tgt_num']
+    if 'present_pred_num' in score_dict: del score_dict['present_pred_num']
+    if 'absent_pred_num' in score_dict: del score_dict['absent_pred_num']
+    if 'unique_pred_num' in score_dict: del score_dict['unique_pred_num']
+    if 'dup_pred_num' in score_dict: del score_dict['dup_pred_num']
+    if 'beam_num' in score_dict: del score_dict['beam_num']
+    if 'beamstep_num' in score_dict: del score_dict['beamstep_num']
 
     for score_name, score_list in score_dict.items():
         # number of correct phrases
@@ -652,22 +627,35 @@ def summarize_scores(ckpt_name, score_dict):
             logger.error("NotImplementedError: found key %s" % score_name)
             raise NotImplementedError
 
-    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()
+    columns = list(avg_dict.keys())
+    # print(columns)
+    summary_df = pd.DataFrame.from_dict(avg_dict, orient='index').transpose()[columns]
+    # print('\n')
+    # print(list(summary_df.columns))
+    # input()
 
     return summary_df
 
 
-def export_summary_to_csv(json_root_dir, output_csv_path):
+def export_summary_to_csv(json_root_dir, report_csv_path):
     dataset_scores_dict = {}
+
+    # total_file_num = len(*[[file for file in files if file.endswith('.json')] for subdir, dirs, files in os.walk(json_root_dir)])
+    # file_count = 0
 
     for subdir, dirs, files in os.walk(json_root_dir):
         for file in files:
             if not file.endswith('.json'):
                 continue
+            # file_count += 1
+            # print("file_count/file_num=%d/%d" % (file_count, total_file_num))
 
             file_name = file[: file.find('.json')]
-            ckpt_name = file_name[: file.rfind('-')]
+            ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
             dataset_name = file_name[file.rfind('-')+1: ]
+            # if dataset_name != "kp20k_valid2k":
+            #     print("Skip "+dataset_name)
+            #     continue
             # key is dataset name, value is a dict whose key is metric name and value is a list of floats
             score_dict = json.load(open(os.path.join(subdir, file), 'r'))
             # ignore scores where no tgts available and return the average
@@ -679,9 +667,10 @@ def export_summary_to_csv(json_root_dir, output_csv_path):
                 dataset_scores_dict[dataset_name] = score_df
 
     for dataset, score_df in dataset_scores_dict.items():
-        print("Writing summary to: %s" % output_csv_path % dataset)
-        score_df.to_csv(output_csv_path % dataset)
-
+        # if dataset_name != "kp20k_valid2k":
+        #     continue
+        print("Writing summary to: %s" % report_csv_path % dataset)
+        score_df.to_csv(report_csv_path % dataset)
 
 def init_opt():
 
@@ -697,9 +686,9 @@ def init_opt():
                         help=".")
     parser.add_argument('--verbose', '-v', action='store_true',
                         help=".")
-    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
-    parser.add_argument('-topbeam', action='store_true', required=False, help='Evaluate with all beams or just from top beam.')
+    parser.add_argument('--eval_topbeam', '-eval_topbeam', action='store_true', required=False, help='(only useful for one2seq models) Evaluate with all sequences or just take the top-score sequence.')
 
+    parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
 
     opt = parser.parse_args()
@@ -739,7 +728,7 @@ if __name__ == '__main__':
                                               verbose = opt.verbose,
                                               logger = logger,
                                               report_path = report_path,
-                                            eval_topbeam=opt.topbeam
+                                              eval_topbeam=opt.eval_topbeam
                                             )
                 logger.info(kp_results_to_str(score_dict))
 
@@ -749,6 +738,6 @@ if __name__ == '__main__':
                 score_dicts[dataname] = score_dict
 
         export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir, 'eval'),
-                              output_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+                              report_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
 
         logger.info("Done!")

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from onmt.utils.misc import aeq
-from onmt.utils.loss import NMTLossCompute
+from onmt.utils.loss import NMTLossCompute, ReplayMemory
 
 
 def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs=None,
@@ -180,9 +180,16 @@ class CopyGeneratorLoss(nn.Module):
 class CopyGeneratorLossCompute(NMTLossCompute):
     """Copy Generator Loss Computation."""
     def __init__(self, criterion, generator, tgt_vocab, normalize_by_length,
-                 lambda_coverage=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0,
+                 n_neg=32, semcov_ending_state=False):
         super(CopyGeneratorLossCompute, self).__init__(
-            criterion, generator, lambda_coverage=lambda_coverage)
+            criterion, generator,
+            lambda_coverage=lambda_coverage,
+            lambda_orth_reg = lambda_orth_reg,
+            lambda_sem_cov = lambda_sem_cov,
+            n_neg=n_neg,
+            semcov_ending_state = semcov_ending_state
+        )
         self.tgt_vocab = tgt_vocab
         self.normalize_by_length = normalize_by_length
 
@@ -202,8 +209,9 @@ class CopyGeneratorLossCompute(NMTLossCompute):
         return shard_state
 
     def _compute_loss(self, batch, output, target, copy_attn, align,
-                      std_attn=None, coverage_attn=None
-                      # add hidden_state and index
+                      std_attn=None, coverage_attn=None,
+                      src_states=None, dec_states=None, tgtenc_states=None,
+                      model=None
                       ):
         """Compute the loss.
 
@@ -216,17 +224,46 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             copy_attn: the copy attention value.
             align: the align info.
         """
+        target_indices = target # before flattening
+
         target = target.view(-1)
         align = align.view(-1)
         scores = self.generator(
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
+        # loss = 0.0
         loss = self.criterion(scores, align, target)
+        # print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(std_attn,
                                                         coverage_attn)
             loss += coverage_loss
+
+        # compute orthogonal penalty loss
+        if self.lambda_orth_reg > 0.0:
+            target_sep_idx = batch.sep_indices
+            assert dec_states is not None
+            assert target_sep_idx is not None
+            # decoder hidden state: output of decoder
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, dec_states, target_sep_idx)
+            loss += orthogonal_penalty
+            # print("Orth_reg=%.5f" % orthogonal_penalty)
+
+        # compute semantic coverage loss for target encoder
+        if self.lambda_sem_cov > 0.0:
+            target_sep_idx = batch.sep_indices
+            assert model is not None
+            assert src_states is not None
+            assert tgtenc_states is not None
+            assert target_sep_idx is not None
+            semantic_coverage_loss = self._compute_semantic_coverage_loss(model,
+                                                                          src_states, dec_states, tgtenc_states,
+                                                                          target_indices, target_sep_idx,
+                                                                          n_neg=self.n_neg,
+                                                                          semcov_ending_state=self.semcov_ending_state)
+            loss += semantic_coverage_loss
+            # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
         # this block does not depend on the loss value computed above
         # and is used only for stats

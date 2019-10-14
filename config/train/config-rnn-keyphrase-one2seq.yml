@@ -2,10 +2,12 @@ model_type: keyphrase
 tgt_type: random
 
 data: data/keyphrase/meng17/kp20k
+#data: data/keyphrase/meng17/kp20k_small
+#data: data/keyphrase/meng17/stackexchange
 save_checkpoint_steps: 10000
 keep_checkpoint: 20
 seed: 3435
-train_steps: 100000
+train_steps: 200000
 valid_steps: 20000
 report_every: 100
 
@@ -40,10 +42,10 @@ copy_loss_by_seqlength: 'false'
 share_embeddings: 'true'
 bridge: 'true'
 
-exp: kp20k-one2many-birnn-GRU150-EMB100-ATTNmlp-Dropout00
-save_model: models/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00
-log_file: output/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00.log
-tensorboard_log_dir: runs/keyphrase/meng17-one2many/kp20k.one2many.birnn.Dropout00/
+exp: kp20k-one2seq-birnn-GRU150-EMB100-ATTNmlp-Dropout00
+save_model: models/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00
+log_file: output/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00.log
+tensorboard_log_dir: runs/keyphrase/meng17-one2seq/kp20k.one2seq.birnn.Dropout00/
 
 world_size: 1
 gpu_ranks: []

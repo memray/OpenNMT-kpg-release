@@ -363,7 +363,11 @@ class Translator(object):
 
         start_time = time.time()
 
+        num_examples = 0
         for batch in data_iter:
+            num_examples += batch_size
+            print("Translating %d/%d" % (num_examples, len(src)))
+
             batch_data = self.translate_batch(
                 batch, data.src_vocabs, attn_debug
             )
@@ -374,9 +378,9 @@ class Translator(object):
                 # post-process for one2seq outputs, split seq into individual phrases
                 if self.model_tgt_type != 'one2one':
                     translations = self.segment_one2seq_trans(translations)
-                else:
-                    # TODO add statistics for one2one as in segment_one2seq_trans (pred_num, beamstep_num etc.)
-                    pass
+                # add statistics of kps(pred_num, beamstep_num etc.)
+                translations = self.add_trans_stats(translations, self.model_tgt_type)
+
                 # add copied flag
                 vocab_size = len(self.fields['src'].base_field.vocab.itos)
                 for t in translations:
@@ -393,12 +397,14 @@ class Translator(object):
                 n_best_preds = [" ".join(pred)
                                 for pred in tran.pred_sents[:self.n_best]]
                 all_predictions += [n_best_preds]
-                if self.data_type == "keyphrase":
-                    self.out_file.write(json.dumps(tran.__dict__()) + '\n')
-                    self.out_file.flush()
-                else:
-                    self.out_file.write('\n'.join(n_best_preds) + '\n')
-                    self.out_file.flush()
+
+                if self.out_file:
+                    if self.data_type == "keyphrase":
+                        self.out_file.write(json.dumps(tran.__dict__()) + '\n')
+                        self.out_file.flush()
+                    else:
+                        self.out_file.write('\n'.join(n_best_preds) + '\n')
+                        self.out_file.flush()
 
                 if self.verbose:
                     sent_number = next(counter)
@@ -740,7 +746,7 @@ class Translator(object):
         )
 
         for step in range(max_length):
-            print("step %d" % step)
+            # print("step %d" % step)
             # [1, beam*batch_size, 1]
             decoder_input = beam.current_predictions.view(1, -1, 1)
 
@@ -940,6 +946,19 @@ class Translator(object):
         ).decode("utf-8").strip()
         return msg
 
+    def add_trans_stats(self, trans, tgt_type):
+        for tran in trans:
+            if tgt_type == 'one2one':
+                tran.unique_pred_num = len(tran.preds)
+                tran.dup_pred_num = len(tran.preds)
+                tran.beam_num = len(tran.preds)
+                tran.beamstep_num = sum([len(t) for t in tran.preds])
+            else:
+                tran.beam_num = len(tran.ori_preds)
+                tran.beamstep_num = sum([len(t) for t in tran.ori_preds])
+
+        return trans
+
     def segment_one2seq_trans(self, trans):
         """
         For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rerank them
@@ -993,15 +1012,14 @@ class Translator(object):
             # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
             # print(new_pred_counter)
 
+            # one2seq-specific stats
+            tran.unique_pred_num = len(new_pred_counter)
+            tran.dup_pred_num = sum(new_pred_counter.values())
+
             # still keep the original pred beams
             tran.ori_preds = tran.preds
             tran.ori_pred_sents = tran.pred_sents
             tran.ori_pred_scores = tran.pred_scores
-
-            # stats of kps
-            tran.unique_pred_num = len(new_pred_counter)
-            tran.dup_pred_num = sum(new_pred_counter.values())
-            tran.beamstep_num = sum([len(t) for t in tran.ori_preds])
 
             # segmented predictions from the top-score sequence
             tran.topseq_preds = topseq_preds

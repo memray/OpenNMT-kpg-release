@@ -77,11 +77,15 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
         fields = vocab
 
     # @memray: a temporary workaround, as well as train.py line 43
-    if 'sep_indices' not in fields:
-        sep_indices = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=make_tgt, sequential=False)
-        fields["sep_indices"] = sep_indices
+    if opt.model_type == "keyphrase":
+        if opt.tgt_type in ["one2one", "multiple"]:
+            del fields['sep_indices']
+        else:
+            if 'sep_indices' not in fields:
+                sep_indices = Field(
+                    use_vocab=False, dtype=torch.long,
+                    postprocessing=make_tgt, sequential=False)
+                fields["sep_indices"] = sep_indices
 
     # Report src and tgt vocab sizes, including for features
     for side in ['src', 'tgt']:

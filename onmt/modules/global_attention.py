@@ -169,6 +169,8 @@ class GlobalAttention(nn.Module):
             aeq(batch, batch_)
             aeq(source_l, source_l_)
 
+        # @memray: the implementation seems not very correct
+        # https://github.com/OpenNMT/OpenNMT-py/issues/867
         if coverage is not None:
             cover = coverage.view(-1).unsqueeze(1)
             memory_bank += self.linear_cover(cover).view_as(memory_bank)
@@ -180,7 +182,7 @@ class GlobalAttention(nn.Module):
         if memory_lengths is not None:
             mask = sequence_mask(memory_lengths, max_len=align.size(-1))
             mask = mask.unsqueeze(1)  # Make it broadcastable.
-            align.masked_fill_(1 - mask, -float('inf'))
+            align.masked_fill_(~mask, -float('inf'))
 
         # Softmax or sparsemax to normalize attention weights
         if self.attn_func == "softmax":

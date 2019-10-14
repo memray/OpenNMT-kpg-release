@@ -41,11 +41,15 @@ def main(opt):
         fields = vocab
 
     # @memray: a temporary workaround, as well as train_single.py line 78
-    if 'sep_indices' not in fields:
-        sep_indices = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=make_tgt, sequential=False)
-        fields["sep_indices"] = sep_indices
+    if opt.model_type == "keyphrase":
+        if opt.tgt_type in ["one2one", "multiple"]:
+            del fields['sep_indices']
+        else:
+            if 'sep_indices' not in fields:
+                sep_indices = Field(
+                    use_vocab=False, dtype=torch.long,
+                    postprocessing=make_tgt, sequential=False)
+                fields["sep_indices"] = sep_indices
 
     if len(opt.data_ids) > 1:
         train_shards = []

@@ -1,0 +1,19 @@
+data_type: keyphrase
+
+train_src: data/keyphrase/meng17/stackexchange/stackexchange_train.src
+train_tgt: data/keyphrase/meng17/stackexchange/stackexchange_train.tgt
+valid_src: data/keyphrase/meng17/stackexchange/stackexchange_valid.src
+valid_tgt: data/keyphrase/meng17/stackexchange/stackexchange_valid.tgt
+
+save_data: data/keyphrase/meng17/stackexchange
+shard_size: 100000
+dynamic_dict: 'true'
+share_vocab: 'true'
+
+src_seq_length_trunc: 500
+tgt_seq_length_trunc: 8
+lower: 'true'
+filter_valid: 'false'
+
+report_every: 1000
+log_file: data/keyphrase/meng17/preprocess.stackexchange.log

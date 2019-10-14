@@ -78,13 +78,17 @@ class RNNDecoderBase(DecoderBase):
        reuse_copy_attn (bool): reuse the attention for copying
        copy_attn_type (str): The copy attention style. See
         :class:`~onmt.modules.GlobalAttention`.
+       target_encoder (str):
+       detach_target_encoder (bool):
     """
 
     def __init__(self, rnn_type, bidirectional_encoder, num_layers,
                  hidden_size, attn_type="general", attn_func="softmax",
                  coverage_attn=False, context_gate=None,
                  copy_attn=False, dropout=0.0, embeddings=None,
-                 reuse_copy_attn=False, copy_attn_type="general"):
+                 reuse_copy_attn=False, copy_attn_type="general",
+                 target_encoder_type=None, detach_target_encoder=False,
+                 ):
         super(RNNDecoderBase, self).__init__(
             attentional=attn_type != "none" and attn_type is not None)
 
@@ -97,18 +101,25 @@ class RNNDecoderBase(DecoderBase):
         # Decoder state
         self.state = {}
 
+        # @memray: hack to change size for target encoding
+        self.input_size = self._input_size
+        if target_encoder_type == 'none':
+            target_encoder_type = None
+        if target_encoder_type is not None:
+            self.input_size += self.hidden_size
+
         # Build the RNN.
         self.rnn = self._build_rnn(rnn_type,
-                                   input_size=self._input_size,
+                                   input_size=self.input_size,
                                    hidden_size=hidden_size,
-                                   num_layers=num_layers,
+                                   num_layers=1,
                                    dropout=dropout)
 
         # Set up the context gate.
         self.context_gate = None
         if context_gate is not None:
             self.context_gate = context_gate_factory(
-                context_gate, self._input_size,
+                context_gate, self.input_size,
                 hidden_size, hidden_size, hidden_size
             )
 
@@ -138,6 +149,19 @@ class RNNDecoderBase(DecoderBase):
         if self._reuse_copy_attn and not self.attentional:
             raise ValueError("Cannot reuse copy attention with no attention.")
 
+        # @memray
+        # Build the Target Encoder. Feed its output to the decoder as auxiliary input
+        self.target_encoder_type = target_encoder_type
+        self.target_encoder = None
+        if target_encoder_type == 'rnn':
+            self.target_encoder = self._build_rnn("GRU",
+                                       input_size=self.embeddings.embedding_size,
+                                       hidden_size=hidden_size,
+                                       num_layers=1,
+                                       dropout=dropout)
+        self.detach_target_encoder = detach_target_encoder
+        self.bilinear_layer = nn.Bilinear(in1_features=hidden_size, in2_features=hidden_size, out_features=1)
+
     @classmethod
     def from_opt(cls, opt, embeddings):
         """Alternate constructor."""
@@ -155,7 +179,10 @@ class RNNDecoderBase(DecoderBase):
             else opt.dropout,
             embeddings,
             opt.reuse_copy_attn,
-            opt.copy_attn_type)
+            opt.copy_attn_type,
+            opt.tgt_enc,
+            opt.detach_tgt_enc,
+        )
 
     def init_state(self, src, memory_bank, encoder_final):
         """Initialize decoder state with last state of the encoder."""
@@ -180,11 +207,21 @@ class RNNDecoderBase(DecoderBase):
             self.state["hidden"][0].data.new(*h_size).zero_().unsqueeze(0)
         self.state["coverage"] = None
 
+        # @memray
+        if self.target_encoder is not None:
+            self.state["src_hidden"] = self.state["hidden"][0]
+            if self.target_encoder_type == "rnn":
+                self.state["tgt_enc_hidden"] = (self.state["src_hidden"], )
+
     def map_state(self, fn):
         self.state["hidden"] = tuple(fn(h, 1) for h in self.state["hidden"])
         self.state["input_feed"] = fn(self.state["input_feed"], 1)
         if self._coverage and self.state["coverage"] is not None:
             self.state["coverage"] = fn(self.state["coverage"], 1)
+        if self.target_encoder is not None:
+            self.state["src_hidden"] = fn(self.state["src_hidden"], 1)
+            if self.target_encoder_type == "rnn":
+                self.state["tgt_enc_hidden"] = tuple(fn(h, 1) for h in self.state["tgt_enc_hidden"])
 
     def detach_state(self):
         self.state["hidden"] = tuple(h.detach() for h in self.state["hidden"])
@@ -225,12 +262,12 @@ class RNNDecoderBase(DecoderBase):
         # NOTE: v0.3 to 0.4: dec_outs / attns[*] may not be list
         #       (in particular in case of SRU) it was not raising error in 0.3
         #       since stack(Variable) was allowed.
-        #       In 0.4, SRU returns a tensor that shouldn't be stacke
+        #       In 0.4, SRU returns a tensor that shouldn't be stacked
         if type(dec_outs) == list:
             dec_outs = torch.stack(dec_outs)
 
             for k in attns:
-                if type(attns[k]) == list:
+                if type(attns[k]) == list and len(attns[k]) > 0:
                     attns[k] = torch.stack(attns[k])
         return dec_outs, attns
 
@@ -280,6 +317,7 @@ class StdRNNDecoder(RNNDecoderBase):
 
         assert self.copy_attn is None  # TODO, no support yet.
         assert not self._coverage  # TODO, no support yet.
+        assert self.target_encoder is None  # TODO, no support yet.
 
         attns = {}
         emb = self.embeddings(tgt)
@@ -305,6 +343,10 @@ class StdRNNDecoder(RNNDecoderBase):
                 memory_lengths=memory_lengths
             )
             attns["std"] = p_attn
+
+        # @memray: return rnn hidden states for computing orth_reg and sem_cov
+        # TODO not tested, presumably only works for GRU
+        attns["dec_states"] = dec_state
 
         # Calculate the context gate.
         if self.context_gate is not None:
@@ -375,19 +417,35 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["copy"] = []
         if self._coverage:
             attns["coverage"] = []
+        # @memray, for Orthogonal regularization and Semantic Coverage, may consume lots of memory
+        attns["dec_states"] = []
+        attns["src_states"] = self.state['src_hidden'].squeeze(0) if 'src_hidden' in self.state else []
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
 
         dec_state = self.state["hidden"]
+        if self.target_encoder is not None:
+            tgt_enc_state = self.state["tgt_enc_hidden"]
         coverage = self.state["coverage"].squeeze(0) \
             if self.state["coverage"] is not None else None
 
         # Input feed concatenates hidden state with
         # input at every time step.
         for emb_t in emb.split(1):
-            decoder_input = torch.cat([emb_t.squeeze(0), input_feed], 1)
-            rnn_output, dec_state = self.rnn(decoder_input, dec_state)
+            if self.target_encoder is None:
+                decoder_input = torch.cat([emb_t.squeeze(0), input_feed], 1)
+                rnn_output, dec_state = self.rnn(decoder_input, dec_state)
+            else:
+                tgt_enc_input = emb_t.squeeze(0)
+                tgt_enc_output, tgt_enc_state = self.target_encoder(tgt_enc_input, tgt_enc_state)
+                tgtenc2dec = tgt_enc_output
+                if self.detach_target_encoder:
+                    tgtenc2dec = tgt_enc_output.detach()
+
+                decoder_input = torch.cat([emb_t.squeeze(0), input_feed, tgtenc2dec], 1)
+                rnn_output, dec_state = self.rnn(decoder_input, dec_state)
+
             if self.attentional:
                 decoder_output, p_attn = self.attn(
                     rnn_output,
@@ -418,6 +476,13 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                 attns["copy"] += [copy_attn]
             elif self._reuse_copy_attn:
                 attns["copy"] = attns["std"]
+
+            # @memray: return rnn hidden states for computing orth_reg and sem_cov
+            attns["dec_states"] += [rnn_output]
+            if self.target_encoder is not None:
+                if "tgtenc_states" not in attns:
+                    attns["tgtenc_states"] = []
+                attns["tgtenc_states"] += [tgt_enc_output]
 
         return dec_state, dec_outs, attns
 

@@ -3,6 +3,10 @@ This includes: LossComputeBase and the standard NMTLossCompute, and
                sharded loss compute stuff.
 """
 from __future__ import division
+
+import random
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,14 +54,31 @@ def build_loss_compute(model, tgt_field, opt, train=True):
     # loss function of this kind is the sparsemax loss.
     use_raw_logits = isinstance(criterion, SparsemaxLoss)
     loss_gen = model.generator[0] if use_raw_logits else model.generator
+
+    # force lambda to 0.0 when disabled
+    if not opt.orth_reg:
+        opt.lambda_orth_reg = 0.0
+    if not opt.sem_cov:
+        opt.lambda_sem_cov = 0.0
+
     if opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             criterion, loss_gen, tgt_field.vocab, opt.copy_loss_by_seqlength,
-            lambda_coverage=opt.lambda_coverage
+            lambda_coverage=opt.lambda_coverage,
+            lambda_orth_reg=opt.lambda_orth_reg,
+            lambda_sem_cov=opt.lambda_sem_cov,
+            n_neg=opt.num_negsample,
+            semcov_ending_state=opt.use_ending_state
         )
     else:
         compute = NMTLossCompute(
-            criterion, loss_gen, lambda_coverage=opt.lambda_coverage)
+            criterion, loss_gen,
+            lambda_coverage=opt.lambda_coverage,
+            lambda_orth_reg=opt.lambda_orth_reg,
+            lambda_sem_cov=opt.lambda_sem_cov,
+            n_neg=opt.num_negsample,
+            semcov_ending_state=opt.use_ending_state
+        )
     compute.to(device)
 
     return compute
@@ -125,7 +146,9 @@ class LossComputeBase(nn.Module):
                  normalization=1.0,
                  shard_size=0,
                  trunc_start=0,
-                 trunc_size=None):
+                 trunc_size=None,
+                 model=None
+                 ):
         """Compute the forward loss, possibly in shards in which case this
         method also runs the backward pass and returns ``None`` as the loss
         value.
@@ -149,6 +172,7 @@ class LossComputeBase(nn.Module):
           shard_size (int) : maximum number of examples in a shard
           trunc_start (int) : starting position of truncation window
           trunc_size (int) : length of truncation window
+          model (int) : @memray: to accommodate the needs of sem_cov
 
         Returns:
             A tuple with the loss and a :obj:`onmt.utils.Statistics` instance.
@@ -157,6 +181,8 @@ class LossComputeBase(nn.Module):
             trunc_size = batch.tgt.size(0) - trunc_start
         trunc_range = (trunc_start, trunc_start + trunc_size)
         shard_state = self._make_shard_state(batch, output, trunc_range, attns)
+        # @memray
+        shard_state['model'] = model
         if shard_size == 0:
             loss, stats = self._compute_loss(batch, **shard_state)
             return loss / float(normalization), stats
@@ -220,20 +246,49 @@ class LabelSmoothingLoss(nn.Module):
         return F.kl_div(output, model_prob, reduction='sum')
 
 
+class ReplayMemory(object):
+
+    def __init__(self, capacity=300):
+        # vanilla replay memory
+        self.capacity = capacity
+        self.memory = []
+
+    def push(self, stuff):
+        """Saves a transition."""
+        self.memory.append(stuff)
+        if len(self.memory) > self.capacity:
+            self.memory = self.memory[-self.capacity:]
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
+
+
 class NMTLossCompute(LossComputeBase):
     """
     Standard NMT Loss Computation.
     """
 
     def __init__(self, criterion, generator, normalization="sents",
-                 lambda_coverage=0.0):
+                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0,
+                 n_neg=32, semcov_ending_state=False):
         super(NMTLossCompute, self).__init__(criterion, generator)
         self.lambda_coverage = lambda_coverage
+        self.lambda_orth_reg = lambda_orth_reg
+        self.lambda_sem_cov = lambda_sem_cov
+        self.n_neg = n_neg
+        self.semcov_ending_state= semcov_ending_state
+        self.semcov_criterion = nn.NLLLoss()
 
     def _make_shard_state(self, batch, output, range_, attns=None):
         shard_state = {
             "output": output,
             "target": batch.tgt[range_[0] + 1: range_[1], :, 0],
+            "src_states": attns.get("src_states"), # @memray: dec_hidden_states
+            "dec_states": attns.get("dec_states"), # @memray: dec_hidden_states
+            "tgtenc_states": attns.get("tgtenc_states") # @memray: target_encoder_hidden_states
         }
         if self.lambda_coverage != 0.0:
             coverage = attns.get("coverage", None)
@@ -250,19 +305,51 @@ class NMTLossCompute(LossComputeBase):
             })
         return shard_state
 
-    def _compute_loss(self, batch, output, target, std_attn=None,
-                      coverage_attn=None):
-
+    def _compute_loss(self, batch, output, target,
+                      std_attn=None, coverage_attn=None,
+                      src_states=None, dec_states=None, tgtenc_states=None,
+                      model=None):
         bottled_output = self._bottle(output)
 
         scores = self.generator(bottled_output)
         gtruth = target.view(-1)
 
         loss = self.criterion(scores, gtruth)
+        # print("loss=%.5f" % loss.mean().item())
+
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
             loss += coverage_loss
+
+        # compute orthogonal penalty loss
+        if self.lambda_orth_reg > 0.0:
+            target_sep_idx = batch.sep_indices
+            assert dec_states is not None
+            assert target_sep_idx is not None
+            # decoder hidden state: output of decoder
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target, dec_states, target_sep_idx)
+            loss += orthogonal_penalty
+            # print("Orth_reg=%.5f" % orthogonal_penalty)
+        if self.lambda_sem_cov > 0.0:
+            target_sep_idx = batch.sep_indices
+            assert model is not None
+            assert src_states is not None
+            assert tgtenc_states is not None
+            assert target_sep_idx is not None
+            # model: model, has to include
+            #   target_encoding_mlp: an mlp with parameter (target_encoder_dim, target_encoding_mlp_hidden_dim), with non-linearity function
+            #   bilinear_layer: nn.Bilinear(source_hid, target_encoding_mlp_hidden_dim, 1), without non-linearity function
+            # source_representations: batch x source_len x source_hid
+            # target_representations: output of target encoder (last state), batch x target_hid
+            semantic_coverage_loss = self._compute_semantic_coverage_loss(model,
+                                                                          src_states, dec_states, tgtenc_states,
+                                                                          target, target_sep_idx,
+                                                                          n_neg=self.n_neg,
+                                                                          semcov_ending_state=self.semcov_ending_state)
+            loss += semantic_coverage_loss
+            # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
+
         stats = self._stats(loss.clone(), scores, gtruth)
 
         return loss, stats
@@ -272,6 +359,169 @@ class NMTLossCompute(LossComputeBase):
         covloss *= self.lambda_coverage
         return covloss
 
+    def orthogonal_penalty(self, _m, l_n_norm=2):
+        # _m: h x n
+        # I:  n x n
+        m = torch.mm(torch.t(_m), _m)  # n x n
+        _ones = torch.ones([m.size(0), m.size(0)])  # n x n
+        _eyes = torch.eye(m.size(0))  # n x n
+        if m.is_cuda:
+            _ones = _ones.cuda()
+            _eyes = _eyes.cuda()
+        # mask off the diagonal elements
+        m = torch.mul(m, _ones-_eyes)
+        # compute the element-wise norm and return average
+        return torch.pow(m, l_n_norm).mean()
+
+    def _compute_orthogonal_regularization_loss(self, target_indices, decoder_hidden_states, sep_idx):
+        """
+        # aux loss: make the decoder outputs at all <sep>s to be orthogonal
+
+        :param target_indices: target_len x batch_size
+        :param decoder_hidden_states: target_len x batch_size x hid
+        :param sep_idx: max_num_sep x batch_size
+        :return:
+        """
+        penalties = []
+        # make batch first
+        target_indices = target_indices.permute((1, 0)) # batch_size x target_len
+        decoder_hidden_states = decoder_hidden_states.permute((1, 0, 2)) # batch_size x target_len x hidden_dim
+        sep_idx = sep_idx.permute((1, 0)) # batch_size x max_num_sep
+
+        # per data point in a batch
+        for i in range(target_indices.size(0)):
+            # if sep_idx.max().item() > decoder_hidden_states.size(1):
+            #     # this error occurs if shard_size is set (BPTT enabled)
+            #     print("BUG!")
+            # if there's at least two <sep> or <eos> (> 2 phrases)
+            if sep_idx[i].ne(0).sum() > 1:
+                sep_id = sep_idx[i].masked_select(sep_idx[i].ne(0))
+                seps = decoder_hidden_states[i].index_select(dim=0, index=sep_id)
+                seps = seps.permute((1, 0)) # hidden_dim x n_sep
+                penalty = self.orthogonal_penalty(seps, 2)  # 1
+                penalties.append(penalty)
+
+        if len(penalties) > 0 and sep_idx.size(0) > 0:
+            penalties = torch.sum(torch.stack(penalties, -1)) / float(len(penalties))
+        else:
+            penalties = 0.0
+
+        penalties = penalties * self.lambda_orth_reg
+        return penalties
+
+    def random_insert(self, _list, elem):
+        insert_before_this = np.random.randint(low=0, high=len(_list) + 1)
+        return _list[:insert_before_this] + [elem] + _list[insert_before_this:], insert_before_this
+
+    def _compute_semantic_coverage_loss(self, model, src_states, dec_states, tgtenc_states,
+                                        tgt_indices, tgt_sep_idx, n_neg=None,
+                                        semcov_ending_state=False
+                                        ):
+        # src_states: batch x source_hid
+        # dec_states: target_len x batch x target_hid
+        # tgtenc_states: target_len x batch x target_hid
+        # target_indices: target_len x batch
+        # tgt_sep_idx: max_sep_num x batch
+        batch_size = src_states.size(0)
+        # make batch first
+        dec_states = dec_states.permute((1, 0, 2))
+        tgtenc_states = tgtenc_states.permute((1, 0, 2))
+        tgt_indices = tgt_indices.permute((1, 0))
+        tgt_sep_idx = tgt_sep_idx.permute((1, 0))
+
+        # n_neg is how many negative samples to sample
+        if n_neg is None or n_neg > batch_size:
+            n_neg = batch_size
+
+        # input for computing the loss, expected size=[n_sep*(1+n_neg), src_hid/tgtenc_hid/1]
+        batch_src_states, batch_tgtenc_states, batch_labels = None, None, None
+        src_states = src_states.detach()
+
+        # per data point in a batch
+        for i in range(batch_size):
+            if tgt_sep_idx[i].ne(0).sum() == 0:
+                continue
+            sep_id = tgt_sep_idx[i].masked_select(tgt_sep_idx[i].ne(0))
+            if semcov_ending_state:
+                sep_tgtenc_states = tgtenc_states[i].index_select(dim=0, index=sep_id[-1]) # 1 x tgtenc_hid
+                n_sep = 1
+            else:
+                sep_tgtenc_states = tgtenc_states[i].index_select(dim=0, index=sep_id) # n_sep x tgtenc_hid
+                n_sep = sep_id.size(0)
+
+            # n_sep*(n_neg+1) x tgtenc_hid
+            input_tgtenc_states = sep_tgtenc_states.expand((n_neg+1), -1, -1).reshape(-1, tgtenc_states.size(-1))
+            # i-th example is positive class
+            pos_idx = torch.Tensor([i] * n_sep).long()
+            # negative sampling from the rest examples in the same batch
+            neg_idx = np.random.randint(0, batch_size-1, size=(n_sep * n_neg))
+            for idx, neg_id in enumerate(neg_idx):
+                if neg_id >= i:
+                    neg_idx[idx] += 1
+            neg_idx = torch.from_numpy(neg_idx).long()
+            input_src_idx = torch.cat((pos_idx, neg_idx), dim=0)
+            if src_states.is_cuda:
+                input_src_idx = input_src_idx.cuda()
+            # n_sep*(n_neg+1) x src_hid
+            input_src_states = src_states.index_select(dim=0, index=input_src_idx)
+            # n_sep*1, the pos example is always the 1st
+            input_labels = torch.from_numpy(np.asarray([0] * n_sep)).long()
+
+            if i > 0:
+                batch_tgtenc_states = torch.cat((batch_tgtenc_states, input_tgtenc_states), dim=0)
+                batch_src_states = torch.cat((batch_src_states, input_src_states), dim=0)
+                batch_labels = torch.cat((batch_labels, input_labels), dim=0)
+            else:
+                batch_tgtenc_states = input_tgtenc_states
+                batch_src_states = input_src_states
+                batch_labels = input_labels
+
+        pred = model.decoder.bilinear_layer(batch_tgtenc_states, batch_src_states).squeeze(-1).reshape((-1, n_neg+1))  # [n_sep, n_neg+1]
+        pred = torch.nn.functional.log_softmax(pred, dim=-1)
+
+        # loss compute
+        if src_states.is_cuda:
+            batch_labels = batch_labels.cuda()
+        loss = self.semcov_criterion(pred, batch_labels) # pred=[n_sep, n_neg+1], label=[n_sep]
+        loss = loss * self.lambda_sem_cov
+        return loss
+
+        """
+        # iterate each example
+        for b in range(batch_size):
+            # 0. find sep positions
+            for i in range(len(tgt_indices[b])):  # target len
+                if tgt_indices[b][i] == tgt_sep_idx:
+                    trg_rep = tgtenc_states[b][i]  # hid
+                    # 1. negative sampling
+                    if len(self.replay_memory) >= n_neg:
+                        neg_list = self.replay_memory.sample(n_neg)
+                        inputs, which = self.random_insert(neg_list, src_states[b])
+                        inputs = torch.stack(inputs, 0)  # n_neg+1 x hid
+                        batch_src_states.append(inputs)
+                        batch_tgtenc_states.append(trg_rep)
+                        batch_labels.append(which)
+            # 2. push source representations into replay memory
+            self.replay_memory.push(src_states[b])
+        if len(batch_src_states) == 0:
+            return 0.0
+        batch_src_states = torch.stack(batch_src_states, 0)  # big_batch x n_neg+1 x source_hid
+        batch_tgtenc_states = torch.stack(batch_tgtenc_states, 0)  # big_batch x target_hid
+        batch_labels = np.array(batch_labels)  # big_batch
+        batch_labels = torch.autograd.Variable(torch.from_numpy(batch_labels.copy()).type(torch.LongTensor))
+        if tgtenc_states.is_cuda:
+            batch_labels = batch_labels.cuda()
+        # 3. prediction
+        batch_tgtenc_states = model.target_encoding_mlp(batch_tgtenc_states)  # big_batch x mlp_hid
+        batch_tgtenc_states = torch.stack([batch_tgtenc_states] * batch_src_states.size(1), 1)  # big_batch x n_neg+1 x mlp_hid
+        pred = model.bilinear_layer(batch_src_states, batch_tgtenc_states).squeeze(-1)  # batch x n_neg+1
+        pred = torch.nn.functional.log_softmax(pred, dim=-1)  # batch x n_neg+1
+
+        # 4. loss compute
+        loss = self.semcov_criterion(pred, batch_labels)
+        loss = loss * self.lambda_sem_cov
+        return loss
+        """
 
 def filter_shard_state(state, shard_size=None):
     for k, v in state.items():

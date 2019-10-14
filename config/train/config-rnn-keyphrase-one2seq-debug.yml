@@ -1,0 +1,63 @@
+model_type: keyphrase
+tgt_type: random
+
+#data: data/keyphrase/meng17/kp20k
+data: data/keyphrase/meng17/kp20k_small
+#data: data/keyphrase/meng17/stackexchange
+save_checkpoint_steps: 10000
+keep_checkpoint: 10
+seed: 3435
+train_steps: 200000
+valid_steps: 100000
+report_every: 10
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+
+optim: adam
+learning_rate: 1e-2
+max_grad_norm: 2
+
+batch_size: 128
+valid_batch_size: 128
+dropout: 0.0
+
+global_attention: mlp
+
+tensorboard: 'true'
+log_file_level: DEBUG
+
+copy_attn: 'true'
+reuse_copy_attn: 'true'
+coverage_attn: 'true'
+position_encoding: 'true'
+
+context_gate: 'both'
+input_feed: 1
+copy_loss_by_seqlength: 'false'
+share_embeddings: 'true'
+bridge: 'true'
+
+orth_reg: 'false'
+lambda_orth_reg: 0.1
+sem_cov: 'true'
+lambda_sem_cov: 1.0
+
+num_negsample: 32
+use_ending_state: 'true'
+tgt_enc: 'rnn'
+detach_tgt_enc: 'true'
+
+exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+save_model: models/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00
+log_file: output/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00.log
+tensorboard_log_dir: runs/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00/
+
+world_size: 1
+gpu_ranks: []
+#- 0
+#- 1
+master_port: 5000
