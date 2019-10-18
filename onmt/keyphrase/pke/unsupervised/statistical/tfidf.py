@@ -12,8 +12,8 @@ import math
 import string
 import logging
 
-from pke.base import LoadFile
-from pke.utils import load_document_frequency_file
+from onmt.keyphrase.pke.base import LoadFile
+from onmt.keyphrase.pke.utils import load_document_frequency_file
 
 
 class TfIdf(LoadFile):
