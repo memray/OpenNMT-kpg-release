@@ -214,7 +214,7 @@ class BeamSearch(DecodeStrategy):
         # it's faster to not move this back to the original device
         self.is_finished = self.is_finished.to('cpu')
         # TODO @memray: extend to topK beam finished?
-        self.top_beam_finished |= self.is_finished[:, 0].eq(1)
+        self.top_beam_finished = self.top_beam_finished.bool() | self.is_finished[:, 0].eq(1)
         predictions = self.alive_seq.view(_B_old, self.beam_size, step)
         attention = (
             self.alive_attn.view(
