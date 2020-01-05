@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-<<<<<<< HEAD
 # -*- coding: utf-8 -*-
 """
     Pre-process Data / features files and build vocabulary
@@ -224,10 +223,3 @@ def _get_parser():
     opts.config_opts(parser)
     opts.preprocess_opts(parser)
     return parser
-=======
-from onmt.bin.preprocess import main
->>>>>>> f44d1d2550c04cf7c8f8e190d1ddc3443439f7f4
-
-
-if __name__ == "__main__":
-    main()

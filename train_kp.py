@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-<<<<<<< HEAD
 """Train models."""
 import os
 import signal
@@ -208,9 +207,6 @@ def _get_parser():
     opts.model_opts(parser)
     opts.train_opts(parser)
     return parser
-=======
-from onmt.bin.train import main
->>>>>>> f44d1d2550c04cf7c8f8e190d1ddc3443439f7f4
 
 
 if __name__ == "__main__":

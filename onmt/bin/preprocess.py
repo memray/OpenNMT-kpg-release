@@ -5,8 +5,12 @@
 """
 import codecs
 import glob
+import os
+import shutil
+import sys
 import gc
 import torch
+from functools import partial
 from collections import Counter, defaultdict
 
 from onmt.utils.logging import init_logger, logger
