@@ -74,6 +74,7 @@ def build_loss_compute(model, tgt_field, opt, train=True):
         compute = NMTLossCompute(
             criterion, loss_gen,
             lambda_coverage=opt.lambda_coverage,
+            lambda_align=opt.lambda_align,
             lambda_orth_reg=opt.lambda_orth_reg,
             lambda_sem_cov=opt.lambda_sem_cov,
             n_neg=opt.num_negsample,
@@ -272,10 +273,12 @@ class NMTLossCompute(LossComputeBase):
     """
 
     def __init__(self, criterion, generator, normalization="sents",
-                 lambda_coverage=0.0, lambda_orth_reg=0.0, lambda_sem_cov=0.0,
+                 lambda_coverage=0.0, lambda_align=0.0,
+                 lambda_orth_reg=0.0, lambda_sem_cov=0.0,
                  n_neg=32, semcov_ending_state=False):
         super(NMTLossCompute, self).__init__(criterion, generator)
         self.lambda_coverage = lambda_coverage
+        self.lambda_align = lambda_align
         self.lambda_orth_reg = lambda_orth_reg
         self.lambda_sem_cov = lambda_sem_cov
         self.n_neg = n_neg
@@ -303,10 +306,34 @@ class NMTLossCompute(LossComputeBase):
                 "std_attn": attns.get("std"),
                 "coverage_attn": coverage
             })
+        if self.lambda_align != 0.0:
+            # attn_align should be in (batch_size, pad_tgt_size, pad_src_size)
+            attn_align = attns.get("align", None)
+            # align_idx should be a Tensor in size([N, 3]), N is total number
+            # of align src-tgt pair in current batch, each as
+            # ['sent_N°_in_batch', 'tgt_id+1', 'src_id'] (check AlignField)
+            align_idx = batch.align
+            assert attns is not None
+            assert attn_align is not None, "lambda_align != 0.0 requires " \
+                "alignement attention head"
+            assert align_idx is not None, "lambda_align != 0.0 requires " \
+                "provide guided alignement"
+            pad_tgt_size, batch_size, _ = batch.tgt.size()
+            pad_src_size = batch.src[0].size(0)
+            align_matrix_size = [batch_size, pad_tgt_size, pad_src_size]
+            ref_align = onmt.utils.make_batch_align_matrix(
+                align_idx, align_matrix_size, normalize=True)
+            # NOTE: tgt-src ref alignement that in range_ of shard
+            # (coherent with batch.tgt)
+            shard_state.update({
+                "align_head": attn_align,
+                "ref_align": ref_align[:, range_[0] + 1: range_[1], :]
+            })
         return shard_state
 
     def _compute_loss(self, batch, output, target,
                       std_attn=None, coverage_attn=None,
+                      align_head=None, ref_align=None,
                       src_states=None, dec_states=None, tgtenc_states=None,
                       model=None):
         bottled_output = self._bottle(output)
@@ -315,12 +342,19 @@ class NMTLossCompute(LossComputeBase):
         gtruth = target.view(-1)
 
         loss = self.criterion(scores, gtruth)
-        # print("loss=%.5f" % loss.mean().item())
-
         if self.lambda_coverage != 0.0:
             coverage_loss = self._compute_coverage_loss(
                 std_attn=std_attn, coverage_attn=coverage_attn)
             loss += coverage_loss
+
+        if self.lambda_align != 0.0:
+            if align_head.dtype != loss.dtype:  # Fix FP16
+                align_head = align_head.to(loss.dtype)
+            if ref_align.dtype != loss.dtype:
+                ref_align = ref_align.to(loss.dtype)
+            align_loss = self._compute_alignement_loss(
+                align_head=align_head, ref_align=ref_align)
+            loss += align_loss
 
         # compute orthogonal penalty loss
         if self.lambda_orth_reg > 0.0:
@@ -355,9 +389,19 @@ class NMTLossCompute(LossComputeBase):
         return loss, stats
 
     def _compute_coverage_loss(self, std_attn, coverage_attn):
-        covloss = torch.min(std_attn, coverage_attn).sum(2).view(-1)
+        covloss = torch.min(std_attn, coverage_attn).sum()
         covloss *= self.lambda_coverage
         return covloss
+
+    def _compute_alignement_loss(self, align_head, ref_align):
+        """Compute loss between 2 partial alignment matrix."""
+        # align_head contains value in [0, 1) presenting attn prob,
+        # 0 was resulted by the context attention src_pad_mask
+        # So, the correspand position in ref_align should also be 0
+        # Therefore, clip align_head to > 1e-18 should be bias free.
+        align_loss = -align_head.clamp(min=1e-18).log().mul(ref_align).sum()
+        align_loss *= self.lambda_align
+        return align_loss
 
     def orthogonal_penalty(self, _m, l_n_norm=2):
         # _m: h x n
@@ -522,6 +566,7 @@ class NMTLossCompute(LossComputeBase):
         loss = loss * self.lambda_sem_cov
         return loss
         """
+
 
 def filter_shard_state(state, shard_size=None):
     for k, v in state.items():

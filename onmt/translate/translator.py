@@ -4,20 +4,20 @@ from __future__ import print_function
 import codecs
 import json
 import os
-import math
 import time
-from itertools import count
+import numpy as np
+from itertools import count, zip_longest
 
 import torch
 
 import onmt.model_builder
-import onmt.translate.beam
 import onmt.inputters as inputters
 import onmt.decoders.ensemble
 from onmt.inputters import KeyphraseDataset
 from onmt.translate.beam_search import BeamSearch
-from onmt.translate.random_sampling import RandomSampling
-from onmt.utils.misc import tile, set_random_seed
+from onmt.translate.greedy_search import GreedySearch
+from onmt.utils.misc import tile, set_random_seed, report_matrix
+from onmt.utils.alignment import extract_alignment, build_align_pharaoh
 from onmt.modules.copy_generator import collapse_copy_scores
 
 
@@ -42,10 +42,30 @@ def build_translator(opt, report_score=True, logger=None, out_file=None):
         model_opt,
         global_scorer=scorer,
         out_file=out_file,
+        report_align=opt.report_align,
         report_score=report_score,
         logger=logger
     )
     return translator
+
+
+def max_tok_len(new, count, sofar):
+    """
+    In token batching scheme, the number of sequences is limited
+    such that the total number of src/tgt tokens (including padding)
+    in a batch <= batch_size
+    """
+    # Maintains the longest src and tgt length in the current batch
+    global max_src_in_batch  # this is a hack
+    # Reset current longest length at a new batch (count=1)
+    if count == 1:
+        max_src_in_batch = 0
+        # max_tgt_in_batch = 0
+    # Src: [<bos> w1 ... wN <eos>]
+    max_src_in_batch = max(max_src_in_batch, len(new.src[0]) + 2)
+    # Tgt: [w1 ... wM <eos>]
+    src_elements = count * max_src_in_batch
+    return src_elements
 
 
 class Translator(object):
@@ -65,9 +85,9 @@ class Translator(object):
             :class:`onmt.translate.decode_strategy.DecodeStrategy`.
         beam_size (int): Number of beams.
         random_sampling_topk (int): See
-            :class:`onmt.translate.random_sampling.RandomSampling`.
+            :class:`onmt.translate.greedy_search.GreedySearch`.
         random_sampling_temp (int): See
-            :class:`onmt.translate.random_sampling.RandomSampling`.
+            :class:`onmt.translate.greedy_search.GreedySearch`.
         stepwise_penalty (bool): Whether coverage penalty is applied every step
             or not.
         dump_beam (bool): Debugging option.
@@ -78,8 +98,6 @@ class Translator(object):
         replace_unk (bool): Replace unknown token.
         data_type (str): Source data type.
         verbose (bool): Print/log every translation.
-        report_bleu (bool): Print/log Bleu metric.
-        report_rouge (bool): Print/log Rouge metric.
         report_time (bool): Print/log total time/frequency.
         copy_attn (bool): Use copy attention.
         global_scorer (onmt.translate.GNMTGlobalScorer): Translation
@@ -118,6 +136,7 @@ class Translator(object):
             copy_attn=False,
             global_scorer=None,
             out_file=None,
+            report_align=False,
             report_score=True,
             logger=None,
             seed=-1,
@@ -177,6 +196,7 @@ class Translator(object):
             raise ValueError(
                 "Coverage penalty requires an attentional decoder.")
         self.out_file = out_file
+        self.report_align = report_align
         self.report_score = report_score
         self.logger = logger
 
@@ -210,6 +230,7 @@ class Translator(object):
             model_opt,
             global_scorer=None,
             out_file=None,
+            report_align=False,
             report_score=True,
             logger=None):
         """Alternate constructor.
@@ -225,6 +246,7 @@ class Translator(object):
                 :func:`__init__()`..
             out_file (TextIO or codecs.StreamReaderWriter): See
                 :func:`__init__()`.
+            report_align (bool) : See :func:`__init__()`.
             report_score (bool) : See :func:`__init__()`.
             logger (logging.Logger or NoneType): See :func:`__init__()`.
         """
@@ -264,6 +286,7 @@ class Translator(object):
             copy_attn=model_opt.copy_attn,
             global_scorer=global_scorer,
             out_file=out_file,
+            report_align=report_align,
             report_score=report_score,
             logger=logger,
             seed=opt.seed,
@@ -299,7 +322,9 @@ class Translator(object):
             tgt=None,
             src_dir=None,
             batch_size=None,
+            batch_type="sents",
             attn_debug=False,
+            align_debug=False,
             phrase_table="",
             opt=None
     ):
@@ -312,6 +337,7 @@ class Translator(object):
                 for certain types of data).
             batch_size (int): size of examples per mini-batch
             attn_debug (bool): enables the attention logging
+            align_debug (bool): enables the word alignment logging
 
         Returns:
             (`list`, `list`)
@@ -325,15 +351,17 @@ class Translator(object):
             raise ValueError("batch_size must be set")
 
         # modified by @memray to accommodate keyphrase
+        src_data = {"reader": self.src_reader, "data": src, "dir": src_dir}
+        tgt_data = {"reader": self.tgt_reader, "data": tgt, "dir": None}
+        _readers, _data, _dir = inputters.Dataset.config(
+            [('src', src_data), ('tgt', tgt_data)])
+
         data = inputters.str2dataset[self.data_type](
-            self.fields,
-            readers=([self.src_reader, self.tgt_reader]
-                     if tgt else [self.src_reader]),
-            data=[("src", src), ("tgt", tgt)] if tgt else [("src", src)],
-            dirs=[src_dir, None] if tgt else [src_dir],
+            self.fields, readers=_readers, data=_data, dirs=_dir,
             sort_key=inputters.str2sortkey[self.data_type],
             filter_pred=self._filter_pred
         )
+
         # @memray, as Dataset is only instantiated here, having to use this plugin setter
         if isinstance(data, KeyphraseDataset):
             data.tgt_type=self.tgt_type
@@ -342,6 +370,7 @@ class Translator(object):
             dataset=data,
             device=self._dev,
             batch_size=batch_size,
+            batch_size_fn=max_tok_len if batch_type == "tokens" else None,
             train=False,
             sort=False,
             # sort_within_batch=True,
@@ -386,21 +415,30 @@ class Translator(object):
                 for t in translations:
                     t.add_copied_flags(vocab_size)
 
-            for tran in translations:
-                all_scores += [tran.pred_scores[:self.n_best]]
-                pred_score_total += tran.pred_scores[0]
-                pred_words_total += len(tran.pred_sents[0])
+            for trans in translations:
+                all_scores += [trans.pred_scores[:self.n_best]]
+                pred_score_total += trans.pred_scores[0]
+                pred_words_total += len(trans.pred_sents[0])
                 if tgt is not None:
-                    gold_score_total += tran.gold_score
-                    gold_words_total += len(tran.gold_sent) + 1
+                    gold_score_total += trans.gold_score
+                    gold_words_total += len(trans.gold_sent) + 1
 
                 n_best_preds = [" ".join(pred)
-                                for pred in tran.pred_sents[:self.n_best]]
+                                for pred in trans.pred_sents[:self.n_best]]
+                if self.report_align:
+                    align_pharaohs = [build_align_pharaoh(align) for align
+                                      in trans.word_aligns[:self.n_best]]
+                    n_best_preds_align = [" ".join(align) for align
+                                          in align_pharaohs]
+                    n_best_preds = [pred + " ||| " + align
+                                    for pred, align in zip(
+                                        n_best_preds, n_best_preds_align)]
                 all_predictions += [n_best_preds]
 
                 if self.out_file:
+                    import json
                     if self.data_type == "keyphrase":
-                        self.out_file.write(json.dumps(tran.__dict__()) + '\n')
+                        self.out_file.write(json.dumps(trans.__dict__()) + '\n')
                         self.out_file.flush()
                     else:
                         self.out_file.write('\n'.join(n_best_preds) + '\n')
@@ -409,9 +447,9 @@ class Translator(object):
                 if self.verbose:
                     sent_number = next(counter)
                     if self.data_type == "keyphrase":
-                        output = tran.log_kp(sent_number)
+                        output = trans.log_kp(sent_number)
                     else:
-                        output = tran.log(sent_number)
+                        output = trans.log(sent_number)
 
                     if self.verbose:
                         if self.logger:
@@ -420,24 +458,30 @@ class Translator(object):
                             os.write(1, output.encode('utf-8'))
 
                 if attn_debug:
-                    preds = tran.pred_sents[0]
+                    preds = trans.pred_sents[0]
                     preds.append('</s>')
-                    attns = tran.attns[0].tolist()
+                    attns = trans.attns[0].tolist()
                     if self.data_type == 'text':
-                        srcs = tran.src_raw
+                        srcs = trans.src_raw
                     else:
                         srcs = [str(item) for item in range(len(attns[0]))]
-                    header_format = "{:>10.10} " + "{:>10.7} " * len(srcs)
-                    row_format = "{:>10.10} " + "{:>10.7f} " * len(srcs)
-                    output = header_format.format("", *srcs) + '\n'
-                    for word, row in zip(preds, attns):
-                        max_index = row.index(max(row))
-                        row_format = row_format.replace(
-                            "{:>10.7f} ", "{:*>10.7f} ", max_index + 1)
-                        row_format = row_format.replace(
-                            "{:*>10.7f} ", "{:>10.7f} ", max_index)
-                        output += row_format.format(word, *row) + '\n'
-                        row_format = "{:>10.10} " + "{:>10.7f} " * len(srcs)
+                    output = report_matrix(srcs, preds, attns)
+                    if self.logger:
+                        self.logger.info(output)
+                    else:
+                        os.write(1, output.encode('utf-8'))
+
+                if align_debug:
+                    if trans.gold_sent is not None:
+                        tgts = trans.gold_sent
+                    else:
+                        tgts = trans.pred_sents[0]
+                    align = trans.word_aligns[0].tolist()
+                    if self.data_type == 'text':
+                        srcs = trans.src_raw
+                    else:
+                        srcs = [str(item) for item in range(len(align[0]))]
+                    output = report_matrix(srcs, tgts, align)
                     if self.logger:
                         self.logger.info(output)
                     else:
@@ -474,125 +518,119 @@ class Translator(object):
                 pred_words_total / total_time))
 
         if self.dump_beam:
+            import json
             json.dump(self.translator.beam_accum,
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
 
         return all_scores, all_predictions
 
+    def _align_pad_prediction(self, predictions, bos, pad):
+        """
+        Padding predictions in batch and add BOS.
 
-    def _translate_random_sampling(
-            self,
-            batch,
-            src_vocabs,
-            max_length,
-            min_length=0,
-            sampling_temp=1.0,
-            keep_topk=-1,
-            return_attention=False):
-        """Alternative to beam search. Do random sampling at each step."""
+        Args:
+            predictions (List[List[Tensor]]): `(batch, n_best,)`, for each src
+                sequence contain n_best tgt predictions all of which ended with
+                eos id.
+            bos (int): bos index to be used.
+            pad (int): pad index to be used.
 
-        assert self.beam_size == 1
+        Return:
+            batched_nbest_predict (torch.LongTensor): `(batch, n_best, tgt_l)`
+        """
+        dtype, device = predictions[0][0].dtype, predictions[0][0].device
+        flatten_tgt = [best.tolist() for bests in predictions
+                       for best in bests]
+        paded_tgt = torch.tensor(
+            list(zip_longest(*flatten_tgt, fillvalue=pad)),
+            dtype=dtype, device=device).T
+        bos_tensor = torch.full([paded_tgt.size(0), 1], bos,
+                                dtype=dtype, device=device)
+        full_tgt = torch.cat((bos_tensor, paded_tgt), dim=-1)
+        batched_nbest_predict = full_tgt.view(
+            len(predictions), -1, full_tgt.size(-1))  # (batch, n_best, tgt_l)
+        return batched_nbest_predict
 
-        # TODO: support these blacklisted features.
-        assert self.block_ngram_repeat == 0
-
-        batch_size = batch.batch_size
-
-        # Encoder forward.
-        src, enc_states, memory_bank, src_lengths = self._run_encoder(batch)
-        self.model.decoder.init_state(src, memory_bank, enc_states)
-
-        use_src_map = self.copy_attn
-
-        results = {
-            "predictions": None,
-            "scores": None,
-            "attention": None,
-            "batch": batch,
-            "gold_score": self._gold_score(
-                batch, memory_bank, src_lengths, src_vocabs, use_src_map,
-                enc_states, batch_size, src)}
-
-        memory_lengths = src_lengths
-        src_map = batch.src_map if use_src_map else None
-
-        if isinstance(memory_bank, tuple):
-            mb_device = memory_bank[0].device
+    def _align_forward(self, batch, predictions):
+        """
+        For a batch of input and its prediction, return a list of batch predict
+        alignment src indice Tensor in size ``(batch, n_best,)``.
+        """
+        # (0) add BOS and padding to tgt prediction
+        if hasattr(batch, 'tgt'):
+            batch_tgt_idxs = batch.tgt.transpose(1, 2).transpose(0, 2)
         else:
-            mb_device = memory_bank.device
+            batch_tgt_idxs = self._align_pad_prediction(
+                predictions, bos=self._tgt_bos_idx, pad=self._tgt_pad_idx)
+        tgt_mask = (batch_tgt_idxs.eq(self._tgt_pad_idx) |
+                    batch_tgt_idxs.eq(self._tgt_eos_idx) |
+                    batch_tgt_idxs.eq(self._tgt_bos_idx))
 
-        random_sampler = RandomSampling(
-            self._tgt_pad_idx, self._tgt_bos_idx, self._tgt_eos_idx,
-            batch_size, mb_device, min_length, self.block_ngram_repeat,
-            self._exclusion_idxs, return_attention, self.max_length,
-            sampling_temp, keep_topk, memory_lengths)
+        n_best = batch_tgt_idxs.size(1)
+        # (1) Encoder forward.
+        src, enc_states, memory_bank, src_lengths = self._run_encoder(batch)
 
-        for step in range(max_length):
-            # Shape: (1, B, 1)
-            decoder_input = random_sampler.alive_seq[:, -1].view(1, -1, 1)
+        # (2) Repeat src objects `n_best` times.
+        # We use batch_size x n_best, get ``(src_len, batch * n_best, nfeat)``
+        src = tile(src, n_best, dim=1)
+        enc_states = tile(enc_states, n_best, dim=1)
+        if isinstance(memory_bank, tuple):
+            memory_bank = tuple(tile(x, n_best, dim=1) for x in memory_bank)
+        else:
+            memory_bank = tile(memory_bank, n_best, dim=1)
+        src_lengths = tile(src_lengths, n_best)  # ``(batch * n_best,)``
 
-            log_probs, attn = self._decode_and_generate(
-                decoder_input,
-                memory_bank,
-                batch,
-                src_vocabs,
-                memory_lengths=memory_lengths,
-                src_map=src_map,
-                step=step,
-                batch_offset=random_sampler.select_indices
-            )
+        # (3) Init decoder with n_best src,
+        self.model.decoder.init_state(src, memory_bank, enc_states)
+        # reshape tgt to ``(len, batch * n_best, nfeat)``
+        tgt = batch_tgt_idxs.view(-1, batch_tgt_idxs.size(-1)).T.unsqueeze(-1)
+        dec_in = tgt[:-1]  # exclude last target from inputs
+        _, attns = self.model.decoder(
+            dec_in, memory_bank, memory_lengths=src_lengths, with_align=True)
 
-            random_sampler.advance(log_probs, attn)
-            any_batch_is_finished = random_sampler.is_finished.any()
-            if any_batch_is_finished:
-                random_sampler.update_finished()
-                if random_sampler.done:
-                    break
-
-            if any_batch_is_finished:
-                select_indices = random_sampler.select_indices
-
-                # Reorder states.
-                if isinstance(memory_bank, tuple):
-                    memory_bank = tuple(x.index_select(1, select_indices)
-                                        for x in memory_bank)
-                else:
-                    memory_bank = memory_bank.index_select(1, select_indices)
-
-                memory_lengths = memory_lengths.index_select(0, select_indices)
-
-                if src_map is not None:
-                    src_map = src_map.index_select(1, select_indices)
-
-                self.model.decoder.map_state(
-                    lambda state, dim: state.index_select(dim, select_indices))
-
-        results["scores"] = random_sampler.scores
-        results["predictions"] = random_sampler.predictions
-        results["attention"] = random_sampler.attention
-        return results
+        alignment_attn = attns["align"]  # ``(B, tgt_len-1, src_len)``
+        # masked_select
+        align_tgt_mask = tgt_mask.view(-1, tgt_mask.size(-1))
+        prediction_mask = align_tgt_mask[:, 1:]  # exclude bos to match pred
+        # get aligned src id for each prediction's valid tgt tokens
+        alignement = extract_alignment(
+            alignment_attn, prediction_mask, src_lengths, n_best)
+        return alignement
 
     def translate_batch(self, batch, src_vocabs, attn_debug):
         """Translate a batch of sentences."""
         with torch.no_grad():
             if self.beam_size == 1:
-                return self._translate_random_sampling(
-                    batch,
-                    src_vocabs,
-                    self.max_length,
-                    min_length=self.min_length,
+                decode_strategy = GreedySearch(
+                    pad=self._tgt_pad_idx,
+                    bos=self._tgt_bos_idx,
+                    eos=self._tgt_eos_idx,
+                    batch_size=batch.batch_size,
+                    min_length=self.min_length, max_length=self.max_length,
+                    block_ngram_repeat=self.block_ngram_repeat,
+                    exclusion_tokens=self._exclusion_idxs,
+                    return_attention=attn_debug or self.replace_unk,
                     sampling_temp=self.random_sampling_temp,
-                    keep_topk=self.sample_from_topk,
-                    return_attention=attn_debug or self.replace_unk)
+                    keep_topk=self.sample_from_topk)
             else:
-                return self._translate_batch(
-                    batch,
-                    src_vocabs,
-                    self.max_length,
-                    min_length=self.min_length,
-                    ratio=self.ratio,
+                # TODO: support these blacklisted features
+                assert not self.dump_beam
+                decode_strategy = BeamSearch(
+                    self.beam_size,
+                    batch_size=batch.batch_size,
+                    pad=self._tgt_pad_idx,
+                    bos=self._tgt_bos_idx,
+                    eos=self._tgt_eos_idx,
                     n_best=self.n_best,
-                    return_attention=attn_debug or self.replace_unk)
+                    global_scorer=self.global_scorer,
+                    min_length=self.min_length, max_length=self.max_length,
+                    return_attention=attn_debug or self.replace_unk,
+                    block_ngram_repeat=self.block_ngram_repeat,
+                    exclusion_tokens=self._exclusion_idxs,
+                    stepwise_penalty=self.stepwise_penalty,
+                    ratio=self.ratio)
+            return self._translate_batch_with_strategy(batch, src_vocabs,
+                                                       decode_strategy)
 
     def _run_encoder(self, batch):
         src, src_lengths = batch.src if isinstance(batch.src, tuple) \
@@ -662,7 +700,8 @@ class Translator(object):
                                           src_map)
             # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
             if batch_offset is None:
-                scores = scores.view(batch.batch_size, -1, scores.size(-1))
+                scores = scores.view(-1, batch.batch_size, scores.size(-1))
+                scores = scores.transpose(0, 1).contiguous()
             else:
                 scores = scores.view(-1, self.beam_size, scores.size(-1))
             scores = collapse_copy_scores(
@@ -679,21 +718,25 @@ class Translator(object):
             # or [ tgt_len, batch_size, vocab ] when full sentence
         return log_probs, attn
 
-    def _translate_batch(
+    def _translate_batch_with_strategy(
             self,
             batch,
             src_vocabs,
-            max_length,
-            min_length=0,
-            ratio=0.,
-            n_best=1,
-            return_attention=False):
-        # TODO: support these blacklisted features.
-        assert not self.dump_beam
+            decode_strategy):
+        """Translate a batch of sentences step by step using cache.
 
+        Args:
+            batch: a batch of sentences, yield by data iterator.
+            src_vocabs (list): list of torchtext.data.Vocab if can_copy.
+            decode_strategy (DecodeStrategy): A decode strategy to use for
+                generate translation step by step.
+
+        Returns:
+            results (dict): The translation results.
+        """
         # (0) Prep the components of the search.
         use_src_map = self.copy_attn
-        beam_size = self.beam_size
+        parallel_paths = decode_strategy.parallel_paths  # beam_size
         batch_size = batch.batch_size
 
         # (1) Run the encoder on the src.
@@ -709,46 +752,16 @@ class Translator(object):
                 batch, memory_bank, src_lengths, src_vocabs, use_src_map,
                 enc_states, batch_size, src)}
 
-        # (2) Repeat src objects `beam_size` times.
-        # We use batch_size x beam_size
-        src_map = (tile(batch.src_map, beam_size, dim=1)
-                   if use_src_map else None)
-        self.model.decoder.map_state(
-            lambda state, dim: tile(state, beam_size, dim=dim))
+        # (2) prep decode_strategy. Possibly repeat src objects.
+        src_map = batch.src_map if use_src_map else None
+        fn_map_state, memory_bank, memory_lengths, src_map = \
+            decode_strategy.initialize(memory_bank, src_lengths, src_map)
+        if fn_map_state is not None:
+            self.model.decoder.map_state(fn_map_state)
 
-        if isinstance(memory_bank, tuple):
-            memory_bank = tuple(tile(x, beam_size, dim=1) for x in memory_bank)
-            mb_device = memory_bank[0].device
-        else:
-            memory_bank = tile(memory_bank, beam_size, dim=1)
-            mb_device = memory_bank.device
-        memory_lengths = tile(src_lengths, beam_size)
-
-        # (0) pt 2, prep the beam object
-        beam = BeamSearch(
-            beam_size,
-            n_best=n_best,
-            batch_size=batch_size,
-            global_scorer=self.global_scorer,
-            pad=self._tgt_pad_idx,
-            eos=self._tgt_eos_idx,
-            bos=self._tgt_bos_idx,
-            min_length=min_length,
-            ratio=ratio,
-            max_length=max_length,
-            mb_device=mb_device,
-            return_attention=return_attention,
-            stepwise_penalty=self.stepwise_penalty,
-            block_ngram_repeat=self.block_ngram_repeat,
-            exclusion_tokens=self._exclusion_idxs,
-            memory_lengths=memory_lengths,
-            beam_terminate = self.beam_terminate
-        )
-
-        for step in range(max_length):
-            # print("step %d" % step)
-            # [1, beam*batch_size, 1]
-            decoder_input = beam.current_predictions.view(1, -1, 1)
+        # (3) Begin decoding step by step:
+        for step in range(decode_strategy.max_length):
+            decoder_input = decode_strategy.current_predictions.view(1, -1, 1)
 
             # log_probs: [(batch_size x beam_size) , vocab] when 1 step or [ tgt_len, batch_size, vocab] when full sentence
             # attn: [1, (batch_size x beam_size), src_len]
@@ -760,18 +773,18 @@ class Translator(object):
                 memory_lengths=memory_lengths,
                 src_map=src_map,
                 step=step,
-                batch_offset=beam._batch_offset)
+                batch_offset=decode_strategy.batch_offset)
 
-            beam.advance(log_probs, attn)
-            any_beam_is_finished = beam.is_finished.any()
-            if any_beam_is_finished:
-                beam.update_finished(last_step=(step+1==max_length))
-                if beam.done:
+            decode_strategy.advance(log_probs, attn)
+            any_finished = decode_strategy.is_finished.any()
+            if any_finished:
+                decode_strategy.update_finished(last_step=(step+1==decode_strategy.max_length))
+                if decode_strategy.done:
                     break
 
-            select_indices = beam.current_origin
+            select_indices = decode_strategy.select_indices
 
-            if any_beam_is_finished:
+            if any_finished:
                 # Reorder states.
                 if isinstance(memory_bank, tuple):
                     memory_bank = tuple(x.index_select(1, select_indices)
@@ -784,107 +797,18 @@ class Translator(object):
                 if src_map is not None:
                     src_map = src_map.index_select(1, select_indices)
 
-            self.model.decoder.map_state(
-                lambda state, dim: state.index_select(dim, select_indices))
+            if parallel_paths > 1 or any_finished:
+                self.model.decoder.map_state(
+                    lambda state, dim: state.index_select(dim, select_indices))
 
-        results["scores"] = beam.scores
-        results["predictions"] = beam.predictions
-        results["attention"] = beam.attention
-        return results
-
-    # This is left in the code for now, but unsued
-    def _translate_batch_deprecated(self, batch, src_vocabs):
-        # (0) Prep each of the components of the search.
-        # And helper method for reducing verbosity.
-        use_src_map = self.copy_attn
-        beam_size = self.beam_size
-        batch_size = batch.batch_size
-
-        beam = [onmt.translate.Beam(
-            beam_size,
-            n_best=self.n_best,
-            cuda=self.cuda,
-            global_scorer=self.global_scorer,
-            pad=self._tgt_pad_idx,
-            eos=self._tgt_eos_idx,
-            bos=self._tgt_bos_idx,
-            min_length=self.min_length,
-            stepwise_penalty=self.stepwise_penalty,
-            block_ngram_repeat=self.block_ngram_repeat,
-            exclusion_tokens=self._exclusion_idxs)
-            for __ in range(batch_size)]
-
-        # (1) Run the encoder on the src.
-        src, enc_states, memory_bank, src_lengths = self._run_encoder(batch)
-        self.model.decoder.init_state(src, memory_bank, enc_states)
-
-        results = {
-            "predictions": [],
-            "scores": [],
-            "attention": [],
-            "batch": batch,
-            "gold_score": self._gold_score(
-                batch, memory_bank, src_lengths, src_vocabs, use_src_map,
-                enc_states, batch_size, src)}
-
-        # (2) Repeat src objects `beam_size` times.
-        # We use now  batch_size x beam_size (same as fast mode)
-        src_map = (tile(batch.src_map, beam_size, dim=1)
-                   if use_src_map else None)
-        self.model.decoder.map_state(
-            lambda state, dim: tile(state, beam_size, dim=dim))
-
-        if isinstance(memory_bank, tuple):
-            memory_bank = tuple(tile(x, beam_size, dim=1) for x in memory_bank)
+        results["scores"] = decode_strategy.scores
+        results["predictions"] = decode_strategy.predictions
+        results["attention"] = decode_strategy.attention
+        if self.report_align:
+            results["alignment"] = self._align_forward(
+                batch, decode_strategy.predictions)
         else:
-            memory_bank = tile(memory_bank, beam_size, dim=1)
-        memory_lengths = tile(src_lengths, beam_size)
-
-        # (3) run the decoder to generate sentences, using beam search.
-        for i in range(self.max_length):
-            if all((b.done for b in beam)):
-                break
-
-            # (a) Construct batch x beam_size nxt words.
-            # Get all the pending current beam words and arrange for forward.
-
-            inp = torch.stack([b.current_predictions for b in beam])
-            inp = inp.view(1, -1, 1)
-
-            # (b) Decode and forward
-            out, beam_attn = self._decode_and_generate(
-                inp, memory_bank, batch, src_vocabs,
-                memory_lengths=memory_lengths, src_map=src_map, step=i
-            )
-            out = out.view(batch_size, beam_size, -1)
-            beam_attn = beam_attn.view(batch_size, beam_size, -1)
-
-            # (c) Advance each beam.
-            select_indices_array = []
-            # Loop over the batch_size number of beam
-            for j, b in enumerate(beam):
-                if not b.done:
-                    b.advance(out[j, :],
-                              beam_attn.data[j, :, :memory_lengths[j]])
-                select_indices_array.append(
-                    b.current_origin + j * beam_size)
-            select_indices = torch.cat(select_indices_array)
-
-            self.model.decoder.map_state(
-                lambda state, dim: state.index_select(dim, select_indices))
-
-        # (4) Extract sentences from beam.
-        for b in beam:
-            scores, ks = b.sort_finished(minimum=self.n_best)
-            hyps, attn = [], []
-            for times, k in ks[:self.n_best]:
-                hyp, att = b.get_hyp(times, k)
-                hyps.append(hyp)
-                attn.append(att)
-            results["predictions"].append(hyps)
-            results["scores"].append(scores)
-            results["attention"].append(attn)
-
+            results["alignment"] = [[] for _ in range(batch_size)]
         return results
 
     def _score_target(self, batch, memory_bank, src_lengths,
@@ -907,33 +831,11 @@ class Translator(object):
         if words_total == 0:
             msg = "%s No words predicted" % (name,)
         else:
+            avg_score = score_total / words_total
+            ppl = np.exp(-score_total.item() / words_total)
             msg = ("%s AVG SCORE: %.4f, %s PPL: %.4f" % (
-                name, score_total / words_total,
-                name, math.exp(-score_total / words_total)))
-        return msg
-
-    def _report_bleu(self, tgt_path):
-        import subprocess
-        base_dir = os.path.abspath(__file__ + "/../../..")
-        # Rollback pointer to the beginning.
-        self.out_file.seek(0)
-        print()
-
-        res = subprocess.check_output(
-            "perl %s/tools/multi-bleu.perl %s" % (base_dir, tgt_path),
-            stdin=self.out_file, shell=True
-        ).decode("utf-8")
-
-        msg = ">> " + res.strip()
-        return msg
-
-    def _report_rouge(self, tgt_path):
-        import subprocess
-        path = os.path.split(os.path.realpath(__file__))[0]
-        msg = subprocess.check_output(
-            "python %s/tools/test_rouge.py -r %s -c STDIN" % (path, tgt_path),
-            shell=True, stdin=self.out_file
-        ).decode("utf-8").strip()
+                name, avg_score,
+                name, ppl))
         return msg
 
     def _report_kpeval(self, src_path, tgt_path, pred_path):
