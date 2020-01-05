@@ -547,11 +547,11 @@ def keyphrase_eval(src_path, tgt_path, pred_path, unk_token='<unk>', verbose=Fal
     else:
         pred_data = baseline_pred_loader(pred_path, model_name)
 
+    logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
     if len(pred_data) == len(src_data) == len(tgt_data):
         results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
         return results_dict
     else:
-        logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (len(src_data), len(tgt_data), len(pred_data)))
         return None
 
 
@@ -689,7 +689,6 @@ def init_opt():
     parser.add_argument('--eval_topbeam', '-eval_topbeam', action='store_true', required=False, help='(only useful for one2seq models) Evaluate with all sequences or just take the top-score sequence.')
 
     parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
-    # parser.add_argument('-testsets', nargs='+', type=str, default=["duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
 
     opt = parser.parse_args()
 
@@ -701,6 +700,8 @@ if __name__ == '__main__':
     score_dicts = {}
 
     for ckpt_name in os.listdir(opt.pred_dir):
+        if not os.path.isdir(os.path.join(opt.pred_dir, ckpt_name)):
+            continue
 
         for dataname in opt.testsets:
             src_path = os.path.join(opt.data, dataname, "%s_test.src" % dataname)

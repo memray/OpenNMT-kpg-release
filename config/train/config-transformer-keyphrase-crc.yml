@@ -17,13 +17,13 @@ optim: adam
 #learning_rate: 2
 param_init: 0
 warmup_steps: 8000
-decay_method: noam
+decay_method: noam_simple
 label_smoothing: 0.1
 adam_beta2: 0.998
 
 batch_type: tokens
 normalization: tokens
-max_generator_batches: 2
+max_generator_batches: 200
 accum_count: 4
 
 # batch_size is actually: num_example * max(#word in src/tgt)
@@ -42,12 +42,15 @@ report_every: 100
 #copy_attn: 'true'
 param_init_glorot: 'true'
 log_file_level: DEBUG
-tensorboard: 'true'
+tensorboard: 'false'
 
 #exp: kp20k-one2one-transformer-Layer4-Dim512-Emb512-Dropout0.2
 #save_model: models/kp20k/kp20k.one2one.transformer
 #log_file: output/kp20k.one2one.transformer.log
 #tensorboard_log_dir: runs/kp20k.one2one.transformer/
+
+wandb: 'true'
+wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
 
 world_size: 1
 gpu_ranks:

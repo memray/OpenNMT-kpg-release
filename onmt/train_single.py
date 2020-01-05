@@ -18,10 +18,36 @@ from onmt.utils.parse import ArgumentParser
 from torchtext.data import Field, RawField
 
 def _check_save_model_path(opt):
+    if not hasattr(opt, 'save_model') or opt.save_model is None:
+        if hasattr(opt, 'exp_dir'):
+            setattr(opt, 'save_model', opt.exp_dir+'/models/model')
+
     save_model_path = os.path.abspath(opt.save_model)
     model_dirname = os.path.dirname(save_model_path)
     if not os.path.exists(model_dirname):
         os.makedirs(model_dirname)
+
+    if not hasattr(opt, 'log_file') or opt.log_file is None or opt.log_file=='':
+        if hasattr(opt, 'log_file'):
+            setattr(opt, 'log_file', opt.exp_dir+'/train.log')
+        else:
+            logger.warn("opt.log_file is not set")
+    if not hasattr(opt, 'tensorboard_log_dir') or opt.tensorboard_log_dir is None:
+        if hasattr(opt, 'exp_dir'):
+            setattr(opt, 'tensorboard_log_dir', opt.exp_dir+'/logs/tfevents/')
+        else:
+            logger.warn("opt.tensorboard_log_dir is not set")
+    if hasattr(opt, 'tensorboard_log_dir') and not os.path.exists(opt.tensorboard_log_dir):
+        os.makedirs(opt.tensorboard_log_dir)
+
+    if not hasattr(opt, 'wandb_log_dir') or opt.wandb_log_dir is None:
+        if hasattr(opt, 'exp_dir'):
+            # a `/wandb` will be appended by wandb
+            setattr(opt, 'wandb_log_dir', opt.exp_dir+'/logs/')
+        else:
+            logger.warn("opt.wandb_log_dir is not set")
+    if hasattr(opt, 'wandb_log_dir') and not os.path.exists(opt.wandb_log_dir):
+        os.makedirs(opt.wandb_log_dir)
 
 
 def _tally_parameters(model):
@@ -48,7 +74,8 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     init_logger(opt.log_file)
 
     # save training settings
-    shutil.copy2(opt.config, os.path.dirname(opt.log_file))
+    if opt.log_file:
+        shutil.copy2(opt.config, opt.exp_dir)
     logger.info(vars(opt))
 
     assert len(opt.accum_count) == len(opt.accum_steps), \
@@ -79,7 +106,8 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     # @memray: a temporary workaround, as well as train.py line 43
     if opt.model_type == "keyphrase":
         if opt.tgt_type in ["one2one", "multiple"]:
-            del fields['sep_indices']
+            if 'sep_indices' in fields:
+                del fields['sep_indices']
         else:
             if 'sep_indices' not in fields:
                 sep_indices = Field(
@@ -104,7 +132,6 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     logger.info('encoder: %d' % enc)
     logger.info('decoder: %d' % dec)
     logger.info('* number of parameters: %d' % n_params)
-    _check_save_model_path(opt)
 
     # Build optimizer.
     optim = Optimizer.from_opt(model, opt, checkpoint=checkpoint)
@@ -141,8 +168,11 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
         train_iter = _train_iter()
 
-    valid_iter = build_dataset_iter(
-        "valid", fields, opt, is_train=False)
+    if opt.valid:
+        valid_iter = build_dataset_iter(
+            "valid", fields, opt, is_train=False)
+    else:
+        valid_iter = None
 
     if len(opt.gpu_ranks):
         logger.info('Starting training on GPU: %s' % opt.gpu_ranks)
@@ -162,3 +192,4 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     if opt.tensorboard:
         trainer.report_manager.tensorboard_writer.close()
+

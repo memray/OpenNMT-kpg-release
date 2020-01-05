@@ -20,24 +20,13 @@ from onmt.utils.logging import init_logger
 import onmt.opts as opts
 
 
-def scan_new_checkpoints(ckpt_dir, output_dir):
+def scan_new_checkpoints(ckpt_dir):
     ckpts = {}
-    done_ckpts = {}
     for subdir, dirs, files in os.walk(ckpt_dir):
         for file in files:
             if file.endswith('.pt'):
                 ckpt_name = file[: file.find('.pt')]
                 ckpts[ckpt_name] = os.path.join(subdir, file)
-
-    # for subdir, dirs, files in os.walk(output_dir):
-    #     for file in files:
-    #         if file.endswith('.score.json'):
-    #             ckpt_name = file[: file.find('.score.json')]
-    #             done_ckpts[ckpt_name] = os.path.join(subdir, file)
-    #
-    # for ckpt_name in done_ckpts.keys():
-    #     if ckpt_name in ckpts:
-    #         del ckpts[ckpt_name]
 
     return ckpts
 
@@ -59,25 +48,31 @@ if __name__ == "__main__":
                         choices=['pred', 'eval', 'report'],
                         help='Specify process to run, generation or evaluation')
     parser.add_argument('-ckpt_dir', type=str, required=True, help='Directory to all checkpoints')
+    parser.add_argument('--step_base', '-step_base', type=int, default=1,
+                        help='the base of step to be evaluated, only if ckpt_step % step_base==0 we evaluate it,  '
+                             '1 means evaluate everything.')
     parser.add_argument('-output_dir', type=str, required=True, help='Directory to output results')
     parser.add_argument('-data_dir', type=str, required=True, help='Directory to datasets (ground-truth)')
     parser.add_argument('-test_interval', type=int, default=600, help='Minimum time interval the job should wait if a .pred file is not updated by another job (imply another job failed).')
     parser.add_argument('-testsets', nargs='+', type=str, default=["nus", "semeval"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["kp20k", "duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
     parser.add_argument('--onepass', '-onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop scanning new available ckpts.')
+    parser.add_argument('--wait_patience', '-wait_patience', type=int, default=6, help='Terminates evaluation after scan this number of times.')
+    parser.add_argument('--wait_time', '-wait_time', type=int, default=120, help='.')
+    parser.add_argument('--sleep_time', '-sleep_time', type=int, default=600, help='.')
     parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
     parser.add_argument('--eval_topbeam', '-eval_topbeam',action="store_true", help='Evaluate with top beam only (self-terminating) or all beams (full search)')
 
     opt = parser.parse_args()
 
     # np.random.seed()
-    sleep_time = np.random.randint(120)
+    wait_time = np.random.randint(opt.wait_time)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
     logger = init_logger(opt.output_dir + '/autoeval_%s_%s.log'
                          % ('-'.join(opt.testsets), current_time))
     if not opt.onepass:
-        logger.info('Sleep for %d sec to avoid conflicting with other threads' % sleep_time)
-        # time.sleep(sleep_time)
+        logger.info('Sleep for %d sec to avoid conflicting with other threads' % wait_time)
+        time.sleep(wait_time)
 
     if not os.path.exists(opt.output_dir):
         os.makedirs(opt.output_dir)
@@ -99,12 +94,22 @@ if __name__ == "__main__":
                                       opt.data_dir + '/%s/%s_test.tgt' % (testset, testset),
                                       src_shard, tgt_shard)
 
+    current_patience = opt.wait_patience
     while True:
-        new_ckpts = scan_new_checkpoints(opt.ckpt_dir, opt.output_dir)
+        new_ckpts = scan_new_checkpoints(opt.ckpt_dir)
         new_ckpts_items = sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))
         random.shuffle(new_ckpts_items)
+        logger.info('Found %d checkpoints from %s!' % (len(new_ckpts), opt.ckpt_dir))
+
+        if opt.step_base is not None and opt.step_base > 1:
+            logger.warn('-step_base is set, filtering some ckpts')
+            new_ckpts_items = [(ckpt_name, ckpt_path) for ckpt_name, ckpt_path in new_ckpts_items if int(ckpt_name[ckpt_name.rfind('step_')+5:]) % opt.step_base == 0 and int(ckpt_name[ckpt_name.rfind('step_')+5:]) // opt.step_base > 0]
+            logger.info('After filtering non opt.step_base ckpts, found %d checkpoints!' % (len(new_ckpts_items)))
+
+        job_done = False # a flag indicating if any real pred/eval job is done
+
         for ckpt_id, (ckpt_name, ckpt_path) in enumerate(new_ckpts_items):
-            logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts), ckpt_path))
+            logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(new_ckpts_items), ckpt_path))
             setattr(opt, 'models', [ckpt_path])
 
             translator = None
@@ -125,6 +130,7 @@ if __name__ == "__main__":
                 if not os.path.exists(eval_path):
                     os.makedirs(eval_path)
 
+                # do translation
                 # skip translation for this dataset if previous pred exists
                 do_trans_flag = True
                 if os.path.exists(pred_path):
@@ -163,9 +169,11 @@ if __name__ == "__main__":
                             attn_debug=opt.attn_debug,
                             opt=opt
                         )
+                        job_done = True
                     else:
                         logger.info("Skip translating [%s] for %s." % (dataname, ckpt_name))
 
+                # do evaluation
                 do_eval_flag = True
                 if not os.path.exists(pred_path):
                     do_eval_flag = False
@@ -182,7 +190,7 @@ if __name__ == "__main__":
                                 os.remove(pred_path)
                                 logger.warn('Removed a bad pred file, #(line)=%d, #(elapsed_time)=%ds: %s' % (len(lines), int(elapsed_time), pred_path))
                         else:
-                            # if pred is good, check if eval is necessary
+                            # if pred is good, check if re-eval is necessary
                             if os.path.exists(score_path):
                                 score_dict = json.load(open(score_path, 'r'))
                                 num_eval = 0
@@ -215,18 +223,28 @@ if __name__ == "__main__":
                         if score_dict is not None:
                             score_dicts[dataname] = score_dict
                             with open(score_path, 'w') as output_json:
-                                output_json.write(json.dumps(score_dict))
+                                output_json.write(json.dumps(score_dict)+'\n')
+                        job_done = True
                     else:
                         logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
 
+                # do generate summarized report
                 if 'report' in opt.tasks:
                     kp_evaluate.export_summary_to_csv(json_root_dir=eval_path, report_csv_path=report_csv_path)
 
+        if job_done: # reset current_patience if no real job is done in the current iteration
+            current_patience = opt.wait_patience
+        else:
+            current_patience -= 1
+
         if opt.onepass:
+            break
+
+        if current_patience == 0:
             break
         else:
             # scan again for every 5min
-            sleep_time = 600
+            sleep_time = opt.sleep_time
             logger.info('Sleep for %d sec' % sleep_time)
             time.sleep(sleep_time)
 

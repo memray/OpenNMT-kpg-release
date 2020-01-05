@@ -850,10 +850,10 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
         batch_size = opt.batch_size if is_train else opt.valid_batch_size
         batch_fn = max_tok_len \
             if is_train and opt.batch_type == "tokens" else None
-        # @memray
-        if opt.model_dtype == "keyphrase":
-            batch_fn = keyphrase_dataset.max_tok_len
         batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
+    # @memray
+    if opt.model_type == "keyphrase":
+        batch_fn = keyphrase_dataset.max_tok_len
 
     device = "cuda" if opt.gpu_ranks else "cpu"
 

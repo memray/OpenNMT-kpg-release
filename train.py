@@ -6,6 +6,7 @@ import torch
 
 import onmt.opts as opts
 import onmt.utils.distributed
+from onmt import train_single
 
 from onmt.utils.misc import set_random_seed
 from onmt.utils.logging import init_logger, logger
@@ -21,6 +22,8 @@ def main(opt):
     ArgumentParser.validate_train_opts(opt)
     ArgumentParser.update_model_opts(opt)
     ArgumentParser.validate_model_opts(opt)
+
+    train_single._check_save_model_path(opt)
 
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
@@ -43,7 +46,8 @@ def main(opt):
     # @memray: a temporary workaround, as well as train_single.py line 78
     if opt.model_type == "keyphrase":
         if opt.tgt_type in ["one2one", "multiple"]:
-            del fields['sep_indices']
+            if 'sep_indices' in fields:
+                del fields['sep_indices']
         else:
             if 'sep_indices' not in fields:
                 sep_indices = Field(

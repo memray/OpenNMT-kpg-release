@@ -241,6 +241,9 @@ def process_multiple_tgts(big_batch, tgt_type):
             rand_idx = np.random.randint(len(ex.tgt))
             tgt = ex.tgt[rand_idx]
             alignment = ex.alignment[rand_idx] if hasattr(ex, "alignment") else None
+
+            ex.tgt = tgt
+            ex.alignment = alignment
         elif tgt_type in ['no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length']:
             # generate one2seq training data points
             order = obtain_sorted_indices(ex.src, ex.tgt, sort_by=tgt_type)
@@ -265,7 +268,9 @@ def process_multiple_tgts(big_batch, tgt_type):
                 alignment = torch.torch.from_numpy(np.concatenate(alignment, axis=None))
             else:
                 alignment = None
+
             ex.tgt = tgt
+            ex.alignment = alignment
             '''
             elif tgt_type == 'no_sort':
                 # return tgts in original order
@@ -297,7 +302,6 @@ def process_multiple_tgts(big_batch, tgt_type):
             else:
                 # for other training cases, with one target sequence
                 assert len(tgt[0]) + 2 == alignment.size()[0]
-            ex.alignment = alignment
 
         new_batch.append(ex)
 

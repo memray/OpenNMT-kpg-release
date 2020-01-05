@@ -1,6 +1,13 @@
 model_type: keyphrase
 tgt_type: random
 
+exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+exp_dir: output/keyphrase/meng17-one2seq-local/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+save_model: models/keyphrase/meng17-one2seq-local/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+wandb_project: kp20k-one2seq-birnn
+wandb: 'true'
+wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
+
 #data: data/keyphrase/meng17/kp20k
 data: data/keyphrase/meng17/kp20k_small
 #data: data/keyphrase/meng17/stackexchange
@@ -43,18 +50,13 @@ bridge: 'true'
 
 orth_reg: 'false'
 lambda_orth_reg: 0.1
-sem_cov: 'true'
+sem_cov: 'false'
 lambda_sem_cov: 1.0
 
 num_negsample: 32
 use_ending_state: 'true'
 tgt_enc: 'rnn'
 detach_tgt_enc: 'true'
-
-exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
-save_model: models/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00
-log_file: output/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00.log
-tensorboard_log_dir: runs/keyphrase/meng17-one2seq-local/kp20k.one2seq.birnn.Dropout00/
 
 world_size: 1
 gpu_ranks: []

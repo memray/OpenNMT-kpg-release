@@ -11,6 +11,7 @@
 
 from copy import deepcopy
 import torch
+import wandb
 import traceback
 
 import onmt.utils
@@ -65,7 +66,18 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
         opt.early_stopping, scorers=onmt.utils.scorers_from_opts(opt)) \
         if opt.early_stopping > 0 else None
 
-    report_manager = onmt.utils.build_report_manager(opt)
+    report_manager = onmt.utils.build_report_manager(opt, gpu_rank)
+
+    # setup wandb if applicable
+    if opt.wandb and gpu_rank == 0:
+        from datetime import datetime
+        now = datetime.now()
+        datetime = now.strftime("-%Y%m%d-%H%M%S")
+        wandb.login(key=opt.wandb_key)
+        wandb.init(project=opt.wandb_project, id=opt.exp+datetime, resume=True, dir=opt.wandb_log_dir)
+        wandb.config.update(opt, allow_val_change=True)
+        wandb.watch(model, log='all')
+
     trainer = onmt.Trainer(model, train_loss, valid_loss, optim, trunc_size,
                            shard_size, norm_method,
                            accum_count, accum_steps,

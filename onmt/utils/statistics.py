@@ -87,19 +87,32 @@ class Statistics(object):
 
     def accuracy(self):
         """ compute accuracy """
-        return 100 * (self.n_correct / self.n_words)
+        return 100 * (self.n_correct / self.n_words) if self.n_words > 0 else 0.0
 
     def xent(self):
         """ compute cross entropy """
-        return self.loss / self.n_words
+        return self.loss / self.n_words if self.n_words > 0 else 0.0
 
     def ppl(self):
         """ compute perplexity """
-        return math.exp(min(self.loss / self.n_words, 100))
+        return math.exp(min(self.loss / self.n_words if self.n_words > 0 else 0.0, 100))
 
     def elapsed_time(self):
         """ compute elapsed time """
         return time.time() - self.start_time
+
+    def to_dict(self, learning_rate, prefix=''):
+        t = self.elapsed_time()
+        report = {}
+        report['%saccuracy' % prefix] = self.accuracy()
+        report['%sppl' % prefix] = self.ppl()
+        report['%sxent' % prefix] = self.xent()
+        report['%sloss' % prefix] = self.loss
+        report['%slr' % prefix] = learning_rate
+        report['%ssrcpersec' % prefix] = self.n_src_words / (t + 1e-5)
+        report['%sallpersec' % prefix] = self.n_words / (t + 1e-5)
+
+        return report
 
     def output(self, step, num_steps, learning_rate, start):
         """Write out statistics to stdout.

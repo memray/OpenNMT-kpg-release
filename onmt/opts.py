@@ -1,8 +1,21 @@
 """ Implementation of all available options """
 from __future__ import print_function
 
+import argparse
+
 import configargparse
 from onmt.models.sru import CheckSRU
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 def config_opts(parser):
@@ -439,6 +452,9 @@ def train_opts(parser):
                    "Recommended for Transformer.")
     group.add('--accum_steps', '-accum_steps', type=int, nargs='+',
               default=[0], help="Steps at which accum_count values change")
+
+    group.add('--valid', '-valid', action='store_true',
+              help="Whether perform validation or not during training.")
     group.add('--valid_steps', '-valid_steps', type=int, default=10000,
               help='Perfom validation every X steps')
     group.add('--valid_batch_size', '-valid_batch_size', type=int, default=32,
@@ -538,7 +554,7 @@ def train_opts(parser):
               help="Decay every decay_steps")
 
     group.add('--decay_method', '-decay_method', type=str, default="none",
-              choices=['noam', 'noamwd', 'rsqrt', 'none'],
+              choices=['noam', 'noam_simple', 'noamwd', 'rsqrt', 'none'],
               help="Use a custom decay rate.")
     group.add('--warmup_steps', '-warmup_steps', type=int, default=4000,
               help="Number of warmup steps for custom decay.")
@@ -556,14 +572,24 @@ def train_opts(parser):
               help="Send logs to this crayon server.")
     group.add('--exp', '-exp', type=str, default="",
               help="Name of the experiment for logging.")
+    group.add('--exp_dir', '-exp_dir', type=str, default="",
+              help="Directory of outputs.")
     # Use TensorboardX for visualization during training
     group.add('--tensorboard', '-tensorboard', action="store_true",
               help="Use tensorboardX for visualization during training. "
                    "Must have the library tensorboardX.")
     group.add("--tensorboard_log_dir", "-tensorboard_log_dir",
-              type=str, default="runs/onmt",
+              type=str, default=None,
               help="Log directory for Tensorboard. "
                    "This is also the name of the run.")
+
+    # Use WANDB
+    group.add('--wandb', '-wandb', default=False, type=str2bool,
+              help="Use wandb.")
+    group.add('--wandb_project', '-wandb_project', type=str,
+              help="wandb project name.")
+    group.add('--wandb_key', '-wandb_key',
+              type=str, help="Use wandb.")
 
     group = parser.add_argument_group('Speech')
     # Options most relevant to speech

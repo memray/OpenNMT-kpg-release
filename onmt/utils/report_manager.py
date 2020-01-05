@@ -4,11 +4,12 @@ import time
 from datetime import datetime
 
 import onmt
+import wandb
 
 from onmt.utils.logging import logger
 
 
-def build_report_manager(opt):
+def build_report_manager(opt, gpu_rank):
     if opt.tensorboard:
         from tensorboardX import SummaryWriter
         tensorboard_log_dir = opt.tensorboard_log_dir
@@ -21,8 +22,13 @@ def build_report_manager(opt):
     else:
         writer = None
 
+    if opt.wandb == True and gpu_rank == 0:
+        report_wandb = True
+    else:
+        report_wandb = False
+
     report_mgr = ReportMgr(opt.report_every, start_time=-1,
-                           tensorboard_writer=writer)
+                           tensorboard_writer=writer, report_wandb=report_wandb)
     return report_mgr
 
 
@@ -101,7 +107,8 @@ class ReportMgrBase(object):
 
 
 class ReportMgr(ReportMgrBase):
-    def __init__(self, report_every, start_time=-1., tensorboard_writer=None):
+    def __init__(self, report_every, start_time=-1.,
+                 tensorboard_writer=None, report_wandb=False):
         """
         A report manager that writes statistics on standard output as well as
         (optionally) TensorBoard
@@ -113,6 +120,7 @@ class ReportMgr(ReportMgrBase):
         """
         super(ReportMgr, self).__init__(report_every, start_time)
         self.tensorboard_writer = tensorboard_writer
+        self.report_wandb = report_wandb
 
     def maybe_log_tensorboard(self, stats, prefix, learning_rate, step):
         if self.tensorboard_writer is not None:
@@ -132,6 +140,10 @@ class ReportMgr(ReportMgrBase):
                                    "progress",
                                    learning_rate,
                                    self.progress_step)
+
+        if self.report_wandb:
+            wandb.log(step=step, row=report_stats.to_dict(learning_rate))
+
         report_stats = onmt.utils.Statistics()
 
         return report_stats
@@ -149,6 +161,9 @@ class ReportMgr(ReportMgrBase):
                                        lr,
                                        step)
 
+            if self.report_wandb:
+                wandb.log(step=step, row=train_stats.to_dict(learning_rate=lr, prefix='train_'))
+
         if valid_stats is not None:
             self.log('Validation perplexity: %g' % valid_stats.ppl())
             self.log('Validation accuracy: %g' % valid_stats.accuracy())
@@ -157,3 +172,7 @@ class ReportMgr(ReportMgrBase):
                                        "valid",
                                        lr,
                                        step)
+
+            if self.report_wandb:
+                wandb.log(step=step, row=valid_stats.to_dict(learning_rate=None, prefix='valid_'))
+
