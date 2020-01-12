@@ -81,13 +81,15 @@ def model_opts(parser):
               choices=['fp32', 'fp16'],
               help='Data type of the model.')
 
+    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
+              type=str, default=None)
     group.add('--encoder_type', '-encoder_type', type=str, default='rnn',
-              choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn'],
+              choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn', 'huggingface', 'fairseq_bart'],
               help="Type of encoder layer to use. Non-RNN layers "
                    "are experimental. Options are "
                    "[rnn|brnn|mean|transformer|cnn].")
     group.add('--decoder_type', '-decoder_type', type=str, default='rnn',
-              choices=['rnn', 'transformer', 'cnn'],
+              choices=['rnn', 'transformer', 'cnn', 'huggingface', 'fairseq_bart'],
               help="Type of decoder layer to use. Non-RNN layers "
                    "are experimental. Options are "
                    "[rnn|transformer|cnn].")
@@ -241,7 +243,7 @@ def preprocess_opts(parser):
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",
               help="Type of the source input. "
-                   "Options are [text|img|audio|vec|keyphrase].")
+                   "Options are [text|img|audio|vec|keyphrase|news].")
 
     group.add('--train_src', '-train_src', required=True, nargs='+',
               help="Path(s) to the training source data")
@@ -391,6 +393,16 @@ def train_opts(parser):
               help="""Save a checkpoint every X steps""")
     group.add('--keep_checkpoint', '-keep_checkpoint', type=int, default=-1,
               help="Keep X checkpoints (negative: keep all)")
+
+    # Data settings added by @memray for multiple news datasets and feature control
+    group.add('--data_type', '-data_type', default="text",
+              help="Type of the source input. Options: [text|img|news].")
+    group.add('--multi_dataset', '-multi_dataset', action='store_true',
+              help="If true then load all data.train.*.pt and data.valid.*.pt under the path specified by data_ids.")
+    group.add('--vocab', '-vocab', default="",
+              help="Path to an existing vocabulary, shared by all datasets.")
+    group.add('--shuffle_shards', '-shuffle_shards', action='store_true',
+              help="Shuffle the order of shards for each epoch.")
 
     # GPU
     group.add('--gpuid', '-gpuid', default=[], nargs='*', type=int,

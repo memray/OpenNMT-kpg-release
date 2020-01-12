@@ -5,6 +5,7 @@ import codecs
 import math
 
 from collections import Counter, defaultdict
+from functools import partial
 from itertools import chain, cycle
 
 import torch
@@ -14,6 +15,7 @@ from torchtext.vocab import Vocab
 from torchtext.data.utils import RandomShuffler
 
 from onmt.inputters import keyphrase_dataset
+from onmt.inputters.news_dataset import update_field_vocab
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.image_dataset import image_fields
 from onmt.inputters.audio_dataset import audio_fields
@@ -98,6 +100,21 @@ def parse_align_idx(align_pharaoh):
             raise
         flatten_align_idx.append([int(src_idx), int(tgt_idx)])
     return flatten_align_idx
+
+
+def make_align(data, vocab):
+    """
+    pad zero to the data, size=[max_tgt_len, batch_size, max_src_len]
+    each input shape is [tgt_len, src_len]
+    """
+    max_src_size = max([t.size(1) for t in data])
+    max_tgt_size = max([t.size(0) for t in data])
+
+    alignment = torch.zeros(max_tgt_size, len(data), max_src_size)
+    for i, sent in enumerate(data):
+        j,t = sent.shape
+        alignment[:j, i, :t] = sent
+    return alignment
 
 
 def get_fields(
@@ -201,6 +218,162 @@ def get_fields(
         fields["sep_indices"] = sep_indices
 
     return fields
+
+
+
+
+def reload_news_fields(fields, opt, tokenizer=None):
+    """
+    In preprocessing phrase, the fields doesn't contain feature column information, thus len(fields['src'].fields)==1
+    We add additional features on-the-fly, thus we need to add corresponding fields here
+    Additionally, if we load a pretrained model, we need to override all the vocabs in fields
+    :param fields: for using pretraiend encoder the fields can be None
+    :param opt:
+    :return:
+    """
+    src_nfeats = 0
+    tgt_nfeats = 0
+    if opt.field_label:
+        src_nfeats += 1
+    dynamic_dict = True
+    new_fields = get_fields(
+        opt.data_type,
+        src_nfeats,
+        tgt_nfeats,
+        dynamic_dict=dynamic_dict,
+        src_truncate=opt.src_seq_length_trunc,
+        tgt_truncate=opt.tgt_seq_length_trunc
+    )
+
+    # if fields:
+    #     for name, field in new_fields['src'].fields:
+    #         setattr(field, 'vocab', fields['src'].base_field.vocab)
+    #     for name, field in new_fields['tgt'].fields:
+    #         setattr(field, 'vocab', fields['tgt'].base_field.vocab)
+
+    # masks are required by huggingface Transformers
+    # prepare tensors on our own and ignore previous src/tgt fields
+    if opt.data_format == 'jsonl_tensor' and opt.pretrained_tokenizer and opt.pretrained_tokenizer != 'none':
+    # if opt.encoder_type=='pretrained':
+        pad_idx = tokenizer.pad_token_id if tokenizer is not None else 0
+        partial_make_tgt = partial(make_tgt, pad_idx=pad_idx)
+
+        src = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=partial_make_tgt, sequential=False)
+        new_fields["src"] = src
+
+        src_lengths = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=None, sequential=False)
+        new_fields["src_length"] = src_lengths
+
+        tgt = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=make_tgt, sequential=False)
+        new_fields["tgt"] = tgt
+
+        tgt_length = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=None, sequential=False)
+        new_fields["tgt_length"] = tgt_length
+
+        # this is the field tokens on the source side
+        field = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=partial_make_tgt, sequential=False)
+        new_fields["src_field"] = field
+
+        src_mask = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=partial_make_tgt, sequential=False)
+        new_fields["src_mask"] = src_mask
+        tgt_mask = Field(
+            use_vocab=False, dtype=torch.long,
+            postprocessing=partial_make_tgt, sequential=False)
+        new_fields["tgt_mask"] = tgt_mask
+
+        mask_names = ['ext_word', 'ext_verb',
+                      'ext_noun_phrase', 'ext_ner',
+                      'ext_bottomup',
+                      'ext_sentence', 'ext_sentence_head',
+                      'ext_best_fragment', 'ext_all_fragment']
+
+        for mask_name in mask_names:
+            mask_field = Field(
+                use_vocab=False, dtype=torch.long,
+                postprocessing=partial_make_tgt, sequential=False)
+            new_fields[mask_name] = mask_field
+
+        if hasattr(opt, 'alignment_loss'):
+            stemmed_src_map = Field(
+                use_vocab=False, dtype=torch.float,
+                postprocessing=make_src, sequential=False)
+            new_fields["stemmed_src_map"] = stemmed_src_map
+            stemmed_src_ex_vocab = RawField()
+            new_fields["stemmed_src_ex_vocab"] = stemmed_src_ex_vocab
+
+            for mask_name in mask_names:
+                mask_name = mask_name[4:] # remove the heading 'ext_'
+                if opt.alignment_loss == 'pointer':
+                    mask_field = Field(
+                        use_vocab=False, dtype=torch.long,
+                        postprocessing=partial_make_tgt, sequential=False)
+                else:
+                    mask_field = Field(
+                        use_vocab=False, dtype=torch.long,
+                        postprocessing=make_align, sequential=False)
+                new_fields['alignment_%s' % mask_name] = mask_field
+
+    # update the vocabs in src/tgt field
+    if tokenizer is not None:
+        # update the vocab depending on what fields are used (OpenNMT uses a MultiField, pretraiend model uses tensorized data and normal Field)
+        if opt.data_format != 'jsonl_tensor':
+            for field_id, (name, field) in enumerate(new_fields['src'].fields):
+                new_field = update_field_vocab(field, tokenizer)
+                # no bos/eos for src, otherwise it causes length mismatch later in training
+                setattr(new_field, 'bos', None)
+                setattr(new_field, 'bos_token', None)
+                setattr(new_field, 'eos', None)
+                setattr(new_field, 'eos_token', None)
+                new_fields['src'].fields[field_id] = (name, new_field)
+                if hasattr(new_field, 'postprocessing'):
+                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+
+                if opt.field_label:
+                    setattr(new_field, 'word_feat_share', True)
+                    setattr(new_field, 'feat_num', 1)
+
+            for field_id, (name, field) in enumerate(new_fields['tgt'].fields):
+                new_field = update_field_vocab(field, tokenizer)
+                new_fields['tgt'].fields[field_id] = (name, new_field)
+                if hasattr(new_field, 'postprocessing'):
+                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+
+        else:
+            new_field = update_field_vocab(new_fields['src'], tokenizer)
+            # no bos/eos for src, otherwise it causes length mismatch later in training
+            setattr(new_field, 'bos', None)
+            setattr(new_field, 'bos_token', None)
+            setattr(new_field, 'eos', None)
+            setattr(new_field, 'eos_token', None)
+            if hasattr(new_field, 'postprocessing'):
+                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+            if opt.field_label:
+                setattr(new_field, 'word_feat_share', True)
+                setattr(new_field, 'feat_num', 1)
+            new_fields['src'] = new_field
+
+            new_field = update_field_vocab(new_fields['tgt'], tokenizer)
+            if hasattr(new_field, 'postprocessing'):
+                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+            new_fields['tgt'] = new_field
+
+    return new_fields
 
 
 def load_old_vocab(vocab, data_type="text", dynamic_dict=False):

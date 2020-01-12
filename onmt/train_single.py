@@ -6,7 +6,8 @@ import shutil
 import torch
 
 from onmt.inputters.inputter import build_dataset_iter, \
-    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt
+    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt, reload_news_fields
+from onmt.inputters.news_dataset import load_pretrained_tokenizer
 from onmt.model_builder import build_model
 from onmt.utils.optimizers import Optimizer
 from onmt.utils.misc import set_random_seed
@@ -93,7 +94,13 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
     else:
         checkpoint = None
         model_opt = opt
-        vocab = torch.load(opt.data + '.vocab.pt')
+        # added by @memray for multiple datasets
+        if opt.vocab and opt.vocab != 'none':
+            vocab = torch.load(opt.vocab)
+        elif opt.encoder_type == 'pretrained':
+            vocab = None
+        else:
+            vocab = None
 
     # check for code where vocab is saved instead of fields
     # (in the future this will be done in a smarter way)
@@ -114,6 +121,13 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
                     use_vocab=False, dtype=torch.long,
                     postprocessing=make_tgt, sequential=False)
                 fields["sep_indices"] = sep_indices
+
+    if opt.pretrained_tokenizer:
+        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer, opt.cache_dir, opt.special_vocab_path)
+        setattr(opt, 'vocab_size', len(tokenizer))
+    if opt.data_type == 'news':
+        fields = reload_news_fields(fields, opt, tokenizer)
+
 
     # Report src and tgt vocab sizes, including for features
     for side in ['src', 'tgt']:

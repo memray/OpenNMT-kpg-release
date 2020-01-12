@@ -6,6 +6,7 @@ import torch
 
 import onmt.opts as opts
 import onmt.utils.distributed
+from onmt import train_single
 
 from onmt.utils.misc import set_random_seed
 from onmt.utils.logging import init_logger, logger
@@ -24,6 +25,28 @@ def train(opt):
 
     set_random_seed(opt.seed, False)
 
+    # @Memray, check the dir existence beforehand to avoid path conflicting errors,
+    #   and set save_model, tensorboard_log_dir, wandb_log_dir if not exist
+    train_single._check_save_model_path(opt)
+    if not os.path.exists(opt.tensorboard_log_dir):
+        os.makedirs(opt.tensorboard_log_dir)
+
+    # Scan previous checkpoint to resume training
+    latest_step = 0
+    latest_ckpt = None
+    for subdir, dirs, filenames in os.walk(opt.exp_dir):
+        for filename in sorted(filenames):
+            if not filename.endswith('.pt'):
+                continue
+            step = int(filename[filename.rfind('_') + 1: filename.rfind('.pt')])
+            if step > latest_step:
+                latest_ckpt = os.path.join(subdir, filename)
+                latest_step = step
+    if latest_ckpt is not None:
+        logger.info("A previous checkpoint is found, train from it: %s" % latest_ckpt)
+        setattr(opt, 'train_from', latest_ckpt)
+        setattr(opt, 'reset_optim', 'none')
+
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
         logger.info('Loading checkpoint from %s' % opt.train_from)
@@ -31,8 +54,13 @@ def train(opt):
                                 map_location=lambda storage, loc: storage)
         logger.info('Loading vocab from checkpoint at %s.' % opt.train_from)
         vocab = checkpoint['vocab']
+    elif opt.vocab and opt.vocab != 'none':
+        # added by @memray for multiple datasets
+        vocab = torch.load(opt.vocab)
+    elif opt.encoder_type == 'pretrained':
+        vocab = None
     else:
-        vocab = torch.load(opt.data + '.vocab.pt')
+        vocab = None
 
     # check for code where vocab is saved instead of fields
     # (in the future this will be done in a smarter way)
