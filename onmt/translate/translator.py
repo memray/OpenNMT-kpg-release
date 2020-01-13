@@ -628,7 +628,8 @@ class Translator(object):
                     block_ngram_repeat=self.block_ngram_repeat,
                     exclusion_tokens=self._exclusion_idxs,
                     stepwise_penalty=self.stepwise_penalty,
-                    ratio=self.ratio)
+                    ratio=self.ratio,
+                    beam_terminate = self.beam_terminate)
             return self._translate_batch_with_strategy(batch, src_vocabs,
                                                        decode_strategy)
 
@@ -832,7 +833,8 @@ class Translator(object):
             msg = "%s No words predicted" % (name,)
         else:
             avg_score = score_total / words_total
-            ppl = np.exp(-score_total.item() / words_total)
+            score_total = score_total.item() if isinstance(score_total, torch.Tensor) else score_total
+            ppl = np.exp(-score_total / words_total)
             msg = ("%s AVG SCORE: %.4f, %s PPL: %.4f" % (
                 name, avg_score,
                 name, ppl))

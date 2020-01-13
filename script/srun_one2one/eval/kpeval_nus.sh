@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --cluster=smp
 #SBATCH --partition=smp
-#SBATCH --job-name=eval_one2one_nus
-#SBATCH --output=slurm_output/eval_one2one_nus.out
+#SBATCH --job-name=eval_kp_one2one_nus
+#SBATCH --output=slurm_output/eval_kp_one2one_nus.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1

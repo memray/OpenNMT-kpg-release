@@ -5,6 +5,7 @@
 """
 import codecs
 import glob
+import itertools
 import os
 import shutil
 import sys
@@ -62,7 +63,8 @@ def process_one_shard(corpus_params, params):
     _readers, _data, _dir = inputters.Dataset.config(
         [('src', src_data), ('tgt', tgt_data), ('align', align_data)])
 
-    dataset = inputters.Dataset(
+    # @memray: to be different from normal datasets
+    dataset = inputters.str2dataset[opt.data_type](
         fields, readers=_readers, data=_data, dirs=_dir,
         sort_key=inputters.str2sortkey[opt.data_type],
         filter_pred=filter_pred
@@ -79,6 +81,9 @@ def process_one_shard(corpus_params, params):
                     all_data = [getattr(ex, name, None)]
                 else:
                     all_data = getattr(ex, name)
+                # for keyphrase tgt, which may contain multiple sequences
+                if opt.data_type == 'keyphrase' and name == 'tgt':
+                    all_data = [w for kp in all_data for w in kp[0]]
                 for (sub_n, sub_f), fd in zip(
                         f_iter, all_data):
                     has_vocab = (sub_n == 'src' and
@@ -269,7 +274,7 @@ def preprocess(opt):
         tgt_truncate=opt.tgt_seq_length_trunc)
 
     src_reader = inputters.str2reader[opt.data_type].from_opt(opt)
-    tgt_reader = inputters.str2reader["text"].from_opt(opt)
+    tgt_reader = inputters.str2reader[opt.data_type].from_opt(opt)
     align_reader = inputters.str2reader["text"].from_opt(opt)
 
     logger.info("Building & saving training data...")

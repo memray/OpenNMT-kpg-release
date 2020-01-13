@@ -222,6 +222,17 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
 
 
 def process_multiple_tgts(big_batch, tgt_type):
+    """
+
+    :param big_batch: a list of examples
+            src: [1, src_len]
+            tgt: [num_kp, 1, kp_len]
+    :param tgt_type:
+            specify format of target and concatenate kps in tgt accordingly
+            if one2one: randomly pick up one phrase, tgt will be [1, kp_len]
+            if one2seq: tgt will be [1, concat_kps_len]
+    :return:
+    """
     new_batch = []
     for ex in big_batch:
         # a workaround: truncate to maximum 8 phrases (some noisy data points have many phrases)

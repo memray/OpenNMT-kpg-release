@@ -10,10 +10,11 @@ shard_size: 100000
 dynamic_dict: 'true'
 share_vocab: 'true'
 
-src_seq_length_trunc: 300
+src_seq_length_trunc: 512
 tgt_seq_length_trunc: 8
 lower: 'true'
 filter_valid: 'false'
 
 report_every: 1000
 log_file: data/keyphrase/meng17/preprocess.kp20k.log
+

@@ -3,6 +3,9 @@
 
 from __future__ import unicode_literals
 
+import codecs
+from itertools import repeat
+
 from onmt.utils.logging import init_logger
 from onmt.utils.misc import split_corpus
 from onmt.translate.translator import build_translator
@@ -15,9 +18,11 @@ def translate(opt):
     ArgumentParser.validate_translate_opts(opt)
     logger = init_logger(opt.log_file)
 
-    translator = build_translator(opt, report_score=True)
+    translator = build_translator(opt, report_score=True, logger=logger)
+    translator.out_file = codecs.open(opt.output, 'w+', 'utf-8')
     src_shards = split_corpus(opt.src, opt.shard_size)
-    tgt_shards = split_corpus(opt.tgt, opt.shard_size)
+    tgt_shards = split_corpus(opt.tgt, opt.shard_size) \
+        if opt.tgt is not None else repeat(None)
     shard_pairs = zip(src_shards, tgt_shards)
 
     for i, (src_shard, tgt_shard) in enumerate(shard_pairs):
@@ -29,7 +34,8 @@ def translate(opt):
             batch_size=opt.batch_size,
             batch_type=opt.batch_type,
             attn_debug=opt.attn_debug,
-            align_debug=opt.align_debug
+            align_debug=opt.align_debug,
+            opt=opt
             )
 
 
