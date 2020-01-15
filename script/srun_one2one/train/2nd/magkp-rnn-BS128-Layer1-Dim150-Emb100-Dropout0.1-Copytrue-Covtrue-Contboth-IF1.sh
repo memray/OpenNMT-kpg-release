@@ -57,7 +57,7 @@ export EXP_DIR="output/keyphrase/$TOKEN_NAME-one2one/$TOKEN_NAME-one2one-kp20k-v
 export TENSORBOARD_PATH="runs/keyphrase/$TOKEN_NAME/$EXP_NAME/"
 export WANDB_PROJECT_NAME="kp20k-meng17-one2one"
 
-cmd="srun python train.py -config config/train/config-rnn-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -vocab $DATA_PATH.vocab.pt -save_model $MODEL_PATH -exp_dir $EXP_DIR -tensorboard_log_dir $TENSORBOARD_PATH -tgt_type $TARGET_TYPE -batch_size $BatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate  -input_feed $InputFeed -master_port $MASTER_PORT -wandb_project $WANDB_PROJECT_NAME"
+cmd="srun python train.py -config config/train/ptconfig-rnn-keyphrase-crc.yml -exp $EXP_NAME -data $DATA_PATH -vocab $DATA_PATH.vocab.pt -save_model $MODEL_PATH -exp_dir $EXP_DIR -tensorboard_log_dir $TENSORBOARD_PATH -tgt_type $TARGET_TYPE -batch_size $BatchSize -train_steps $TrainSteps -save_checkpoint_steps $CheckpointSteps -layers $LAYER -word_vec_size $EMBED -rnn_size $HIDDEN -learning_rate $LearningRate -dropout $Dropout -context_gate $ContextGate  -input_feed $InputFeed -master_port $MASTER_PORT -wandb_project $WANDB_PROJECT_NAME"
 
 if [ "$Copy" = true ] ; then
     cmd+=" -copy_attn"
