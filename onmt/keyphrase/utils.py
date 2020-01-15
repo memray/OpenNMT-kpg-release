@@ -7,13 +7,13 @@ import matplotlib
 
 SEP_token = "<sep>"
 DIGIT_token = "<digit>"
-matplotlib.use('agg')
-import matplotlib.pyplot as plt
 import time
 
 from nltk.stem.porter import *
-
 stemmer = PorterStemmer()
+
+# matplotlib.use('agg')
+# import matplotlib.pyplot as plt
 
 def stem_word_list(word_list):
     return [stemmer.stem(w.strip()) for w in word_list]
@@ -336,6 +336,7 @@ class Progbar(object):
         self.seen_so_far = 0
 
 
+'''
 def plot_learning_curve_and_write_csv(scores, curve_names, checkpoint_names, title, ylim=None, save_path=None):
     """
     Generate a simple plot of the test and training learning curve.
@@ -398,3 +399,4 @@ def plot_learning_curve_and_write_csv(scores, curve_names, checkpoint_names, tit
 
     plt.close()
     return plt
+'''

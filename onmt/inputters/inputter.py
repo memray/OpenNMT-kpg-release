@@ -1043,9 +1043,18 @@ def max_tok_len(new, count, sofar):
     max_src_in_batch = max(max_src_in_batch, len(new.src[0]) + 2)
     # Tgt: [w1 ... wM <eos>]
     max_tgt_in_batch = max(max_tgt_in_batch, len(new.tgt[0]) + 1)
-    src_elements = count * max_src_in_batch
-    tgt_elements = count * max_tgt_in_batch
-    return max(src_elements, tgt_elements)
+
+    # change by @memray, return (count * (max_src_in_batch+max_tgt_in_batch)) to better gauge usage and avoid OOM
+    src_len = new.src.shape[0] if isinstance(new.src, torch.Tensor) else len(new.src[0]) + 2
+    tgt_len = new.tgt.shape[0] if isinstance(new.tgt, torch.Tensor) else len(new.tgt[0]) + 1
+    max_src_in_batch = max(max_src_in_batch, src_len)
+    max_tgt_in_batch = max(max_tgt_in_batch, tgt_len)
+
+    # src_elements = count * max_src_in_batch
+    # tgt_elements = count * max_tgt_in_batch
+    # return max(src_elements, tgt_elements)
+
+    return count * (max_src_in_batch + max_tgt_in_batch)
 
 
 def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
@@ -1069,10 +1078,8 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
         batch_size = opt.batch_size if is_train else opt.valid_batch_size
         batch_fn = max_tok_len \
             if is_train and opt.batch_type == "tokens" else None
-        batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
-    # @memray
-    if opt.model_type == "keyphrase":
-        batch_fn = keyphrase_dataset.max_tok_len
+        batch_size_multiple = 1 # changed by @memray, causing issues in backprop
+        # batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
 
     device = "cuda" if opt.gpu_ranks else "cpu"
 

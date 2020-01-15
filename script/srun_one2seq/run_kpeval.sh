@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-CUR_DIR=$(dirname "$0")
 PROJECT_DIR="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/"
 
 echo $0
@@ -18,7 +17,7 @@ do
         # topbeam_terminate ( -i true means ignore_existing pred or eval,  -p true means onepass)
         ckpt_dir="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k"
         output_dir="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam$beam_width-maxlen40"
-        sbatch "$PROJECT_DIR/"kpeval_cpu.sh -a pred -c $ckpt_dir -o $output_dir -g -1 -b 16 -s $beam_width -l 40 -t topbeam -d ${dataset}
+        sbatch "$PROJECT_DIR/script/srun_one2seq/"kpeval_cpu.sh -a pred -c $ckpt_dir -o $output_dir -g -1 -b 16 -s $beam_width -l 40 -t topbeam -d ${dataset}
         # CPU+fullbeam
 #        ckpt_dir="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels"
 #        output_dir="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels/meng17-one2seq-fullbeam/meng17-one2seq-beam$beam_width-maxlen40"

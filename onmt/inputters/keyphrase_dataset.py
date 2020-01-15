@@ -325,7 +325,7 @@ def kp_sort_key(ex):
         return len(ex.src[0]), len(ex.tgt[0])
     return len(ex.src[0])
 
-
+# deprecated
 def max_tok_len(new, count, sofar):
     """
     Specialized for keyphrase generation task

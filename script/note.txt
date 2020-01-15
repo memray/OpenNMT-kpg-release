@@ -1,0 +1,22 @@
+# one2one
+sbatch script/srun_one2one/train/2nd/kp20k-transformer-BS4096-Layer2-Heads4-Dim128-Emb128-Dropout0.1-Copytrue-Covtrue-Contextboth.sh
+sbatch script/srun_one2one/train/2nd/kp20k-transformer-BS4096-Layer4-Heads8-Dim128-Emb128-Dropout0.1-Copytrue-Covtrue-Contextboth.sh
+sbatch script/srun_one2one/train/2nd/kp20k-transformer-BS4096-Layer4-Heads8-Dim512-Emb512-Dropout0.1-Copytrue-Covtrue-Contextboth.sh
+sbatch script/srun_one2one/train/2nd/magkp-rnn-BS128-Layer1-Dim150-Emb100-Dropout0.0-Copytrue-Covtrue-Contboth-IF1.sh
+sbatch script/srun_one2one/train/2nd/magkp-rnn-BS128-Layer1-Dim150-Emb100-Dropout0.1-Copytrue-Covtrue-Contboth-IF1.sh
+
+sbatch script/srun_one2one/eval/kpeval_kp20k.sh
+
+# one2seq
+sbatch script/srun_one2seq/train/2nd/verbatim_append-rnn-kp20k-BS64-Layer1-Dim150-Emb100-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEfalse-Contboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-rnn-kp20k-BS64-Layer1-Dim512-Emb128-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEfalse-Contboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-rnn-magkp-BS64-Layer1-Dim150-Emb100-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEfalse-Contboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-rnn-magkp-BS64-Layer1-Dim512-Emb128-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEfalse-Contboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-kp20k-BS4096-Layer2-Heads4-Dim128-Emb128-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-kp20k-BS4096-Layer4-Heads8-Dim512-Emb512-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-kp20k-BS4096-Layer6-Heads8-Dim512-Emb512-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-magkp-BS4096-Layer2-Heads4-Dim128-Emb128-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-magkp-BS4096-Layer4-Heads8-Dim512-Emb512-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+sbatch script/srun_one2seq/train/2nd/verbatim_append-transformer-magkp-BS4096-Layer6-Heads8-Dim512-Emb512-Dropout0.1-Copytrue-Reusetrue-Covtrue-PEtrue-Contextboth-IF1.sh
+
+sbatch script/srun_one2seq/run_kpeval.sh

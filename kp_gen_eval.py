@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     # np.random.seed()
     wait_time = np.random.randint(opt.wait_time)
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d") # "%Y-%m-%d_%H:%M:%S"
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S") # "%Y-%m-%d_%H:%M:%S"
     logger = init_logger(opt.output_dir + '/autoeval_%s_%s.log'
                          % ('-'.join(opt.testsets), current_time))
     if not opt.onepass:
@@ -153,25 +153,28 @@ if __name__ == "__main__":
                         logger.exception('Error while validating or deleting pred file: %s' % pred_path)
 
                 if 'pred' in opt.tasks:
-                    if do_trans_flag or opt.ignore_existing:
-                        if translator is None:
-                            translator = build_translator(opt, report_score=opt.verbose, logger=logger)
-                        # create an empty file to indicate that the translator is working on it
-                        codecs.open(pred_path, 'w+', 'utf-8').close()
-                        # set output_file for each dataset (instead of outputting to opt.output)
-                        translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                        logger.info("Start translating [%s] for %s." % (dataname, ckpt_name))
-                        _, _ = translator.translate(
-                            src=src_shard,
-                            tgt=tgt_shard,
-                            src_dir=opt.src_dir,
-                            batch_size=opt.batch_size,
-                            attn_debug=opt.attn_debug,
-                            opt=opt
-                        )
-                        job_done = True
-                    else:
-                        logger.info("Skip translating [%s] for %s." % (dataname, ckpt_name))
+                    try:
+                        if do_trans_flag or opt.ignore_existing:
+                            if translator is None:
+                                translator = build_translator(opt, report_score=opt.verbose, logger=logger)
+                            # create an empty file to indicate that the translator is working on it
+                            codecs.open(pred_path, 'w+', 'utf-8').close()
+                            # set output_file for each dataset (instead of outputting to opt.output)
+                            translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                            logger.info("Start translating [%s] for %s." % (dataname, ckpt_name))
+                            _, _ = translator.translate(
+                                src=src_shard,
+                                tgt=tgt_shard,
+                                src_dir=opt.src_dir,
+                                batch_size=opt.batch_size,
+                                attn_debug=opt.attn_debug,
+                                opt=opt
+                            )
+                            job_done = True
+                        else:
+                            logger.info("Skip translating [%s] for %s." % (dataname, ckpt_name))
+                    except Exception as e:
+                        logger.exception('Error while translating')
 
                 # do evaluation
                 do_eval_flag = True
@@ -212,21 +215,24 @@ if __name__ == "__main__":
                         logger.exception('Error while validating or deleting eval file: %s' % score_path)
 
                 if 'eval' in opt.tasks:
-                    if do_eval_flag or opt.ignore_existing:
-                        logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
-                        score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
-                                                                pred_path=pred_path, logger=logger,
-                                                                verbose=opt.verbose,
-                                                                report_path=printout_path,
-                                                                eval_topbeam=opt.eval_topbeam
-                                                                )
-                        if score_dict is not None:
-                            score_dicts[dataname] = score_dict
-                            with open(score_path, 'w') as output_json:
-                                output_json.write(json.dumps(score_dict)+'\n')
-                        job_done = True
-                    else:
-                        logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
+                    try:
+                        if do_eval_flag or opt.ignore_existing:
+                            logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
+                            score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
+                                                                    pred_path=pred_path, logger=logger,
+                                                                    verbose=opt.verbose,
+                                                                    report_path=printout_path,
+                                                                    eval_topbeam=opt.eval_topbeam
+                                                                    )
+                            if score_dict is not None:
+                                score_dicts[dataname] = score_dict
+                                with open(score_path, 'w') as output_json:
+                                    output_json.write(json.dumps(score_dict)+'\n')
+                            job_done = True
+                        else:
+                            logger.info("Skip evaluating [%s] for %s." % (dataname, ckpt_name))
+                    except Exception as e:
+                        logger.exception('Error while evaluating')
 
                 # do generate summarized report
                 if 'report' in opt.tasks:

@@ -1,11 +1,11 @@
 model_type: keyphrase
-
-#data: data/keyphrase/meng17/kp20k
+data_format: jsonl
+data: data/keyphrase/meng17/kp20k
 #save_checkpoint_steps: 10000
 #keep_checkpoint: 20
 seed: 3435
 #train_steps: 100000
-valid_steps: 20000
+#valid_steps: 20000
 report_every: 100
 
 encoder_type: brnn
@@ -15,13 +15,15 @@ rnn_type: GRU
 #layers: 1
 
 optim: adam
-learning_rate: 0.05
+#learning_rate: 0.002
 adagrad_accumulator_init: 0.1
-max_grad_norm: 2
+max_grad_norm: 1
 
 #batch_size: 128
 #valid_batch_size: 128
 #dropout: 0.0
+batch_type: sents
+normalization: sents
 
 global_attention: mlp
 #copy_attn: 'true'

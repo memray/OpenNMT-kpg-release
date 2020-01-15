@@ -1,10 +1,9 @@
 model_type: keyphrase
-tgt_type: one2one
+tgt_type: random
 
 exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
-exp_dir: output/keyphrase/meng17-one2seq-local/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
-save_model: models/keyphrase/meng17-one2seq-local/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
-wandb_project: kp20k-one2seq-birnn
+exp_dir: output/meng17-one2seq-debug/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+wandb_project: kp20k-meng17-one2seq
 wandb: 'true'
 wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
 
@@ -32,10 +31,12 @@ max_grad_norm: 2
 batch_size: 128
 valid_batch_size: 128
 dropout: 0.0
+batch_type: sents
+normalization: sents
 
 global_attention: mlp
 
-tensorboard: 'true'
+tensorboard: 'false'
 log_file_level: DEBUG
 
 copy_attn: 'true'

@@ -368,6 +368,11 @@ def preprocess_opts(parser):
               help="Using grayscale image can training "
                    "model faster and smaller")
 
+    # Option most relevant to news
+    group.add('--data_format', '-data_format', default='jsonl',
+              choices=['srctgt', 'jsonl'],
+              help="""Format of input data""")
+
 
 def train_opts(parser):
     """ Training and saving options """
@@ -383,7 +388,7 @@ def train_opts(parser):
               default=[1], help="""Weights of different corpora,
               should follow the same order as in -data_ids.""")
 
-    group.add('--save_model', '-save_model', default='model',
+    group.add('--save_model', '-save_model', default=None,
               help="Model filename (the model will be saved as "
                    "<save_model>_N.pt where N is the number "
                    "of steps")
