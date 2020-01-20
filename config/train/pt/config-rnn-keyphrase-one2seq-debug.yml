@@ -61,7 +61,7 @@ tgt_enc: 'rnn'
 detach_tgt_enc: 'true'
 
 world_size: 1
-gpu_ranks: []
-#- 0
+gpu_ranks: #[]
+  - 0
 #- 1
 master_port: 5000

@@ -11,7 +11,6 @@ import os
 import datetime
 import time
 import numpy as np
-import pandas as pd
 
 import kp_evaluate
 from onmt.utils import split_corpus

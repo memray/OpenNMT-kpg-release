@@ -7,13 +7,14 @@ import torch
 import onmt.opts as opts
 import onmt.utils.distributed
 from onmt import train_single
+from onmt.inputters.news_dataset import load_pretrained_tokenizer
 
 from onmt.utils.misc import set_random_seed
 from onmt.utils.logging import init_logger, logger
 from onmt.train_single import main as single_main
 from onmt.utils.parse import ArgumentParser
 from onmt.inputters.inputter import build_dataset_iter, \
-    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt
+    load_old_vocab, old_style_vocab, build_dataset_iter_multiple, make_tgt, reload_news_fields, reload_keyphrase_fields
 
 from itertools import cycle
 from torchtext.data import Field, RawField
@@ -58,21 +59,20 @@ def train(opt):
     elif opt.vocab and opt.vocab != 'none':
         # added by @memray for multiple datasets
         vocab = torch.load(opt.vocab)
+        # check for code where vocab is saved instead of fields
+        # (in the future this will be done in a smarter way)
+        if old_style_vocab(vocab):
+            vocab = load_old_vocab(
+                vocab, opt.model_type, dynamic_dict=opt.copy_attn)
     elif opt.encoder_type == 'pretrained':
         vocab = None
     else:
         vocab = None
 
-    # check for code where vocab is saved instead of fields
-    # (in the future this will be done in a smarter way)
-    if old_style_vocab(vocab):
-        fields = load_old_vocab(
-            vocab, opt.model_type, dynamic_dict=opt.copy_attn)
-    else:
-        fields = vocab
+    fields = vocab
 
     # @memray: a temporary workaround, as well as train_single.py line 78
-    if opt.model_type == "keyphrase":
+    if fields and opt.data_type == "keyphrase":
         if opt.tgt_type in ["one2one", "multiple"]:
             if 'sep_indices' in fields:
                 del fields['sep_indices']
@@ -83,17 +83,29 @@ def train(opt):
                     postprocessing=make_tgt, sequential=False)
                 fields["sep_indices"] = sep_indices
 
+    # @memray reload fields for news dataset and pretrained models
+    tokenizer = None
+    if opt.pretrained_tokenizer is not None:
+        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer, opt.cache_dir, opt.special_vocab_path)
+        setattr(opt, 'vocab_size', len(tokenizer))
+    if opt.data_type == 'news':
+        fields = reload_news_fields(opt, tokenizer=tokenizer)
+    # elif opt.data_type == 'keyphrase':
+    #     fields = reload_keyphrase_fields(opt, tokenizer=tokenizer)
+
     if len(opt.data_ids) > 1:
-        train_shards = []
-        for train_id in opt.data_ids:
-            shard_base = "train_" + train_id
-            train_shards.append(shard_base)
-        train_iter = build_dataset_iter_multiple(train_shards, fields, opt)
-    else:
-        if opt.data_ids[0] is not None:
-            shard_base = "train_" + opt.data_ids[0]
-        else:
+        # added by @memray, for loading multiple datasets
+        if opt.multi_dataset:
             shard_base = "train"
+            train_iter = build_dataset_iter(shard_base, fields, opt)
+        else:
+            train_shards = []
+            for train_id in opt.data_ids:
+                shard_base = "train_" + train_id
+                train_shards.append(shard_base)
+            train_iter = build_dataset_iter_multiple(train_shards, fields, opt)
+    else:
+        shard_base = "train"
         train_iter = build_dataset_iter(shard_base, fields, opt)
 
     nb_gpu = len(opt.gpu_ranks)

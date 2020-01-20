@@ -368,11 +368,6 @@ def preprocess_opts(parser):
               help="Using grayscale image can training "
                    "model faster and smaller")
 
-    # Option most relevant to news
-    group.add('--data_format', '-data_format', default='jsonl',
-              choices=['srctgt', 'jsonl'],
-              help="""Format of input data""")
-
 
 def train_opts(parser):
     """ Training and saving options """
@@ -381,6 +376,10 @@ def train_opts(parser):
     group.add('--data', '-data', required=True,
               help='Path prefix to the ".train.pt" and '
                    '".valid.pt" file path from preprocess.py')
+    # Option most relevant to kp/news
+    group.add('--data_format', '-data_format', default='jsonl',
+              choices=['pt', 'jsonl'],
+              help="""Format of input data, specifying loading data from .pt (OpenNMT default) or .jsonl (@memray added)""")
 
     group.add('--data_ids', '-data_ids', nargs='+', default=[None],
               help="In case there are several corpora.")

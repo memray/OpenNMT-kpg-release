@@ -22,6 +22,8 @@ def _check_save_model_path(opt):
     if not hasattr(opt, 'save_model') or opt.save_model is None:
         if hasattr(opt, 'exp_dir'):
             setattr(opt, 'save_model', opt.exp_dir+'/models/model')
+        else:
+            raise Exception('Neither exp_dir nor save_model is not given!')
 
     save_model_path = os.path.abspath(opt.save_model)
     model_dirname = os.path.dirname(save_model_path)
@@ -33,6 +35,7 @@ def _check_save_model_path(opt):
             setattr(opt, 'log_file', opt.exp_dir+'/train.log')
         else:
             logger.warn("opt.log_file is not set")
+
     if not hasattr(opt, 'tensorboard_log_dir') or opt.tensorboard_log_dir is None:
         if hasattr(opt, 'exp_dir'):
             setattr(opt, 'tensorboard_log_dir', opt.exp_dir+'/logs/tfevents/')
