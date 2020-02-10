@@ -11,7 +11,6 @@
 #SBATCH --qos=long
 
 
-
 # Run the job
 if (($# == 0)); then
   echo -e "Please pass argumensts -a <task1> <task2> ... -c <ckpt_dir> -o <output_dir> -g <gpu_id> -b <batch_size> -s <beam_size> -l <max_length> -t full/topbeam -e -p -d <dataset1> <dataset2>..."

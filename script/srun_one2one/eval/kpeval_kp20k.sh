@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #SBATCH --cluster=smp
-#SBATCH --partition=smp
+#SBATCH --partition=high-mem
 #SBATCH --job-name=eval_kp_one2one_kp20k
 #SBATCH --output=slurm_output/eval_kp_one2one_kp20k.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=64GB
-#SBATCH --time=6-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --mem=32GB
+#SBATCH --time=4-00:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 # Run the job

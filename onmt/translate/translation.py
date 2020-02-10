@@ -244,9 +244,13 @@ class Translation(object):
             if slot == "dup_pred_tuples":
                 for tid, t in enumerate(ret["dup_pred_tuples"]):
                     if torch.cuda.is_available():
-                        nt = (t[0].cpu().numpy().tolist(), t[1], t[2].cpu().item())
+                        nt = (t[0].cpu().numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
+                              t[1],
+                              t[2].cpu().item() if isinstance(t[2], torch.Tensor) else t[2])
                     else:
-                        nt = (t[0].numpy().tolist(), t[1], t[2].item())
+                        nt = (t[0].numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
+                              t[1],
+                              t[2].item() if isinstance(t[2], torch.Tensor) else t[2])
                     ret["dup_pred_tuples"][tid] = nt
 
         return ret

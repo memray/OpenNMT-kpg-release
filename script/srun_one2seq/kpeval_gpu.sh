@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gtx1080
 #SBATCH --partition=titanx
-#SBATCH --job-name=eval_kp_one2seq
-#SBATCH --output=slurm_output/eval_kp_one2seq.out
+#SBATCH --partition=gtx1080
+#SBATCH --constraint=ti
+#SBATCH --job-name=eval_kp_one2seq_gpu
+#SBATCH --output=slurm_output/eval_kp_one2seq_gpu.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=32GB
-#SBATCH --time=6-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --time=3-00:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 # Run the job
@@ -89,7 +90,7 @@ while getopts ":a:c:o:g:b:s:l:t:e:p:d:" opt; do
   esac
 done
 
-cmd="python kp_gen_eval.py -config config/test/config-test-keyphrase-one2seq.yml -tasks $task_args -data_dir data/keyphrase/meng17/ -ckpt_dir $ckpt_dir -output_dir $output_dir -gpu $gpu_id -batch_size $batch_size -beam_size $beam_size -max_length $max_length -beam_terminate $beam_terminate -testsets $dataset_args"
+cmd="python kp_gen_eval.py -config config/test/config-test-keyphrase-one2seq.yml -tasks $task_args -data_dir data/keyphrase/meng17/ -ckpt_dir $ckpt_dir -output_dir $output_dir -gpu 0 -batch_size $batch_size -beam_size $beam_size -max_length $max_length -beam_terminate $beam_terminate -testsets $dataset_args"
 
 if [ "$eval_topbeam" = true ]; then
   cmd="${cmd} --eval_topbeam"

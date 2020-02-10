@@ -1,0 +1,36 @@
+# one2one
+sbatch script/srun_one2one/eval/kpeval_kp20k.sh
+
+# one2one-v2
+sbatch script/srun_one2one/eval_v2/kpeval_duc.sh
+sbatch script/srun_one2one/eval_v2/kpeval_inspec.sh
+sbatch script/srun_one2one/eval_v2/kpeval_kp20k.sh
+sbatch script/srun_one2one/eval_v2/kpeval_kp20k_valid2k.sh
+sbatch script/srun_one2one/eval_v2/kpeval_krapivin.sh
+sbatch script/srun_one2one/eval_v2/kpeval_nus.sh
+sbatch script/srun_one2one/eval_v2/kpeval_semeval.sh
+
+# one2seq
+source script/srun_one2seq/run_kpeval_v2.sh
+source script/srun_one2seq/run_kpeval_gpu.sh
+
+
+DATASET: duc inspec semeval krapivin nus  kp20k kp20k_valid2k
+
+
+# clean bad outputs (due to out of space, jobs failed to write into disk)
+# V1 one2one (222 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/meng17-one2one-kp20k-topmodels/ -output_dir  output/keyphrase/meng17-one2one/meng17-one2one-kp20k-topmodels/ -testsets kp20k -tasks clean
+# V2 one2one (90 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -output_dir output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -testsets kp20k kp20k_valid2k -tasks clean
+
+
+# V1 one2seq (580 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam10-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam25-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+
+# V2 one2seq (200 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam10-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam25-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
