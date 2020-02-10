@@ -1,0 +1,44 @@
+data: data/summarization/cnndm/cnndm
+save_model: models/cnndm
+save_checkpoint_steps: 10000
+keep_checkpoint: 10
+seed: 3435
+
+encoder_type: transformer
+decoder_type: transformer
+word_vec_size: 512
+rnn_size: 512
+layers: 4
+
+position_encoding: true
+
+optim: adam
+learning_rate: 2
+param_init: 0
+warmup_steps: 8000
+decay_method: noam
+label_smoothing: 0.1
+adam_beta2: 0.998
+
+#batch_size: 4096
+batch_size: 256
+batch_type: tokens
+normalization: tokens
+max_generator_batches: 2
+valid_batch_size: 16
+accum_count: 4
+
+train_steps: 200000
+valid_steps: 10000
+report_every: 100
+
+dropout: 0.2
+
+share_embeddings: 'true'
+copy_attn: 'true'
+param_init_glorot: 'true'
+
+world_size: 2
+gpu_ranks:
+- 0
+- 1

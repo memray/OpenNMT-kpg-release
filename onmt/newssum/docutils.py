@@ -18,6 +18,7 @@ import onmt.newssum.rouge_eval.rouge as rouge
 metric_keys = ["rouge-1", "rouge-2", "rouge-l", "entity_cov"]
 
 import nltk
+nltk.download('stopwords')
 nltk.data.path.append('/export/share/rmeng/tools/nltk')
 stemmer = nltk.stem.porter.PorterStemmer()
 stopword_set = set(nltk.corpus.stopwords.words('english'))
