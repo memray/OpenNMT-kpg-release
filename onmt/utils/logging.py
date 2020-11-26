@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 import os
 logger = logging.getLogger()
@@ -12,9 +13,10 @@ def init_logger(log_file=None, log_file_level=logging.NOTSET):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(log_format)
-    logger.handlers = [console_handler]
+    console_handler.setLevel(logging.DEBUG)
+    logger.addHandler(console_handler)
 
     if log_file and log_file != '':
         log_dir = os.path.dirname(log_file)

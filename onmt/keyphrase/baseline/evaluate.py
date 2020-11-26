@@ -5,7 +5,7 @@ Python File Template
 import json
 import os
 
-from kp_evaluate import init_opt, keyphrase_eval, kp_results_to_str, export_summary_to_csv
+from kp_evaluate import init_opt, keyphrase_eval, kp_results_to_str, gather_eval_results
 from onmt.utils.logging import init_logger
 
 __author__ = "Rui Meng"
@@ -51,7 +51,7 @@ if __name__ == '__main__':
             else:
                 logger.error("Skip evaluating as previous eval result exists")
 
-        export_summary_to_csv(json_root_dir=os.path.join(opt.output_dir),
-                              report_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+        gather_eval_results(eval_root_dir=os.path.join(opt.output_dir),
+                            report_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
 
         logger.info("Done!")

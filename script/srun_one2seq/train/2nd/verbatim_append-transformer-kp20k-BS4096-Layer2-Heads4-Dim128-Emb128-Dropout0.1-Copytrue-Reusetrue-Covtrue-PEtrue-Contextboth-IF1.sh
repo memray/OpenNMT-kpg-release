@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=64GB
+#SBATCH --mem=24GB
 #SBATCH --time=6-00:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
@@ -31,7 +31,7 @@ export EMBED=128
 export HIDDEN=128
 export BatchSize=4096
 export ValidBatchSize=64
-export TrainSteps=100000
+export TrainSteps=200000
 export CheckpointSteps=10000
 
 #export LearningRate="2.0"
@@ -49,7 +49,7 @@ export CopyLossBySeqLength=false
 export ContextGate="both"
 export InputFeed=1
 
-export EXP_NAME="$DATA_NAME-$TOKEN_NAME-$TARGET_TYPE-transformer-BS$BatchSize-LR$LearningRate-L$LAYER-H$HEADS-Dim$HIDDEN-Emb$EMBED-Dropout$Dropout-Copy$Copy"
+export EXP_NAME="$DATA_NAME-$TOKEN_NAME-$TARGET_TYPE-transformer-BS$BatchSize-LR$LearningRate-L$LAYER-H$HEADS-Dim$HIDDEN-Emb$EMBED-Dropout$Dropout-Copy$Copy-Cov$Cov"
 
 export PATHON_PATH="/ihome/pbrusilovsky/rum20/.conda/envs/py36/bin/"
 export ROOT_PATH="/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg"

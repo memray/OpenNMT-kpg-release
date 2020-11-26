@@ -44,6 +44,20 @@ def train(opt):
             if step > latest_step:
                 latest_ckpt = os.path.join(subdir, filename)
                 latest_step = step
+    # if not saved in the exp folder, check opt.save_model
+    if latest_ckpt is None and opt.save_model is not None:
+        save_model_dir = os.path.dirname(os.path.abspath(opt.save_model))
+        model_prefix = opt.save_model[opt.save_model.rfind(os.path.sep) + 1: ]
+        for subdir, dirs, filenames in os.walk(save_model_dir):
+            for filename in sorted(filenames):
+                if not filename.endswith('.pt'):
+                    continue
+                if not filename.startswith(model_prefix):
+                    continue
+                step = int(filename[filename.rfind('_') + 1: filename.rfind('.pt')])
+                if step > latest_step:
+                    latest_ckpt = os.path.join(subdir, filename)
+                    latest_step = step
     if latest_ckpt is not None:
         logger.info("A previous checkpoint is found, train from it: %s" % latest_ckpt)
         setattr(opt, 'train_from', latest_ckpt)
@@ -82,6 +96,9 @@ def train(opt):
                     use_vocab=False, dtype=torch.long,
                     postprocessing=make_tgt, sequential=False)
                 fields["sep_indices"] = sep_indices
+        if 'src_ex_vocab' not in fields:
+            src_ex_vocab = RawField()
+            fields["src_ex_vocab"] = src_ex_vocab
 
     # @memray reload fields for news dataset and pretrained models
     tokenizer = None
@@ -97,7 +114,7 @@ def train(opt):
         # added by @memray, for loading multiple datasets
         if opt.multi_dataset:
             shard_base = "train"
-            train_iter = build_dataset_iter(shard_base, fields, opt)
+            train_iter = build_dataset_iter(shard_base, fields, opt, multi=True)
         else:
             train_shards = []
             for train_id in opt.data_ids:

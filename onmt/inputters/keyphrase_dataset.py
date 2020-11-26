@@ -188,7 +188,7 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
     src = src[0]
     tgt_seqs = [tgt[0] for tgt in tgt_seqs]
 
-    if sort_by == 'no_sort':
+    if sort_by.startswith('no_sort'):
         sorted_id = list(range(len(tgt_seqs)))
     elif sort_by == 'random':
         sorted_id = np.random.permutation(num_tgt)
@@ -211,12 +211,15 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
         else:
             sorted_id = present_tgt_idx
 
-    elif sort_by == 'alphabetical':
+    elif sort_by.startswith('alphabetical'):
         sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:'_'.join(x[1]))
         sorted_id = [t[0] for t in sorted_tgts]
-    elif sort_by == 'length':
+    elif sort_by.startswith('length'):
         sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:len(x[1]))
         sorted_id = [t[0] for t in sorted_tgts]
+
+    if sort_by.endswith('reverse'):
+        sorted_id = sorted_id[::-1]
 
     return np.asarray(sorted_id, dtype=int)
 
@@ -255,7 +258,12 @@ def process_multiple_tgts(big_batch, tgt_type):
 
             ex.tgt = tgt
             ex.alignment = alignment
-        elif tgt_type in ['no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length']:
+        elif tgt_type in [
+            'random',
+            'no_sort', 'no_sort_reverse',
+            'alphabetical', 'alphabetical_reverse',
+            'length', 'length_reverse',
+            'verbatim_append', 'verbatim_prepend']:
             # generate one2seq training data points
             order = obtain_sorted_indices(ex.src, ex.tgt, sort_by=tgt_type)
             tgt = [ex.tgt[idx] for idx in order]
@@ -351,21 +359,9 @@ def max_tok_len(new, count, sofar):
 
 def copyseq_tokenize(text):
     '''
-    The tokenizer used in Meng et al. ACL 2017
-    parse the feed-in text, filtering and tokenization
-    keep [_<>,\(\)\.\'%], replace digits to <digit>, split by [^a-zA-Z0-9_<>,\(\)\.\'%]
-    :param text:
-    :return: a list of tokens
+    moved to onmt.keyphrase.utils.meng17_tokenize()
     '''
-    # remove line breakers
-    text = re.sub(r'[\r\n\t]', ' ', text)
-    # pad spaces to the left and right of special punctuations
-    text = re.sub(r'[_<>,\(\)\.\'%]', ' \g<0> ', text)
-    # tokenize by non-letters (new-added + # & *, but don't pad spaces, to make them as one whole word)
-    tokens = list(filter(lambda w: len(w) > 0, re.split(r'[^a-zA-Z0-9_<>,#&\+\*\(\)\.\'%]', text)))
-
-    return tokens
-
+    pass
 
 # mix this with partial
 def _feature_tokenize(
@@ -389,7 +385,7 @@ def _feature_tokenize(
         string = string.lower()
 
     # @memray 20190308 to make tokenized results same between src/tgt, changed here back to a simple splitter (whitespace)
-    # move complicated tokenization into pre-preprocess
+    # move complicated tokenization into pre-preprocess in kp_data_converter.py
     tokens = string.split(tok_delim)
     # tokens = copyseq_tokenize(string)
     if truncate is not None:

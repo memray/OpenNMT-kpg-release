@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
+#SBATCH --account=hdaqing
+
+#SBATCH --partition=scavenger
 #SBATCH --partition=titanx
 #SBATCH --partition=gtx1080
-#SBATCH --constraint=ti
+
 #SBATCH --job-name=eval_kp_one2seq_gpu
 #SBATCH --output=slurm_output/eval_kp_one2seq_gpu.out
 #SBATCH --nodes=1

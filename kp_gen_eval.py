@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser.add_argument('-testsets', nargs='+', type=str, default=["nus", "semeval"], help='Specify datasets to test on')
     # parser.add_argument('-testsets', nargs='+', type=str, default=["kp20k", "duc", "inspec", "krapivin", "nus", "semeval"], help='Specify datasets to test on')
     parser.add_argument('--onepass', '-onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop scanning new available ckpts.')
-    parser.add_argument('--wait_patience', '-wait_patience', type=int, default=6, help='Terminates evaluation after scan this number of times.')
+    parser.add_argument('--wait_patience', '-wait_patience', type=int, default=1, help='Terminates evaluation after scan this number of times.')
     parser.add_argument('--wait_time', '-wait_time', type=int, default=120, help='.')
     parser.add_argument('--sleep_time', '-sleep_time', type=int, default=600, help='.')
     parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     if not os.path.exists(os.path.join(opt.output_dir, 'pred')):
         os.makedirs(os.path.join(opt.output_dir, 'pred'))
 
-    shutil.copy2(opt.config, opt.output_dir)
+    # shutil.copy2(opt.config, opt.output_dir)
     logger.info(opt)
 
     testset_path_dict = {}
@@ -94,6 +94,8 @@ if __name__ == "__main__":
                                       src_shard, tgt_shard)
 
     current_patience = opt.wait_patience
+    pred_linecount_dict = {}
+    eval_linecount_dict = {}
     while True:
         new_ckpts = scan_new_checkpoints(opt.ckpt_dir)
         new_ckpts_items = sorted(new_ckpts.items(), key=lambda x:int(x[0][x[0].rfind('step_')+5:]))
@@ -119,37 +121,46 @@ if __name__ == "__main__":
 
                 pred_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.pred' % dataname)
                 printout_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
-                eval_path = os.path.join(opt.output_dir, 'eval', 'selfterminating' if opt.eval_topbeam else 'exhaustive')
-                score_path = os.path.join(eval_path, ckpt_name+'-%s.json' % dataname)
-                report_csv_path = os.path.join(eval_path, '%s_summary_%s.csv' % (current_time, '%s'))
+                eval_dir = os.path.join(opt.output_dir, 'eval')
+                eval_path = os.path.join(eval_dir, ckpt_name + '-%s-%s.json'
+                                         % (dataname, 'selfterminating' if opt.eval_topbeam else 'exhaustive'))
+                report_path = os.path.join(eval_dir, '%s_summary_%s.csv' % (current_time, '%s'))
 
                 # create dirs
                 if not os.path.exists(os.path.join(opt.output_dir, 'pred', ckpt_name)):
                     os.makedirs(os.path.join(opt.output_dir, 'pred', ckpt_name))
-                if not os.path.exists(eval_path):
-                    os.makedirs(eval_path)
+                if not os.path.exists(eval_dir):
+                    os.makedirs(eval_dir)
 
                 # do translation
                 # skip translation for this dataset if previous pred exists
                 do_trans_flag = True
                 if os.path.exists(pred_path):
-                    try:
-                        lines = open(pred_path, 'r').readlines()
-                        # count is same means it's done
-                        if len(lines) == len(src_shard):
-                            do_trans_flag = False
-                            logger.info("Skip translating because previous pred is complete.")
-                        else:
-                            # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
-                            elapsed_time = time.time() - os.stat(pred_path).st_mtime
-                            if elapsed_time < opt.test_interval:
+                    elapsed_time = time.time() - os.stat(pred_path).st_mtime
+                    if pred_path in pred_linecount_dict and pred_linecount_dict[pred_path] == len(src_shard):
+                        # if it's already in pred_linecount_dict, means it's done and counted
+                        do_trans_flag = False
+                    elif elapsed_time < opt.test_interval:
+                        do_trans_flag = False
+                        logger.info("Skip translating because previous PRED file was generated only %d sec ago (<%d sec)." % (elapsed_time, opt.test_interval))
+                    else:
+                        # count line numbers of long-done files to check if this is a done pred
+                        try:
+                            pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
+                            # count is same means it's done
+                            if pred_linecount_dict[pred_path] == len(src_shard):
                                 do_trans_flag = False
-                                logger.info("Skip translating because previous pred file was generated only %d sec ago (<%d sec)." % (elapsed_time, opt.test_interval))
+                                logger.info("Skip translating because previous PRED is complete.")
                             else:
-                                os.remove(pred_path)
-                                logger.info('Removed a bad pred file, #(line)=%d, #(elapsed_time)=%ds: %s' % (len(lines), int(elapsed_time), pred_path))
-                    except Exception as e:
-                        logger.exception('Error while validating or deleting pred file: %s' % pred_path)
+                                # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
+                                if elapsed_time < opt.test_interval:
+                                    do_trans_flag = False
+                                else:
+                                    os.remove(pred_path)
+                                    logger.info('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds: %s'
+                                                % (pred_linecount_dict[pred_path], int(elapsed_time), pred_path))
+                        except Exception as e:
+                            logger.exception('Error while validating or deleting PRED file: %s' % pred_path)
 
                 if 'pred' in opt.tasks:
                     try:
@@ -161,6 +172,7 @@ if __name__ == "__main__":
                             # set output_file for each dataset (instead of outputting to opt.output)
                             translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
                             logger.info("Start translating [%s] for %s." % (dataname, ckpt_name))
+                            logger.info("\t exporting PRED result to %s." % (pred_path))
                             _, _ = translator.translate(
                                 src=src_shard,
                                 tgt=tgt_shard,
@@ -179,44 +191,51 @@ if __name__ == "__main__":
                 do_eval_flag = True
                 if not os.path.exists(pred_path):
                     do_eval_flag = False
-                    logger.info("Skip evaluating because no available pred file.")
+                    # logger.info("Skip evaluating because no available pred file.")
                 else:
                     try:
-                        lines = open(pred_path, 'r').readlines()
-                        num_pred = len(lines)
+                        if not pred_path in pred_linecount_dict:
+                            pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
+                        num_pred = pred_linecount_dict[pred_path]
                         if num_pred != len(src_shard):
                             do_eval_flag = False
-                            logger.info("Skip evaluating because current pred file is not complete, #(line)=%d." % (num_pred))
+                            logger.info("Skip evaluating because current PRED file is not complete, #(line)=%d." % (num_pred))
                             elapsed_time = time.time() - os.stat(pred_path).st_mtime
                             if elapsed_time > opt.test_interval:
                                 os.remove(pred_path)
-                                logger.warn('Removed a bad pred file, #(line)=%d, #(elapsed_time)=%ds: %s' % (len(lines), int(elapsed_time), pred_path))
+                                logger.warn('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds: %s' % (num_pred, int(elapsed_time), pred_path))
                         else:
                             # if pred is good, check if re-eval is necessary
-                            if os.path.exists(score_path):
-                                score_dict = json.load(open(score_path, 'r'))
-                                num_eval = 0
-                                if 'present_exact_correct@5' in score_dict:
-                                    num_eval = len(score_dict['present_exact_correct@5'])
-                                if num_eval == len(src_shard):
+                            if os.path.exists(eval_path):
+                                elapsed_time = time.time() - os.stat(eval_path).st_mtime
+                                if eval_path in eval_linecount_dict and eval_linecount_dict[eval_path] == len(src_shard):
                                     do_eval_flag = False
-                                    logger.info("Skip evaluating because existing eval file is complete.")
+                                elif elapsed_time < opt.test_interval:
+                                    # if file is modified less than opt.test_interval min, it might be being processed by another job.
+                                    do_eval_flag = False
+                                    logger.info("Skip evaluating because previous EVAL file was generated only %d sec ago (<%d sec)." % (elapsed_time, opt.test_interval))
                                 else:
-                                    # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
-                                    elapsed_time = time.time() - os.stat(score_path).st_mtime
-                                    if elapsed_time < opt.test_interval:
-                                        do_eval_flag = False
-                                        logger.info("Skip evaluating because previous eval file was generated only %d sec ago (<%d sec)." % (elapsed_time, opt.test_interval))
+                                    score_dict = json.load(open(eval_path, 'r'))
+                                    if 'present_exact_correct@5' in score_dict:
+                                        num_eval = len(score_dict['present_exact_correct@5'])
                                     else:
-                                        os.remove(score_path)
-                                        logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds: %s' % (num_pred, num_eval, int(elapsed_time), score_path))
+                                        num_eval = 0
+                                    eval_linecount_dict[eval_path] = num_eval
+                                    if num_eval == len(src_shard):
+                                        do_eval_flag = False
+                                        logger.info("Skip evaluating because existing eval file is complete.")
+                                    else:
+                                        # it's a bad result and delete it
+                                        os.remove(eval_path)
+                                        logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds: %s' % (num_pred, num_eval, int(elapsed_time), eval_path))
                     except Exception as e:
-                        logger.exception('Error while validating or deleting eval file: %s' % score_path)
+                        logger.exception('Error while validating or deleting EVAL file: %s' % eval_path)
 
                 if 'eval' in opt.tasks:
                     try:
                         if do_eval_flag or opt.ignore_existing:
                             logger.info("Start evaluating [%s] for %s" % (dataname, ckpt_name))
+                            logger.info("\t will export eval result to %s." % (eval_path))
                             score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
                                                                     pred_path=pred_path, logger=logger,
                                                                     verbose=opt.verbose,
@@ -225,7 +244,7 @@ if __name__ == "__main__":
                                                                     )
                             if score_dict is not None:
                                 score_dicts[dataname] = score_dict
-                                with open(score_path, 'w') as output_json:
+                                with open(eval_path, 'w') as output_json:
                                     output_json.write(json.dumps(score_dict)+'\n')
                             job_done = True
                         else:
@@ -235,7 +254,7 @@ if __name__ == "__main__":
 
                 # do generate summarized report
                 if 'report' in opt.tasks:
-                    kp_evaluate.export_summary_to_csv(json_root_dir=eval_path, report_csv_path=report_csv_path)
+                    kp_evaluate.gather_eval_results(eval_root_dir=eval_dir, report_csv_path=report_path)
 
         if job_done: # reset current_patience if no real job is done in the current iteration
             current_patience = opt.wait_patience
@@ -245,12 +264,11 @@ if __name__ == "__main__":
         if opt.onepass:
             break
 
-        if current_patience == 0:
+        if current_patience <= 0:
             break
         else:
-            # scan again for every 5min
+            # scan again for every 10min
             sleep_time = opt.sleep_time
-            logger.info('Sleep for %d sec' % sleep_time)
+            logger.info('Sleep for %d sec, current_patience=%d' % (sleep_time, current_patience))
+            logger.info('*' * 50)
             time.sleep(sleep_time)
-
-

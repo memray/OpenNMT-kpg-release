@@ -386,6 +386,8 @@ def train_opts(parser):
     group.add('--data_weights', '-data_weights', type=int, nargs='+',
               default=[1], help="""Weights of different corpora,
               should follow the same order as in -data_ids.""")
+    group.add('--valid_data_ids', '-valid_data_ids', nargs='+', default=[None],
+              help="In case there are several corpora.")
 
     group.add('--save_model', '-save_model', default=None,
               help="Model filename (the model will be saved as "
@@ -592,7 +594,7 @@ def train_opts(parser):
               help="Decay every decay_steps")
 
     group.add('--decay_method', '-decay_method', type=str, default="none",
-              choices=['noam', 'noam_simple', 'noamwd', 'rsqrt', 'none'],
+              choices=['noam', 'noam_simple', 'noamwd', 'rsqrt', 'none', 'linear'],
               help="Use a custom decay rate.")
     group.add('--warmup_steps', '-warmup_steps', type=int, default=4000,
               help="Number of warmup steps for custom decay.")
@@ -628,6 +630,10 @@ def train_opts(parser):
               help="wandb project name.")
     group.add('--wandb_key', '-wandb_key',
               type=str, help="Use wandb.")
+    group.add("--wandb_log_dir", "-wandb_log_dir",
+              type=str, default=None,
+              help="Log directory for Wandb. "
+                   "This is also the name of the run.")
 
     group = parser.add_argument_group('Speech')
     # Options most relevant to speech
@@ -644,7 +650,11 @@ def train_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'no_sort', 'random', 'verbatim_append', 'verbatim_prepend', 'alphabetical', 'length', 'multiple'],
+              choices=['one2one', 'multiple', 'random',
+                       'no_sort', 'no_sort_reverse',
+                       'alphabetical', 'alphabetical_reverse',
+                       'length', 'length_reverse',
+                       'verbatim_append', 'verbatim_prepend'],
               help="""Format of targets for model to learn/output, 'multiple' is used during test phase""")
 
 def translate_opts(parser):

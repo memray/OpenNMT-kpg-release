@@ -124,7 +124,11 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
                     use_vocab=False, dtype=torch.long,
                     postprocessing=make_tgt, sequential=False)
                 fields["sep_indices"] = sep_indices
+        if 'src_ex_vocab' not in fields:
+            src_ex_vocab = RawField()
+            fields["src_ex_vocab"] = src_ex_vocab
 
+    tokenizer = None
     if opt.pretrained_tokenizer:
         tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer, opt.cache_dir, opt.special_vocab_path)
         setattr(opt, 'vocab_size', len(tokenizer))
@@ -161,16 +165,18 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     if batch_queue is None:
         if len(opt.data_ids) > 1:
-            train_shards = []
-            for train_id in opt.data_ids:
-                shard_base = "train_" + train_id
-                train_shards.append(shard_base)
-            train_iter = build_dataset_iter_multiple(train_shards, fields, opt)
-        else:
-            if opt.data_ids[0] is not None:
-                shard_base = "train_" + opt.data_ids[0]
-            else:
+            # added by @memray, for loading multiple datasets
+            if opt.multi_dataset:
                 shard_base = "train"
+                train_iter = build_dataset_iter(shard_base, fields, opt, tokenizer=tokenizer)
+            else:
+                train_shards = []
+                for train_id in opt.data_ids:
+                    shard_base = "train_" + train_id
+                    train_shards.append(shard_base)
+                train_iter = build_dataset_iter_multiple(train_shards, fields, opt, tokenizer=tokenizer)
+        else:
+            shard_base = "train"
             train_iter = build_dataset_iter(shard_base, fields, opt)
 
     else:

@@ -138,7 +138,7 @@ class ReportMgr(ReportMgrBase):
                                    step)
 
         if self.report_wandb:
-            wandb.log(step=step, row=report_stats.to_dict(learning_rate))
+            wandb.log(report_stats.to_dict(learning_rate), step=step)
 
         report_stats = onmt.utils.Statistics()
 
@@ -158,7 +158,7 @@ class ReportMgr(ReportMgrBase):
                                        step)
 
             if self.report_wandb:
-                wandb.log(step=step, row=train_stats.to_dict(learning_rate=lr, prefix='train_'))
+                wandb.log(train_stats.to_dict(learning_rate=lr, prefix='train_'), step=step)
 
         if valid_stats is not None:
             self.log('Validation perplexity: %g' % valid_stats.ppl())
@@ -170,5 +170,5 @@ class ReportMgr(ReportMgrBase):
                                        step)
 
             if self.report_wandb:
-                wandb.log(step=step, row=valid_stats.to_dict(learning_rate=None, prefix='valid_'))
+                wandb.log(valid_stats.to_dict(learning_rate=None, prefix='valid_'), step=step)
 

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import copy
+import numpy as np
 import glob
 import os
 import codecs
@@ -1066,7 +1068,9 @@ class DatasetLazyIter(object):
 
     def __init__(self, dataset_paths, fields, batch_size, batch_size_fn,
                  batch_size_multiple, device, is_train, pool_factor,
-                 repeat=True, num_batches_multiple=1, yield_raw_example=False, opt=None):
+                 repeat=True, num_batches_multiple=1, yield_raw_example=False,
+                 fp16=False, shuffle_shards=False, seed=3456, tokenizer=None,
+                 opt=None):
         self._paths = dataset_paths
         self.fields = fields
         self.batch_size = batch_size
@@ -1078,7 +1082,14 @@ class DatasetLazyIter(object):
         self.num_batches_multiple = num_batches_multiple
         self.yield_raw_example = yield_raw_example
         self.pool_factor = pool_factor
+        self.fp16 = fp16
+        self.shuffle_shards = shuffle_shards
+        self.seed = seed
         self.opt = opt
+        self.tokenizer = tokenizer
+
+        np.random.seed(seed)
+
 
     def _iter_dataset(self, path):
         logger.info('Loading dataset from %s' % path)
@@ -1088,7 +1099,7 @@ class DatasetLazyIter(object):
         # added by @memray, as Dataset is only instantiated here, having to use this plugin setter
         if isinstance(cur_dataset, KeyphraseDataset):
             cur_dataset.load_config(self.opt)
-
+        # override existing fields since in early versions src_ex_vocab might be missing
         cur_dataset.fields = self.fields
         cur_iter = OrderedIterator(
             dataset=cur_dataset,
@@ -1117,7 +1128,11 @@ class DatasetLazyIter(object):
 
     def __iter__(self):
         num_batches = 0
-        paths = self._paths
+        if self.shuffle_shards:
+            paths = copy.copy(self._paths)
+            np.random.shuffle(paths)
+        else:
+            paths = self._paths
         if self.is_train and self.repeat:
             # Cycle through the shards indefinitely.
             paths = cycle(paths)
@@ -1169,14 +1184,37 @@ def max_tok_len(new, count, sofar):
     return count * (max_src_in_batch + max_tgt_in_batch)
 
 
-def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
+def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False, tokenizer=None):
     """
     This returns user-defined train/validate data iterator for the trainer
     to iterate over. We implement simple ordered iterator strategy here,
     but more sophisticated strategy like curriculum learning is ok too.
     """
-    dataset_paths = list(sorted(
-        glob.glob(opt.data + '.' + corpus_type + '.[0-9]*.pt')))
+    if opt.multi_dataset:
+        if corpus_type == 'train':
+            data_ids = opt.data_ids
+        else:
+            data_ids = opt.valid_data_ids
+        dataset_paths = []
+        for data_prefix in data_ids:
+            paths = []
+            paths.extend(list(sorted(glob.glob(data_prefix + '.' + corpus_type + '.[0-9]*.pt'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.[0-9]*.pt'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + '.' + corpus_type + '.[0-9]*.jsonl'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.[0-9]*.jsonl'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + '_[0-9]*.jsonl'))))
+            paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.jsonl'))))
+            dataset_paths.extend(paths)
+    else:
+        dataset_paths = []
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + '.' + corpus_type + '.[0-9]*.pt'))))
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.[0-9]*.pt'))))
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + '.' + corpus_type + '.[0-9]*.jsonl'))))
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + '_[0-9]*.jsonl'))))
+        dataset_paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.jsonl'))))
+
     if not dataset_paths:
         if is_train:
             raise ValueError('Training data %s not found' % opt.data)
@@ -1195,6 +1233,13 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
 
     device = "cuda" if opt.gpu_ranks else "cpu"
 
+    shuffle_shards = opt.shuffle_shards
+    seed = None
+    if corpus_type == "valid":
+        shuffle_shards = False
+    if opt.seed and opt.seed > 0:
+        seed = opt.seed
+
     return DatasetLazyIter(
         dataset_paths,
         fields,
@@ -1207,6 +1252,10 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False):
         repeat=not opt.single_pass,
         num_batches_multiple=max(opt.accum_count) * opt.world_size,
         yield_raw_example=multi,
+        fp16=opt.model_dtype == "fp16",
+        shuffle_shards=shuffle_shards,
+        seed=seed,
+        tokenizer=tokenizer,
         opt=opt
     )
 

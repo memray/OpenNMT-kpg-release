@@ -1,0 +1,66 @@
+exp: kpgen-meng17-kp20k-length_reverse-rnn-Dim150-Emb100-Dropout0.0-Copytrue-Covtrue
+exp_dir: output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/kpgen-meng17-kp20k-length_reverse-rnn-Dim150-Emb100-Dropout0.0-Copytrue-Covtrue
+save_model: models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/kpgen-meng17-kp20k-length_reverse-rnn-Dim150-Emb100-Dropout0.0-Copytrue-Covtrue
+log_file: output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/kpgen-meng17-kp20k-length_reverse-rnn-Dim150-Emb100-Dropout0.0-Copytrue-Covtrue/log.txt
+wandb_project: kp20k-meng17-one2one
+
+model_type: keyphrase
+data_type: keyphrase
+data_format: pt
+tgt_type: length_reverse
+
+data: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/kp20k_pt_shard100k/
+vocab: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp20k.vocab.pt
+
+valid_data_ids:
+  - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/kp20k_pt_shard10k/valid
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+dropout: 0.0
+
+share_embeddings: 'true'
+copy_attn: 'true'
+reuse_copy_attn: 'true'
+coverage_attn: 'true'
+context_gate: both
+input_feed: 1
+param_init_glorot: 'true'
+position_encoding: 'false'
+global_attention: mlp
+
+optim: adagrad
+learning_rate: 0.05
+adagrad_accumulator_init: 0.1
+max_grad_norm: 2.0
+
+batch_size: 64
+valid_batch_size: 64
+
+batch_type: sents
+normalization: sents
+
+train_steps: 100000
+valid_steps: 1000000
+save_checkpoint_steps: 5000
+report_every: 100
+seed: 3435
+
+log_file_level: DEBUG
+tensorboard: 'false'
+
+#tensorboard_log_dir: runs/kp20k.one2one.rnn/
+
+wandb: 'true'
+wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
+
+
+world_size: 1
+gpu_ranks:
+- 0
+#- 1
+#- 2
+#master_port: 10000

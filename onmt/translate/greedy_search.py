@@ -147,7 +147,7 @@ class GreedySearch(DecodeStrategy):
                 self.alive_attn = torch.cat([self.alive_attn, attn], 0)
         self.ensure_max_length()
 
-    def update_finished(self):
+    def update_finished(self, last_step=None):
         """Finalize scores and predictions."""
         # shape: (sum(~ self.is_finished), 1)
         finished_batches = self.is_finished.view(-1).nonzero()

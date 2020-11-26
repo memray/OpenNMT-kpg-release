@@ -100,9 +100,17 @@ def process_one_shard(corpus_params, params):
         shard_base = corpus_type
     data_path = "{:s}.{:s}.{:d}.pt".\
         format(opt.save_data, shard_base, i)
+    # if target path is a dir, then name files as train.%id.pt
+    if opt.save_data.endswith('/'):
+        data_path = "{:s}/{:s}.{:d}.pt". \
+            format(opt.save_data, shard_base, i)
 
     logger.info(" * saving %sth %s data shard to %s."
                 % (i, shard_base, data_path))
+
+    data_dir = os.path.dirname(os.path.abspath(data_path))
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
 
     dataset.save(data_path)
 

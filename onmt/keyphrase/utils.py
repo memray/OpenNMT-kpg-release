@@ -1,3 +1,4 @@
+import re
 import string
 from os.path import join, dirname
 import numpy as np
@@ -17,6 +18,34 @@ stemmer = PorterStemmer()
 
 def stem_word_list(word_list):
     return [stemmer.stem(w.strip()) for w in word_list]
+
+
+def validate_phrases(pred_seqs, unk_token):
+    '''
+    :param pred_seqs:
+    :param src_str:
+    :param oov:
+    :param id2word:
+    :param opt:
+    :return:
+    '''
+    valid_flags = []
+
+    for seq in pred_seqs:
+        keep_flag = True
+
+        if len(seq) == 0:
+            keep_flag = False
+
+        if keep_flag and any([w == unk_token for w in seq]):
+            keep_flag = False
+
+        if keep_flag and any([w == '.' or w == ',' for w in seq]):
+            keep_flag = False
+
+        valid_flags.append(keep_flag)
+
+    return np.asarray(valid_flags)
 
 
 def if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=True):
@@ -91,11 +120,144 @@ def if_present_phrase(src_str_tokens, phrase_str_tokens):
     return match_flag, match_pos_idx
 
 
+def gather_scores(gathered_scores, results_names, results_dicts):
+    for result_name, result_dict in zip(results_names, results_dicts):
+        for metric_name, score in result_dict.items():
+            if metric_name.endswith('_num'):
+                # if it's 'present_tgt_num' or 'absent_tgt_num', leave as is
+                field_name = result_name
+            else:
+                # if it's other score like 'precision@5' is renamed to like 'present_exact_precision@'
+                field_name = result_name + '_' + metric_name
+
+            if field_name not in gathered_scores:
+                gathered_scores[field_name] = []
+
+            gathered_scores[field_name].append(score)
+
+    return gathered_scores
+
+
+def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
+                          pred_seqs, pred_scores, pred_idxs, copied_flags,
+                          present_pred_flags, valid_pred_flags,
+                          valid_and_present_flags, valid_and_absent_flags,
+                          match_scores_exact, match_scores_partial,
+                          results_names, results_list, score_dict):
+    '''
+    Print and export predictions
+    '''
+    # src, src_str, tgt, tgt_str_seqs, tgt_copy, pred_seq, oov
+    print_out = '======================  %d =========================' % (i)
+    print_out += '\n[Title]: %s \n' % (src_dict["title"])
+    print_out += '[Abstract]: %s \n' % (src_dict["abstract"])
+    # print_out += '[Source tokenized][%d]: %s \n' % (len(src_seq), ' '.join(src_seq))
+    # print_out += 'Real Target [%d] \n\t\t%s \n' % (len(tgt_seqs), str(tgt_seqs))
+
+    print_out += '[GROUND-TRUTH] #(all)=%d, #(present)=%d, #(absent)=%d\n' % \
+                 (len(present_tgt_flags), sum(present_tgt_flags), len(present_tgt_flags)-sum(present_tgt_flags))
+    print_out += '\n'.join(
+        ['\t\t[%s]' % ' '.join(phrase) if is_present else '\t\t%s' % ' '.join(phrase) for phrase, is_present in
+         zip(tgt_seqs, present_tgt_flags)])
+
+    print_out += '\n[PREDICTION] #(all)=%d, #(valid)=%d, #(present)=%d, ' \
+                 '#(valid&present)=%d, #(valid&absent)=%d\n' % (
+        len(pred_seqs), sum(valid_pred_flags), sum(present_pred_flags),
+        sum(valid_and_present_flags), sum(valid_and_absent_flags))
+    print_out += ''
+    preds_out = ''
+    for p_id, (word, match, match_soft,
+               is_valid, is_present) in enumerate(
+        zip(pred_seqs, match_scores_exact, match_scores_partial,
+            valid_pred_flags, present_pred_flags)):
+        score = pred_scores[p_id] if pred_scores else "Score N/A"
+        pred_idx = pred_idxs[p_id] if pred_idxs else "Index N/A"
+        copied_flag = copied_flags[p_id] if copied_flags else "CopyFlag N/A"
+
+        preds_out += '%s\n' % (' '.join(word))
+        if is_present:
+            print_phrase = '[%s]' % ' '.join(word)
+        else:
+            print_phrase = ' '.join(word)
+
+        if match == 1.0:
+            correct_str = '[correct!]'
+        else:
+            correct_str = ''
+
+        if any(copied_flag):
+            copy_str = '[copied!]'
+        else:
+            copy_str = ''
+
+        pred_str = '\t\t%s\t%s \t %s %s%s\n' % ('[%.4f]' % (-score) if pred_scores else "Score N/A",
+                                                print_phrase, str(pred_idx),
+                                                correct_str, copy_str)
+        if not is_valid:
+            pred_str = '\t%s' % pred_str
+
+        print_out += pred_str
+
+    print_out += "\n ======================================================= \n"
+
+    print_out += '[GROUND-TRUTH] #(all)=%d, #(present)=%d, #(absent)=%d\n' % \
+                 (len(present_tgt_flags), sum(present_tgt_flags), len(present_tgt_flags)-sum(present_tgt_flags))
+    print_out += '\n[PREDICTION] #(all)=%d, #(valid)=%d, #(present)=%d, ' \
+                 '#(valid&present)=%d, #(valid&absent)=%d\n' % (
+        len(pred_seqs), sum(valid_pred_flags), sum(present_pred_flags),
+        sum(valid_and_present_flags), sum(valid_and_absent_flags))
+
+    for name, results in zip(results_names, results_list):
+        # print @5@10@O@M for present_exact, print @50@M for absent_exact
+        if name in ['present_exact', 'absent_exact']:
+            if name.startswith('present'):
+                topk_list = ['5', '10', 'k', 'M']
+            else:
+                topk_list = ['50', 'M']
+
+            for topk in topk_list:
+                print_out += "\n --- batch {} Corr/P/R/F1 @{}: \t".format(name, topk) \
+                             + " {:6} , {:.4f} , {:.4f} , {:.4f}".format(int(results['correct@{}'.format(topk)]),
+                                                                          results['precision@{}'.format(topk)],
+                                                                          results['recall@{}'.format(topk)],
+                                                                          results['f_score@{}'.format(topk)],
+                                                                          )
+                print_out += "\n --- total {} Corr/P/R/F1 @{}: \t".format(name, topk) \
+                             + " {:6} , {:.4f} , {:.4f} , {:.4f}".format(
+                                int(np.sum(score_dict['{}_correct@{}'.format(name, topk)])),
+                                np.average(score_dict['{}_precision@{}'.format(name, topk)]),
+                                np.average(score_dict['{}_recall@{}'.format(name, topk)]),
+                                np.average(score_dict['{}_f_score@{}'.format(name, topk)]),)
+        elif name in ['present_exact_advanced', 'absent_exact_advanced']:
+            print_out += "\n --- batch {} AUC/SADR/α-nDCG@5/α-nDCG@10/nDCG/AP/MRR: \t".format(name[: name.rfind('_')]) \
+                         + " {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f}".format(
+                results['auc'], results['sadr'], results['alpha_ndcg@5'], results['alpha_ndcg@10'],
+                results['ndcg'], results['ap'], results['mrr'],)
+
+            print_out += "\n --- total {} AUC/SADR/α-nDCG@5/α-nDCG@10/nDCG/AP/MRR: \t".format(name[: name.rfind('_')]) \
+                         + " {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f} , {:.4f}".format(
+                np.average(score_dict['{}_{}'.format(name, 'auc')]),
+                np.average(score_dict['{}_{}'.format(name, 'sadr')]),
+                np.average(score_dict['{}_{}'.format(name, 'alpha_ndcg@5')]),
+                np.average(score_dict['{}_{}'.format(name, 'alpha_ndcg@10')]),
+                np.average(score_dict['{}_{}'.format(name, 'ndcg')]),
+                np.average(score_dict['{}_{}'.format(name, 'ap')]),
+                np.average(score_dict['{}_{}'.format(name, 'mrr')]),
+            )
+        else:
+            # ignore partial for now
+            continue
+
+    print_out += "\n ======================================================="
+
+    return print_out
+
+
 def meng17_tokenize(text):
     '''
     The tokenizer used in Meng et al. ACL 2017
     parse the feed-in text, filtering and tokenization
-    keep [_<>,\(\)\.\'%], replace digits to <digit>, split by [^a-zA-Z0-9_<>,\(\)\.\'%]
+    keep [_<>,\(\)\.\'%], replace digits with <digit>, split by [^a-zA-Z0-9_<>,\(\)\.\'%]
     :param text:
     :return: a list of tokens
     '''

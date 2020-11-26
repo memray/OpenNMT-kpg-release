@@ -14,10 +14,10 @@ rnn_type: GRU
 #rnn_size: 150
 #layers: 1
 
-optim: adam
+optim: adagrad
 #learning_rate: 0.002
 adagrad_accumulator_init: 0.1
-max_grad_norm: 1
+max_grad_norm: 2.0
 
 #batch_size: 128
 #valid_batch_size: 128

@@ -1,0 +1,168 @@
+# one2one
+source script/srun_one2one/run_predeval_v2_pred_cpu.sh
+source script/srun_one2one/run_predeval_v2_pred_gpu.sh
+source script/srun_one2one/run_predeval_v2_eval.sh
+
+# one2seq, pred
+source script/srun_one2seq/run_pred_v2.sh
+source script/srun_one2seq/run_pred_v2_gpu.sh
+# one2seq, eval
+source script/srun_one2seq/run_eval_exhaustive.sh
+source script/srun_one2seq/run_eval_selfterminating.sh
+
+
+DATASET: duc inspec semeval krapivin nus  kp20k kp20k_valid2k
+
+
+# clean bad outputs (due to out of space, jobs failed to write into disk)
+# V1 one2one (222 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/meng17-one2one-kp20k-topmodels/ -output_dir  output/keyphrase/meng17-one2one/meng17-one2one-kp20k-topmodels/ -testsets kp20k -tasks clean
+# V2 one2one (90 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -output_dir output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -testsets kp20k kp20k_valid2k -tasks clean
+
+
+# V1 one2seq (580 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam10-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam25-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -testsets kp20k kp20k_valid2k -tasks clean
+
+# V2 one2seq (200 ckpts)
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam10-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam25-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
+srun python kp_gen_eval.py --onepass -config config/test/config-test-keyphrase-one2one.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/ -output_dir output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -testsets duc inspec semeval krapivin nus kp20k kp20k_valid2k -tasks clean
+
+
+
+# One2One
+## Check #ckpt
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/models/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -name '*.pt' | wc -l
+
+## Check #pred
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'kp20k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'kp20k_valid2k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'inspec.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'krapivin.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'nus.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'semeval.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name 'duc.pred' | wc -l
+
+## Check #eval
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-kp20k-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-kp20k_valid2k-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-inspec-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-krapivin-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-nus-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-semeval-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/meng17-one2one-fullbeam/ -name '*-duc-exhaustive.json' | wc -l
+
+
+
+# One2Seq
+## Check #ckpt
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/models/keyphrase/meng17-one2one/meng17-one2one-kp20k-v2/ -name '*.pt' | wc -l
+
+## Check #pred
+### fullbeam
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'kp20k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'kp20k_valid2k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'inspec.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'krapivin.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'nus.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'semeval.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name 'duc.pred' | wc -l
+
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'kp20k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'kp20k_valid2k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'inspec.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'krapivin.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'nus.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'semeval.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/ -name 'duc.pred' | wc -l
+
+
+### topbeamends
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'kp20k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'kp20k_valid2k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'inspec.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'krapivin.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'nus.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'semeval.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/ -name 'duc.pred' | wc -l
+
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'kp20k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'kp20k_valid2k.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'inspec.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'krapivin.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'nus.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'semeval.pred' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-topbeamends/meng17-one2seq-beam50-maxlen40/ -name 'duc.pred' | wc -l
+
+## Check #eval
+### exhaustive
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k_valid2k-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-inspec-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-krapivin-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-nus-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-semeval-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-duc-exhaustive.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k-exhaustive.json' | wc -l
+
+### selfterminating
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k_valid2k-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-inspec-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-krapivin-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-nus-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-semeval-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-duc-selfterminating.json' | wc -l
+find /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/ -name '*-kp20k-selfterminating.json' | wc -l
+
+
+
+20200928 MagKP exps
+sbatch script/srun_one2seq/train/3rd/kpgen-one2one-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2one-transformer-copycovfalse-kp20k.sh
+
+on 1080ti
+sbatch script/srun_one2seq/train/3rd/kpgen-one2one-transformer-magkp.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2one-transformer-magkp20k.sh
+
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-alphabetical-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-length-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-no_sort-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-random-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_prepend-transformer-kp20k.sh
+
+on Titanx
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_Nsmall.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_Nlarge.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_LN.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-magkp.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-magkp20k.sh
+
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-copycovfalse-kp20k.sh
+
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-kp20k+MagKP_Nsmall.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-kp20k+MagKP_Nlarge.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-kp20k+MagKP_LN.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-copycovfalse-magkp20k.sh
+
+Finetune KP20k on top of MagKP
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_LN+kp20kFT.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_Nsmall+kp20kFT.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-MagKP_Nlarge+kp20kFT.sh
+
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-magkp+kp20kFT.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-verbatim_append-transformer-magkp20k+kp20kFT.sh
+
+
+# new order-matters exps
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-alphabetical_reverse-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-length_reverse-transformer-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-no_sort_reverse-transformer-kp20k.sh
+
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-alphabetical_reverse-rnn-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-length_reverse-rnn-kp20k.sh
+sbatch script/srun_one2seq/train/3rd/kpgen-one2seq-no_sort_reverse-rnn-kp20k.sh

@@ -1,15 +1,15 @@
 model_type: keyphrase
 tgt_type: random
 
-exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
-exp_dir: output/meng17-one2seq-debug/kp20k-one2seq-birnn-GRU150-EMB100-diverse-local
+exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-test
+exp_dir: output/meng17-one2seq-debug/kp20k-one2seq-birnn-GRU150-EMB100-diverse-test
 wandb_project: kp20k-meng17-one2seq
 wandb: 'true'
 wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
 
 #data: data/keyphrase/meng17/kp20k
-data: data/keyphrase/meng17/kp20k
-vocab: data/keyphrase/meng17/kp20k.vocab.pt
+data: data/keyphrase/meng17/magkp_pt_shard1k/
+vocab: data/keyphrase/meng17/magkp20k.vocab.pt
 #data: data/keyphrase/meng17/stackexchange
 save_checkpoint_steps: 10000
 keep_checkpoint: 10

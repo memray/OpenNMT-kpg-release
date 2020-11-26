@@ -1,0 +1,68 @@
+model_type: keyphrase
+data_type: keyphrase
+data_format: pt
+tgt_type: length_reverse
+
+train_from: models/keyphrase/meng17-one2seq/meng17-one2seq-kp20k/kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-Dropout0.0-Copytrue-Reusetrue-Covtrue-PEfalse-Contboth-IF1_step_90000.pt
+
+data: data/keyphrase/meng17/kp20k_pt_shard10k/
+#data: data/keyphrase/meng17/kp20k_pt_shard100k/kp20k
+#data: data/keyphrase/meng17/kp20k_small
+#data: data/keyphrase/meng17/stackexchange
+save_checkpoint_steps: 5000
+keep_checkpoint: 10000
+seed: 3435
+train_steps: 100000
+valid_steps: 200000 # no validation
+report_every: 100
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+
+optim: adam
+learning_rate: 1e-3
+max_grad_norm: 2
+reset_optim: all
+
+batch_size: 64
+valid_batch_size: 128
+dropout: 0.1
+
+global_attention: mlp
+
+tensorboard: 'true'
+log_file_level: DEBUG
+
+copy_attn: 'true'
+reuse_copy_attn: 'true'
+coverage_attn: 'true'
+
+context_gate: 'both'
+input_feed: 1
+share_embeddings: 'true'
+bridge: 'true'
+
+orth_reg: 'false'
+lambda_orth_reg: 0.0
+sem_cov: 'false'
+lambda_sem_cov: 0.0
+
+tgt_enc: 'rnn'
+detach_tgt_enc: 'true'
+num_negsample: 16
+use_ending_state: 'true'
+
+exp: 'kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-test'
+exp_dir: 'output/keyphrase/meng17-one2seq-test/kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-test/'
+save_model: 'models/keyphrase/meng17-one2seq-test/kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-test'
+log_file: 'output/keyphrase/meng17-one2seq-test/kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-test.log'
+tensorboard_log_dir: 'runs/keyphrase/meng17-one2seq-test/kp20k-meng17-random-rnn-BS64-LR0.05-Layer1-Dim150-Emb100-test/'
+
+world_size: 1
+gpu_ranks: []
+#- 0
+#- 1
+master_port: 5000
