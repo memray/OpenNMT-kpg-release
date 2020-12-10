@@ -56,13 +56,29 @@ def make_src(data, vocab):
     return alignment
 
 
-def make_tgt(data, vocab):
+def preprocessing_tokenize(data, tokenizer, max_length=None):
+    data = tokenizer.bos_token + data + tokenizer.eos_token
+    token_indices = tokenizer.encode(data,
+                                     add_special_tokens=False,
+                                     truncation=max_length is not None,
+                                     max_length=max_length)
+    return torch.tensor(token_indices, dtype=torch.int64)
+
+def postprocessing_length_cap(data, vocab, max_length):
+    return [min(max_length, l) for l in data]
+
+def make_tgt(data, vocab, pad_idx):
+    """
+    pad zero to the data, size=[max_len, batch_size]
+    """
+    data = [torch.tensor(t, dtype=torch.int64) for t in data]
     tgt_size = max([t.size(0) for t in data])
     alignment = torch.zeros(tgt_size, len(data)).long()
+    # add fill_value for cases that pad_index is not zero
+    alignment = alignment.new_full(alignment.shape, pad_idx)
     for i, sent in enumerate(data):
         alignment[:sent.size(0), i] = sent
     return alignment
-
 
 class AlignField(LabelField):
     """
@@ -233,42 +249,48 @@ def reload_keyphrase_fields(opt, tokenizer=None):
     """
     src_nfeats = 0
     tgt_nfeats = 0
-    if opt.field_label:
-        src_nfeats += 1
+    src_seq_length_trunc = opt.src_seq_length_trunc if hasattr(opt, 'src_seq_length_trunc') else None
+    tgt_seq_length_trunc = opt.tgt_seq_length_trunc if hasattr(opt, 'tgt_seq_length_trunc') else None
     dynamic_dict = True
     new_fields = get_fields(
         opt.data_type,
         src_nfeats,
         tgt_nfeats,
         dynamic_dict=dynamic_dict,
-        src_truncate=opt.src_seq_length_trunc,
-        tgt_truncate=opt.tgt_seq_length_trunc
+        src_truncate=src_seq_length_trunc,
+        tgt_truncate=tgt_seq_length_trunc,
     )
 
     # masks are required by huggingface Transformers
     # prepare tensors on our own and ignore previous src/tgt fields
-    if opt.data_format == 'jsonl' and opt.pretrained_tokenizer and opt.pretrained_tokenizer != 'none':
+    if opt.data_format == 'jsonl' and opt.pretrained_tokenizer:
         pad_idx = tokenizer.pad_token_id if tokenizer is not None else 0
+        partial_src_preprocessing = partial(preprocessing_tokenize, tokenizer=tokenizer, max_length=src_seq_length_trunc)
+        partial_tgt_preprocessing = partial(preprocessing_tokenize, tokenizer=tokenizer, max_length=tgt_seq_length_trunc)
+        partial_src_length_cap = partial(postprocessing_length_cap, max_length=src_seq_length_trunc)
+        partial_tgt_length_cap = partial(postprocessing_length_cap, max_length=tgt_seq_length_trunc)
         partial_make_tgt = partial(make_tgt, pad_idx=pad_idx)
 
         src = Field(
             use_vocab=False, dtype=torch.long,
+            preprocessing=partial_src_preprocessing,
             postprocessing=partial_make_tgt, sequential=False)
         new_fields["src"] = src
 
         src_lengths = Field(
             use_vocab=False, dtype=torch.long,
-            postprocessing=None, sequential=False)
+            postprocessing=partial_src_length_cap, sequential=False)
         new_fields["src_length"] = src_lengths
 
         tgt = Field(
             use_vocab=False, dtype=torch.long,
+            preprocessing=partial_tgt_preprocessing,
             postprocessing=make_tgt, sequential=False)
         new_fields["tgt"] = tgt
 
         tgt_length = Field(
             use_vocab=False, dtype=torch.long,
-            postprocessing=None, sequential=False)
+            postprocessing=partial_tgt_length_cap, sequential=False)
         new_fields["tgt_length"] = tgt_length
 
         # this is the field tokens on the source side
@@ -281,6 +303,7 @@ def reload_keyphrase_fields(opt, tokenizer=None):
             use_vocab=False, dtype=torch.long,
             postprocessing=partial_make_tgt, sequential=False)
         new_fields["src_mask"] = src_mask
+
         tgt_mask = Field(
             use_vocab=False, dtype=torch.long,
             postprocessing=partial_make_tgt, sequential=False)
@@ -289,50 +312,25 @@ def reload_keyphrase_fields(opt, tokenizer=None):
     # update the vocabs in src/tgt field
     if tokenizer is not None:
         # update the vocab depending on what fields are used (OpenNMT uses a MultiField, pretraiend model uses normal Field)
-        if opt.data_format != 'jsonl':
-            new_field = update_field_vocab(new_fields['src'], tokenizer)
-            # no bos/eos for src, otherwise it causes length mismatch later in training
-            setattr(new_field, 'bos', None)
-            setattr(new_field, 'bos_token', None)
-            setattr(new_field, 'eos', None)
-            setattr(new_field, 'eos_token', None)
-            if hasattr(new_field, 'postprocessing'):
-                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-            if opt.field_label:
-                setattr(new_field, 'word_feat_share', True)
-                setattr(new_field, 'feat_num', 1)
-            new_fields['src'] = new_field
+        new_field = update_field_vocab(new_fields['src'], tokenizer)
+        # no bos/eos for src, otherwise it causes length mismatch later in training
+        setattr(new_field, 'bos', None)
+        setattr(new_field, 'bos_token', None)
+        setattr(new_field, 'eos', None)
+        setattr(new_field, 'eos_token', None)
+        if hasattr(new_field, 'postprocessing'):
+            partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+            setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+        if hasattr(opt, 'field_label') and opt.field_label:
+            setattr(new_field, 'word_feat_share', True)
+            setattr(new_field, 'feat_num', 1)
+        new_fields['src'] = new_field
 
-            new_field = update_field_vocab(new_fields['tgt'], tokenizer)
-            if hasattr(new_field, 'postprocessing'):
-                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-            new_fields['tgt'] = new_field
-        else:
-            for field_id, (name, field) in enumerate(new_fields['src'].fields):
-                new_field = update_field_vocab(field, tokenizer)
-                # no bos/eos for src, otherwise it causes length mismatch later in training
-                setattr(new_field, 'bos', None)
-                setattr(new_field, 'bos_token', None)
-                setattr(new_field, 'eos', None)
-                setattr(new_field, 'eos_token', None)
-                new_fields['src'].fields[field_id] = (name, new_field)
-                if hasattr(new_field, 'postprocessing'):
-                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-
-                if opt.field_label:
-                    setattr(new_field, 'word_feat_share', True)
-                    setattr(new_field, 'feat_num', 1)
-
-            for field_id, (name, field) in enumerate(new_fields['tgt'].fields):
-                new_field = update_field_vocab(field, tokenizer)
-                new_fields['tgt'].fields[field_id] = (name, new_field)
-                if hasattr(new_field, 'postprocessing'):
-                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-
+        new_field = update_field_vocab(new_fields['tgt'], tokenizer)
+        if hasattr(new_field, 'postprocessing'):
+            partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
+            setattr(new_field, 'postprocessing', partial_make_tgt_pad)
+        new_fields['tgt'] = new_field
     return new_fields
 
 
@@ -956,7 +954,7 @@ class OrderedIterator(torchtext.data.Iterator):
                     batch_size_fn=self.batch_size_fn,
                     batch_size_multiple=self.batch_size_multiple):
                 # if it's keyphrase dataset, a preprocess to targets should act beforehand.
-                if isinstance(self.dataset, KeyphraseDataset):
+                if isinstance(self.dataset, KeyphraseDataset) and self.dataset.data_format != 'jsonl':
                     b = keyphrase_dataset.process_multiple_tgts(b, self.dataset.tgt_type)
                 # @memray: to keep the original order of test data, only sort inside a batch (is it necessary? why not just sort it before feeding the model?)
                 # self.batches.append(sorted(b, key=self.sort_key))
@@ -1205,6 +1203,7 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False, tok
             paths.extend(list(sorted(glob.glob(data_prefix + '_[0-9]*.jsonl'))))
             paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
             paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.jsonl'))))
+            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.json'))))
             dataset_paths.extend(paths)
     else:
         dataset_paths = []
@@ -1214,6 +1213,7 @@ def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False, tok
         dataset_paths.extend(list(sorted(glob.glob(opt.data + '_[0-9]*.jsonl'))))
         dataset_paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
         dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.jsonl'))))
+        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.json'))))
 
     if not dataset_paths:
         if is_train:

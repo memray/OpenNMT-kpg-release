@@ -7,6 +7,7 @@ import six
 import torch
 import numpy as np
 from torchtext.data import Field, RawField
+from tqdm import tqdm
 
 from onmt.keyphrase.utils import if_present_duplicate_phrases, SEP_token, DIGIT_token
 from onmt.inputters.datareader_base import DataReaderBase
@@ -22,6 +23,77 @@ from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
 np.random.seed(2333)
 extra_special_tokens = [SEP_token, DIGIT_token]
+
+KP_DATASET_FIELDS = {'scipaper': ('title', 'abstract', 'keywords', None),
+                     'qa': ('title', 'question', 'tags', 'categories'),
+                     'webpage': ('url', 'text', 'KeyPhrases', None),
+                     'news': ('title', 'abstract', 'keyword', 'categories')}
+
+KP_CONCAT_TYPES = ['one2one', 'random',
+                   'pres_abs', 'abs_pres',
+                   'nosort', 'nosort_reverse',
+                   'alphab', 'alphab_reverse',
+                   'length', 'length_reverse']
+# previous version (used in empirical study)
+# KP_CONCAT_TYPES = ['random',
+#             'no_sort', 'no_sort_reverse',
+#             'alphabetical', 'alphabetical_reverse',
+#             'length', 'length_reverse',
+#             'verbatim_append', 'verbatim_prepend']
+
+def infer_dataset_type(filepath):
+    dataset_type = None
+    if 'stack' in filepath:
+        dataset_type = 'qa'
+    elif 'openkp' in filepath:
+        dataset_type = 'webpage'
+    elif 'times' in filepath:
+        dataset_type = 'news'
+    elif 'kp20k' in filepath or 'magkp' in filepath:
+        dataset_type = 'scipaper'
+
+    assert dataset_type is not None, 'Fail to detect the data type of the given input file.' \
+                                     'Accecpted values:' + KP_DATASET_FIELDS.keys()
+
+    print('Automatically detect the input data type as [%s], path: %s' % (dataset_type.upper(), filepath))
+
+    return dataset_type
+
+
+def parse_src_fn(ex_dict, title_field, text_field):
+    concat_str = ex_dict[title_field] + ' . ' + ex_dict[text_field]
+    return concat_str
+
+
+def kpdict_parse_fn(ex_dict, tokenizer, tgt_concat_type, dataset_type='scipaper', max_target_phrases=-1, lowercase=False):
+    assert dataset_type in KP_DATASET_FIELDS
+    title_field, text_field, keyword_field, category_field = KP_DATASET_FIELDS[dataset_type]
+
+    src_str = parse_src_fn(ex_dict, title_field, text_field)
+    if isinstance(ex_dict[keyword_field], str):
+        tgt_kps = ex_dict[keyword_field].split(';')
+    else:
+        tgt_kps = ex_dict[keyword_field]
+    if tgt_concat_type == 'one2one':
+        # sample one tgt from multiple tgts and use it as the only tgt
+        rand_idx = np.random.randint(len(tgt_kps))
+        tgt_str = tgt_kps[rand_idx]
+    elif tgt_concat_type in KP_CONCAT_TYPES:
+        # generate one2seq training data points
+        order = obtain_sorted_indices(src_str.lower().split(),
+                                      [kp.lower().split() for kp in tgt_kps],
+                                      sort_by=tgt_concat_type)
+        if max_target_phrases > 0 and len(order) > max_target_phrases:
+            order = order[: max_target_phrases]
+        tgt = [tgt_kps[idx] for idx in order]
+        tgt_str = tokenizer.sep_token.join(tgt)
+    else:
+        raise NotImplementedError('Unsupported target concatenation type ' + tgt_concat_type)
+
+    if lowercase:
+        return src_str.lower(), tgt_str.lower()
+    return src_str, tgt_str
+
 
 class KeyphraseDataset(TorchtextDataset):
     """Contain data and process it.
@@ -71,31 +143,57 @@ class KeyphraseDataset(TorchtextDataset):
     """
 
     def __init__(self, fields, readers, data, dirs, sort_key,
-                 filter_pred=None, tgt_type=None):
-        # this is set at line 594 in inputter.py and line 303 in translator.py
-        self.tgt_type = tgt_type
+                 filter_pred=None, tgt_concat_type=None, data_format=None, max_target_phrases=-1):
+        # if not using pre-trained tokenizer, this is set at line 594 in inputter.py and line 303 in translator.py
+        self.tgt_type = tgt_concat_type
         # concatenate multiple tgt sequences with <sep> or keep them separate as a list of seqs (2D tensor)
-        self.concat_tgt = False
+        # self.concat_tgt = False
+        self.data_format = data_format
         self.sort_key = sort_key
+        self.max_target_phrases = max_target_phrases
 
         # will be specified before training, one of [one2one, original, random, verbatim]
 
         # build src_map/alignment no matter field is available
         can_copy = True
 
+        self.dataset_type = infer_dataset_type(dirs[0])
+        dirs = [None, None]
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
                       in zip(readers, data, dirs)]
 
         # self.src_vocabs is used in collapse_copy_scores and Translator.py
         self.src_vocabs = []
         examples = []
-        for ex_dict in starmap(_join_dicts, zip(*read_iters)):
+        for ex_dict in tqdm(starmap(_join_dicts, zip(*read_iters)), desc='Loading and parsing data'):
             if can_copy:
                 src_field = fields['src']
                 tgt_field = fields['tgt']
+
+                if hasattr(src_field, 'pretrained_tokenizer'):
+                    tokenizer = src_field.pretrained_tokenizer
+
+                if data_format == 'jsonl':
+                    title_field, text_field, keyword_field, _ = KP_DATASET_FIELDS[self.dataset_type]
+                    src_str, tgt_str = kpdict_parse_fn(ex_dict['src'], tokenizer, tgt_concat_type,
+                                                       dataset_type=self.dataset_type, max_target_phrases=-1,
+                                                       lowercase=False)
+                    ex_dict['src'] = src_str
+                    ex_dict['tgt'] = tgt_str
+
+                    # src_str = parse_src_fn(ex_dict['src'], title_field, text_field)
+                    # if isinstance(ex_dict['src'][keyword_field], str):
+                    #     tgt_kps = ex_dict['src'][keyword_field].split(';')
+                    # else:
+                    #     tgt_kps = ex_dict['src'][keyword_field]
+                    # ex_dict['src'] = src_str
+                    # ex_dict['tgt'] = ';'.join(tgt_kps)
+
                 # this assumes src_field and tgt_field are both text
+                src_base_field = src_field.base_field if hasattr(src_field, 'base_field') else src_field
+                tgt_base_field = tgt_field.base_field if hasattr(tgt_field, 'base_field') else tgt_field
                 src_ex_vocab, ex_dict = _dynamic_dict(
-                    ex_dict, src_field.base_field, tgt_field.base_field)
+                    ex_dict, src_base_field, tgt_base_field)
                 self.src_vocabs.append(src_ex_vocab)
             ex_fields = {k: [(k, v)] for k, v in fields.items() if
                          k in ex_dict}
@@ -156,12 +254,17 @@ class KeyphraseDataReader(DataReaderBase):
                 # default input is a json line
                 line = line.decode("utf-8")
                 json_dict = json.loads(line)
-                # Note tgt could be a list of strings
-                seq = json_dict[side]
-                # torchtext field only takes numeric features
-                id = json_dict['id']
+                try:
+                    # Note tgt could be a list of strings
+                    seq = json_dict[side]
+                    # torchtext field only takes numeric features
+                    id = json_dict['id']
+                except Exception:
+                    # temporary workaround for raw json data
+                    seq = json_dict
+                    id = i
             except Exception:
-                # temporary measure for plain text input
+                # temporary workaround for plain text input
                 seq = line
                 id = i
 
@@ -185,16 +288,20 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
     :return:
     """
     num_tgt = len(tgt_seqs)
-    src = src[0]
-    tgt_seqs = [tgt[0] for tgt in tgt_seqs]
 
-    if sort_by.startswith('no_sort'):
-        sorted_id = list(range(len(tgt_seqs)))
-    elif sort_by == 'random':
+    if sort_by == 'random':
         sorted_id = np.random.permutation(num_tgt)
-    elif sort_by.startswith('verbatim'):
+    elif sort_by.startswith('nosort'):
+        sorted_id = list(range(len(tgt_seqs)))
+    elif sort_by.startswith('alphab'):
+        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x: '_'.join(x[1]))
+        sorted_id = [t[0] for t in sorted_tgts]
+    elif sort_by.startswith('length'):
+        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x: len(x[1]))
+        sorted_id = [t[0] for t in sorted_tgts]
+    elif sort_by == 'pres_abs' or sort_by == 'abs_pres':
         # obtain present flags as well their positions, lowercase should be done beforehand
-        present_tgt_flags, present_indices, _ = if_present_duplicate_phrases(src, tgt_seqs, stemming=False, lowercase=False)
+        present_tgt_flags, present_indices, _ = if_present_duplicate_phrases(src, tgt_seqs)
         # separate present/absent phrases
         present_tgt_idx = np.arange(num_tgt)[present_tgt_flags]
         absent_tgt_idx  = [t_id for t_id, present in zip(range(num_tgt), present_tgt_flags) if ~present]
@@ -204,19 +311,15 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
         present_tgt_idx = sorted(zip(present_tgt_idx, present_indices), key=lambda x: x[1])
         present_tgt_idx = [t[0] for t in present_tgt_idx]
 
-        if sort_by.endswith('append'):
+        if sort_by == 'pres_abs':
             sorted_id = np.concatenate((present_tgt_idx, absent_tgt_idx), axis=None)
-        elif sort_by.endswith('prepend'):
+        elif sort_by == 'abs_pres':
             sorted_id = np.concatenate((absent_tgt_idx, present_tgt_idx), axis=None)
         else:
+            raise NotImplementedError('Unsupported sort_by value: ' + sort_by)
             sorted_id = present_tgt_idx
-
-    elif sort_by.startswith('alphabetical'):
-        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:'_'.join(x[1]))
-        sorted_id = [t[0] for t in sorted_tgts]
-    elif sort_by.startswith('length'):
-        sorted_tgts = sorted(enumerate(tgt_seqs), key=lambda x:len(x[1]))
-        sorted_id = [t[0] for t in sorted_tgts]
+    else:
+        raise NotImplementedError('Unsupported sort_by value: ' + sort_by)
 
     if sort_by.endswith('reverse'):
         sorted_id = sorted_id[::-1]
@@ -226,7 +329,8 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
 
 def process_multiple_tgts(big_batch, tgt_type):
     """
-
+    This function is only used using original OpenNMT pipeline (data stored in .pt file).
+    If data is loaded from raw JSON with pre-trained tokenizer, it is processed on-the-fly.
     :param big_batch: a list of examples
             src: [1, src_len]
             tgt: [num_kp, 1, kp_len]
@@ -258,12 +362,7 @@ def process_multiple_tgts(big_batch, tgt_type):
 
             ex.tgt = tgt
             ex.alignment = alignment
-        elif tgt_type in [
-            'random',
-            'no_sort', 'no_sort_reverse',
-            'alphabetical', 'alphabetical_reverse',
-            'length', 'length_reverse',
-            'verbatim_append', 'verbatim_prepend']:
+        elif tgt_type in KP_CONCAT_TYPES:
             # generate one2seq training data points
             order = obtain_sorted_indices(ex.src, ex.tgt, sort_by=tgt_type)
             tgt = [ex.tgt[idx] for idx in order]

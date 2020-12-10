@@ -163,7 +163,7 @@ class RNNDecoderBase(DecoderBase):
         self.bilinear_layer = nn.Bilinear(in1_features=hidden_size, in2_features=hidden_size, out_features=1)
 
     @classmethod
-    def from_opt(cls, opt, embeddings):
+    def from_opt(cls, opt, embeddings, **kwargs):
         """Alternate constructor."""
         return cls(
             opt.rnn_type,

@@ -40,8 +40,11 @@ def _dynamic_dict(example, src_field, tgt_field):
     Returns:
         torchtext.data.Vocab and ``example``, changed as described.
     """
-
-    src = src_field.tokenize(example["src"])
+    if hasattr(src_field, 'pretrained_tokenizer'):
+        src = [src_field.vocab.itos[id] for id in src_field.pretrained_tokenizer.encode(example['src'])]
+    else:
+        src = src_field.tokenize(example["src"])
+    example["src_length"] = len(src)
     # make a small vocab containing just the tokens in the source sequence
     unk = src_field.unk_token
     pad = src_field.pad_token
@@ -55,18 +58,28 @@ def _dynamic_dict(example, src_field, tgt_field):
     if "tgt" in example:
         # added by Rui, to be compatible with multiple target sequences
         if not isinstance(example["tgt"], list):
-            tgt = tgt_field.tokenize(example["tgt"])
+            if hasattr(tgt_field, 'pretrained_tokenizer'):
+                tgt = [tgt_field.vocab.itos[id] for id in tgt_field.pretrained_tokenizer.encode(example['tgt'])]
+            else:
+                tgt = tgt_field.tokenize(example["tgt"])
             mask = torch.LongTensor(
                 [unk_idx] + [src_ex_vocab.stoi[w] for w in tgt] + [unk_idx])
             example["alignment"] = mask
+            example["tgt_length"] = len(tgt)
         else:
             masks = []
+            tgt_len = 0
             for tgt in example["tgt"]:
-                tgt = tgt_field.tokenize(tgt)
+                if hasattr(tgt_field, 'pretrained_tokenizer'):
+                    tgt = [tgt_field.vocab.itos[id] for id in tgt_field.pretrained_tokenizer.encode(tgt)]
+                else:
+                    tgt = tgt_field.tokenize(tgt)
                 mask = torch.LongTensor(
                     [unk_idx] + [src_ex_vocab.stoi[w] for w in tgt] + [unk_idx])
                 masks.append(mask)
+                tgt_len += len(tgt)
             example["alignment"] = masks
+            example["tgt_length"] = tgt_len
     return src_ex_vocab, example
 
 

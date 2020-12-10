@@ -149,8 +149,8 @@ def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
     '''
     # src, src_str, tgt, tgt_str_seqs, tgt_copy, pred_seq, oov
     print_out = '======================  %d =========================' % (i)
-    print_out += '\n[Title]: %s \n' % (src_dict["title"])
-    print_out += '[Abstract]: %s \n' % (src_dict["abstract"])
+    print_out += '\n[Source]: %s \n' % (src_dict["src"])
+    # print_out += '[Abstract]: %s \n' % (src_dict["abstract"])
     # print_out += '[Source tokenized][%d]: %s \n' % (len(src_seq), ' '.join(src_seq))
     # print_out += 'Real Target [%d] \n\t\t%s \n' % (len(tgt_seqs), str(tgt_seqs))
 

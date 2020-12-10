@@ -138,6 +138,7 @@ class BeamSearch(DecodeStrategy):
 
     @property
     def current_predictions(self):
+        # self.alive_seq is Shape ``(B x beam_size, step)``, return shape is ``(B x beam_size, 1)``
         return self.alive_seq[:, -1]
 
     @property
@@ -258,7 +259,7 @@ class BeamSearch(DecodeStrategy):
         # iterate each batch
         for i in range(self.is_finished.size(0)):  # Batch level
             b = self._batch_offset[i]
-            finished_hyp = self.is_finished[i].nonzero().view(-1)
+            finished_hyp = self.is_finished[i].nonzero(as_tuple=True)[0]
             # Store finished hypotheses for this batch.
             for j in finished_hyp:  # Beam level: finished beam j in batch i
                 if self.ratio > 0:

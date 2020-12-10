@@ -70,7 +70,7 @@ def train(opt):
                                 map_location=lambda storage, loc: storage)
         logger.info('Loading vocab from checkpoint at %s.' % opt.train_from)
         vocab = checkpoint['vocab']
-    elif opt.vocab and opt.vocab != 'none':
+    elif opt.vocab and opt.vocab != 'none' and not opt.pretrained_tokenizer:
         # added by @memray for multiple datasets
         vocab = torch.load(opt.vocab)
         # check for code where vocab is saved instead of fields
@@ -102,13 +102,14 @@ def train(opt):
 
     # @memray reload fields for news dataset and pretrained models
     tokenizer = None
-    if opt.pretrained_tokenizer is not None:
-        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer, opt.cache_dir, opt.special_vocab_path)
+    if opt.pretrained_tokenizer:
+        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer_name, opt.cache_dir, opt.special_vocab_path,
+                                              bpe_vocab=opt.vocab, bpe_merges=opt.bpe_merges, bpe_dropout=opt.bpe_dropout)
         setattr(opt, 'vocab_size', len(tokenizer))
     if opt.data_type == 'news':
         fields = reload_news_fields(opt, tokenizer=tokenizer)
-    # elif opt.data_type == 'keyphrase':
-    #     fields = reload_keyphrase_fields(opt, tokenizer=tokenizer)
+    elif opt.data_type == 'keyphrase':
+        fields = reload_keyphrase_fields(opt, tokenizer=tokenizer)
 
     if len(opt.data_ids) > 1:
         # added by @memray, for loading multiple datasets

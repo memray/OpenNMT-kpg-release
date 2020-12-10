@@ -4,6 +4,8 @@ from __future__ import print_function
 import argparse
 
 import configargparse
+
+from onmt.inputters.keyphrase_dataset import KP_CONCAT_TYPES
 from onmt.models.sru import CheckSRU
 
 
@@ -81,8 +83,6 @@ def model_opts(parser):
               choices=['fp32', 'fp16'],
               help='Data type of the model.')
 
-    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
-              type=str, default=None)
     group.add('--encoder_type', '-encoder_type', type=str, default='rnn',
               choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn', 'huggingface', 'fairseq_bart'],
               help="Type of encoder layer to use. Non-RNN layers "
@@ -405,10 +405,24 @@ def train_opts(parser):
               help="Type of the source input. Options: [text|img|news].")
     group.add('--multi_dataset', '-multi_dataset', action='store_true',
               help="If true then load all data.train.*.pt and data.valid.*.pt under the path specified by data_ids.")
-    group.add('--vocab', '-vocab', default="",
-              help="Path to an existing vocabulary, shared by all datasets.")
     group.add('--shuffle_shards', '-shuffle_shards', action='store_true',
               help="Shuffle the order of shards for each epoch.")
+
+    group.add('--vocab', '-vocab', default="",
+              help="Path to an existing vocabulary, shared by all datasets.")
+    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
+              type=bool, default=False)
+    group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
+              type=str, default="")
+    group.add('--cache_dir', '-cache_dir', default="",
+              help="Path to HF cache.")
+    group.add('--special_vocab_path', '-special_vocab_path', default="",
+              help="Path to HF special_vocab_path.")
+    group.add('--bpe_merges', '-bpe_merges', default="",
+              help="Required for loading huggingface tokenizer.")
+    group.add('--bpe_dropout', '-bpe_dropout',
+              type=float, default=0.0,
+              help="Dropout rate for BPE.")
 
     # GPU
     group.add('--gpuid', '-gpuid', default=[], nargs='*', type=int,
@@ -650,12 +664,10 @@ def train_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'multiple', 'random',
-                       'no_sort', 'no_sort_reverse',
-                       'alphabetical', 'alphabetical_reverse',
-                       'length', 'length_reverse',
-                       'verbatim_append', 'verbatim_prepend'],
-              help="""Format of targets for model to learn/output, 'multiple' is used during test phase""")
+              choices=KP_CONCAT_TYPES,
+              help="""Format of targets for model to learn/output, 'multiple' is used during test phase.
+              Note that the names have been changed after the empirical paper, e.g. verbatim_append is changed to pres_abs. 
+              """)
 
 def translate_opts(parser):
     """ Translation / inference options """
@@ -665,6 +677,14 @@ def translate_opts(parser):
               help="Path to model .pt file(s). "
                    "Multiple models can be specified, "
                    "for ensemble decoding.")
+    group.add('--model_type', '-model_type', default='text',
+              choices=['text', 'img', 'audio', 'vec', 'keyphrase'],
+              help="Type of source model to use. Allows "
+                   "the system to incorporate non-text inputs. "
+                   "Options are [text|img|audio|vec|keyphrase].")
+    group.add('--model_dtype', '-model_dtype', default='fp32',
+              choices=['fp32', 'fp16'],
+              help='Data type of the model.')
     group.add('--fp32', '-fp32', action='store_true',
               help="Force the model to be in FP32 "
                    "because FP16 is very slow on GTX1080(ti).")
@@ -676,9 +696,38 @@ def translate_opts(parser):
                    "Necessary for models whose output layers can assign "
                    "zero probability.")
 
+    """ Related to external resources """
+    group.add('--src_seq_length_trunc', '-src_seq_length_trunc',
+              type=int, default=1024,
+              help="Truncate source sequence length.")
+    group.add('--tgt_seq_length_trunc', '-tgt_seq_length_trunc',
+              type=int, default=1024,
+              help="Truncate target sequence length.")
+    group.add('--fairseq_model', '-fairseq_model',
+              type=bool, default=False, help="If true, indicating the checkpoint is trained from FairSeq.")
+    group.add('--vocab', '-vocab', default="",
+              help="Path to an existing vocabulary, shared by all datasets.")
+    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
+              type=bool, default=False)
+    group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
+              type=str, default="")
+    group.add('--cache_dir', '-cache_dir', default="",
+              help="Path to HF cache.")
+    group.add('--special_vocab_path', '-special_vocab_path', default="",
+              help="Path to HF special_vocab_path.")
+    group.add('--bpe_merges', '-bpe_merges', default="",
+              help="Required for loading huggingface tokenizer.")
+    group.add('--bpe_dropout', '-bpe_dropout',
+              type=float, default=0.0,
+              help="Dropout rate for BPE.")
+
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",
               help="Type of the source input. Options: [text|img|keyphrase].")
+    # Option most relevant to kp/news
+    group.add('--data_format', '-data_format', default='jsonl',
+              choices=['pt', 'jsonl'],
+              help="""Format of input data, specifying loading data from .pt (OpenNMT default) or .jsonl (@memray added)""")
 
     group.add('--src', '-src', #required=True,
               help="Source sequence to decode (one line per "
@@ -837,7 +886,7 @@ def translate_opts(parser):
 
     # Option most relevant to keyphrase
     group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=['one2one', 'no_sort', 'random', 'verbatim', 'multiple'],
+              choices=KP_CONCAT_TYPES,
               help="""Format of targets for model to learn/output""")
 
 # Copyright 2016 The Chromium Authors. All rights reserved.

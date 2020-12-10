@@ -9,26 +9,13 @@ data_type: keyphrase
 data_format: jsonl
 tgt_type: verbatim_append 
 
-multi_dataset: true
-shuffle_shards: true
-data: none
-vocab: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp20k.vocab.pt
-data_ids:
-  - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/kp20k_pt_shard10k/
-#  - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp_pt_shard10k/
-  # - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp_LN_pt_shard10k/
-  # - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp_Nsmall_pt_shard10k/
-  # - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp_Nlarge_pt_shard10k/
+multi_dataset: false
+shuffle_shards: false
+data: /zfs1/hdaqing/rum20/kp/data/kp/json/kp20k/
 
-data_weights:
-  - 1
-#  - 1
-  # - 1
-  # - 1
-  # - 1
-
-valid_data_ids:
-  - /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/kp20k_pt_shard10k/valid
+pretrained_tokenizer: true
+vocab: /zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-vocab.json
+bpe_merges: /zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-merges.txt
 
 encoder_type: transformer
 decoder_type: transformer

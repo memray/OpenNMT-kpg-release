@@ -1,0 +1,3 @@
+# transfer, pred & eval
+source script/transfer/run_pred_gpu.sh
+source script/transfer/run_pred_eval.sh

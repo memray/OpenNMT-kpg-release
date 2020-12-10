@@ -12,7 +12,7 @@ from multiprocessing import pool, Pool
 import six
 import torch
 import torchtext
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, RobertaTokenizerFast, RobertaTokenizer, AddedToken
 from torchtext.data import Field, RawField
 
 from torchtext.data import Dataset as TorchtextDataset
@@ -974,37 +974,77 @@ def update_field_vocab(field, tokenizer):
     setattr(field, 'lower', False)
     setattr(field, 'pretrained_tokenizer', tokenizer)
     setattr(field, 'bos_token', tokenizer.bos_token)
+    setattr(field, 'init_token', tokenizer.bos_token)
     setattr(field, 'eos_token', tokenizer.eos_token)
     setattr(field, 'pad_token', tokenizer.pad_token)
     setattr(field, 'unk_token', tokenizer.unk_token)
+    if hasattr(tokenizer, 'sep_token'):
+        setattr(field, 'sep_token', tokenizer.sep_token)
     if not hasattr(field, 'vocab_cls'):
         setattr(field, 'vocab_cls', torchtext.vocab.Vocab(counter=Counter()))
     setattr(field.vocab_cls, 'UNK', tokenizer.unk_token)
+
+    # Update vocab given the external pretrained vocab
     if not hasattr(field, 'vocab'):
         setattr(field, 'vocab', torchtext.vocab.Vocab(counter=Counter()))
-
+    stoi = tokenizer.get_vocab()
+    itos = [s for s,_ in sorted(tokenizer.get_vocab().items(), key=lambda x:x[1])]
     setattr(field.vocab, 'UNK', tokenizer.unk_token)
     setattr(field.vocab, 'unk_index', tokenizer.unk_token_id)
-    setattr(field.vocab, 'stoi', tokenizer.encoder)
-    field.vocab.stoi.update(tokenizer.added_tokens_encoder)
-    assert all([id == tid for id, (tid, _) in enumerate(tokenizer.decoder.items())])
-    itos = list(tokenizer.decoder.values()) + list(tokenizer.added_tokens_decoder.values())
+    setattr(field.vocab, 'stoi', stoi)
     setattr(field.vocab, 'itos', itos)
-    setattr(field.vocab, 'freqs', Counter(tokenizer.added_tokens_encoder))
+    setattr(field.vocab, 'freqs', Counter(itos))
 
     return field
 
 
-def load_pretrained_tokenizer(tokenizer_name, cache_dir, special_vocab_path=None):
+def load_pretrained_tokenizer(tokenizer_name, cache_dir, special_vocab_path=None,
+                              bpe_vocab=None, bpe_merges=None, bpe_dropout=0.0):
+    assert tokenizer_name or bpe_vocab, "Either tokenizer_name or bpe_vocab must be set to load HF tokenizer."
     print('Loading pretrained vocabulary, dumped to %s' % cache_dir)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir)
-    print('Vocab size=%d, base vocab size=%d' % (len(tokenizer), tokenizer.vocab_size))
-    if special_vocab_path is not None and special_vocab_path != 'none' and special_vocab_path != 'None':
-        special_tokens = [w.strip() for w in open(special_vocab_path, 'r').readlines()]
-        num_added_toks = tokenizer.add_tokens(special_tokens)
-        print('Added', num_added_toks, 'special tokens')
+    if tokenizer_name:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir)
         print('Vocab size=%d, base vocab size=%d' % (len(tokenizer), tokenizer.vocab_size))
+        if special_vocab_path is not None and special_vocab_path != 'none' and special_vocab_path != 'None':
+            special_tokens = [w.strip() for w in open(special_vocab_path, 'r').readlines()]
+            num_added_toks = tokenizer.add_tokens(special_tokens)
+            print('Added', num_added_toks, 'special tokens')
+            print('Vocab size=%d, base vocab size=%d' % (len(tokenizer), tokenizer.vocab_size))
+        else:
+            print('Special token vocab is not provided.')
     else:
-        print('Special token vocab is not provided.')
+        # use slow tokenizer for now, since fast version doesn't tokenize special tokens correctly
+        sep_token = '<sep>'
+        # tokenizer = RobertaTokenizer(vocab_file=bpe_vocab, merges_file=bpe_merges)
+        sep_token = '<sep>'
+        kp_special_tokens = ['<present>', '<absent>', '<category>']
+        tokenizer = RobertaTokenizer(vocab_file=bpe_vocab,
+                                     merges_file=bpe_merges,
+                                     sep=sep_token,  # doesn't work
+                                     additional_special_tokens=kp_special_tokens)
+        sep_token_id = tokenizer.convert_tokens_to_ids(sep_token)
+        added_sep_token = AddedToken(sep_token, lstrip=False, rstrip=False)
+        tokenizer.sep_token = sep_token
+        tokenizer._sep_token = added_sep_token
+        tokenizer.init_kwargs['sep_token'] = sep_token
+        tokenizer.all_special_ids.append(sep_token_id)
+        tokenizer.all_special_tokens.append(sep_token)
+        tokenizer.all_special_tokens_extended.append(added_sep_token)
+        tokenizer.special_tokens_map['sep_token'] = sep_token
+        tokenizer.special_tokens_map_extended['sep_token'] = added_sep_token
+
+        tokenizer.unique_no_split_tokens = tokenizer.all_special_tokens
+
+        tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base",
+                                                         __slow_tokenizer=tokenizer, tokenizer_file=None,
+                                                         vocab_file=bpe_vocab,
+                                                         merges_file=bpe_merges)
+        print('Vocab size=%d, base vocab size=%d' % (len(tokenizer), tokenizer.vocab_size))
+
+    if isinstance(tokenizer, RobertaTokenizerFast) and float(bpe_dropout) > 0.0:
+        workaround_files = tokenizer._tokenizer.model.save(cache_dir, 'workaround')
+        tokenizer._tokenizer.model = type(tokenizer._tokenizer.model)(*workaround_files, dropout=float(bpe_dropout))
+    print(tokenizer.tokenize('<s> what is wrong with <mask> <sep> I do not know either <present>, <absent>, <category> </s>'))
+    print(tokenizer.encode('<s> what is wrong with <mask> <sep> I do not know either <present>, <absent>, <category> </s>'))
 
     return tokenizer

@@ -11,12 +11,17 @@ import pandas as pd
 
 import os
 
+from onmt.inputters.keyphrase_dataset import infer_dataset_type, KP_DATASET_FIELDS, parse_src_fn
+from onmt.keyphrase import utils
 from onmt.keyphrase.eval import compute_match_scores, run_classic_metrics, run_advanced_metrics
 from onmt.keyphrase.utils import if_present_duplicate_phrases, validate_phrases, print_predeval_result, gather_scores
 from onmt.utils.logging import init_logger
 
 
-def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=False, report_path=None, eval_topbeam=False):
+def evaluate(src_list, tgt_list, pred_list,
+             unk_token,
+             logger=None, verbose=False,
+             report_path=None, eval_topbeam=False):
     # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
 
     if report_path:
@@ -33,12 +38,12 @@ def evaluate(src_list, tgt_list, pred_list, unk_token, logger=None, verbose=Fals
     gathered_score_dict = {}  # {'precision@5':[],'recall@5':[],'f1score@5':[], 'precision@10':[],'recall@10':[],'f1score@10':[]}
 
     # for i, (src_dict, tgt_dict, pred_dict) in tqdm.tqdm(enumerate(zip(src_list, tgt_list, pred_list))):
-    for i, (src_dict, tgt_dict, pred_dict) in enumerate(zip(src_list, tgt_list, pred_list)):
+    for i, (src_dict, tgt_dict, pred_dict) in tqdm.tqdm(enumerate(zip(src_list, tgt_list, pred_list))):
         """
         1. Process each data example and predictions
         """
         src_seq = src_dict["src"].split()
-        tgt_seqs =[t.split() for t in tgt_dict["tgt"]]
+        tgt_seqs = [t.split() for t in tgt_dict["tgt"]]
 
         if eval_topbeam:
             pred_seqs = pred_dict["topseq_pred_sents"]
@@ -237,19 +242,41 @@ def keyphrase_eval(src_path, tgt_path, pred_path,
     logger.info("pred file=%s" % (pred_path))
     logger.info("#(src)=%d, #(tgt)=%d, #(pred)=%d" % (src_line_number, tgt_line_number, pred_line_number))
     if src_line_number == tgt_line_number == pred_line_number:
-        src_data = (json.loads(l) for l in open(src_path, "r"))
-        tgt_data = (json.loads(l) for l in open(tgt_path, "r"))
+        src_data = [json.loads(l) for l in open(src_path, "r")]
+        tgt_data = [json.loads(l) for l in open(tgt_path, "r")]
+
+        # Load from the json-format raw data, preprocess the src and tgt
+        if src_path.endswith('json') or src_path.endswith('jsonl'):
+            assert src_path == tgt_path, \
+                'src and tgt should be from the same raw file: \n\tsrc_path: %s \n\ttgt_path: %s' % (src_path, tgt_path)
+            dataset_type = infer_dataset_type(src_path)
+            title_field, text_field, keyword_field, _ = KP_DATASET_FIELDS[dataset_type]
+
+            for src_ex, tgt_ex in zip(src_data, tgt_data):
+                src_str = parse_src_fn(src_ex, title_field, text_field)
+                src_tokens = utils.meng17_tokenize(src_str)
+                if isinstance(tgt_ex[keyword_field], str):
+                    tgt_kps = tgt_ex[keyword_field].split(';')
+                else:
+                    tgt_kps = tgt_ex[keyword_field]
+                tgt_kps_tokens = [utils.meng17_tokenize(tgt_str) for tgt_str in tgt_kps]
+                src_ex['src'] = ' '.join(src_tokens)
+                tgt_ex['tgt'] = [' '.join(tgt_tokens) for tgt_tokens in tgt_kps_tokens]
         if model_name == 'nn':
-            pred_data = (json.loads(l) for l in open(pred_path, "r"))
+            pred_data = [json.loads(l) for l in open(pred_path, "r")]
         else:
             pred_data = baseline_pred_loader(pred_path, model_name)
         start_time = time.time()
-        results_dict = evaluate(src_data, tgt_data, pred_data, unk_token=unk_token, logger=logger, verbose=verbose, report_path=report_path, eval_topbeam=eval_topbeam)
+        results_dict = evaluate(src_data, tgt_data, pred_data,
+                                unk_token=unk_token,
+                                logger=logger, verbose=verbose,
+                                report_path=report_path, eval_topbeam=eval_topbeam)
         total_time = time.time() - start_time
         logger.info("Total evaluation time (s): %f" % total_time)
 
         return results_dict
     else:
+        logger.error("")
         return None
 
 
@@ -341,12 +368,12 @@ def gather_eval_results(eval_root_dir, report_csv_path=None):
 
     for subdir, dirs, files in os.walk(eval_root_dir):
         for file in files:
-            if not file.endswith('.json'):
+            if not file.endswith('.eval'):
                 continue
             # file_count += 1
             # print("file_count/file_num=%d/%d" % (file_count, total_file_num))
 
-            file_name = file[: file.find('.json')]
+            file_name = file[: file.find('.eval')]
             ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
             dataset_name = file_name[file.rfind('-')+1: ]
             # if dataset_name != "kp20k_valid2k":
@@ -364,7 +391,7 @@ def gather_eval_results(eval_root_dir, report_csv_path=None):
 
     if report_csv_path:
         for dataset, score_df in dataset_scores_dict.items():
-            print("Writing summary to: %s" % report_csv_path % dataset)
+            print("Writing summary to: %s" % (report_csv_path % dataset))
             score_df.to_csv(report_csv_path % dataset)
 
     return dataset_scores_dict

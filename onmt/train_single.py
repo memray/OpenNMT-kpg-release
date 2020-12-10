@@ -130,11 +130,11 @@ def main(opt, device_id, batch_queue=None, semaphore=None):
 
     tokenizer = None
     if opt.pretrained_tokenizer:
-        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer, opt.cache_dir, opt.special_vocab_path)
+        tokenizer = load_pretrained_tokenizer(opt.pretrained_tokenizer_name, opt.cache_dir, opt.special_vocab_path,
+                                              bpe_vocab=opt.vocab, bpe_merges=opt.bpe_merges, bpe_dropout=opt.bpe_dropout)
         setattr(opt, 'vocab_size', len(tokenizer))
     if opt.data_type == 'news':
         fields = reload_news_fields(fields, opt, tokenizer)
-
 
     # Report src and tgt vocab sizes, including for features
     for side in ['src', 'tgt']:

@@ -28,26 +28,35 @@ class TranslationBuilder(object):
                  has_tgt=False, phrase_table=""):
         self.data = data
         self.fields = fields
-        self._has_text_src = isinstance(
-            dict(self.fields)["src"], TextMultiField)
+        # self._has_text_src = isinstance(dict(self.fields)["src"], TextMultiField)
+        self._has_text_src = False # not tested
         self.n_best = n_best
         self.replace_unk = replace_unk
         self.phrase_table = phrase_table
         self.has_tgt = has_tgt
 
     def _build_target_tokens(self, src, src_vocab, src_raw, pred, attn):
-        tgt_field = dict(self.fields)["tgt"].base_field
+        tgt_field = dict(self.fields)["tgt"].base_field if hasattr(dict(self.fields)["tgt"], 'base_field') else dict(self.fields)["tgt"]
+        pretrained_tokenizer = None
+        if hasattr(tgt_field, 'pretrained_tokenizer'):
+            pretrained_tokenizer = tgt_field.pretrained_tokenizer
         vocab = tgt_field.vocab
         tokens = []
 
         for tok in pred:
             if tok < len(vocab):
-                tokens.append(vocab.itos[tok])
+                if pretrained_tokenizer:
+                    # directly use the pretrained tokenizer for decoding if applicable
+                    token = pretrained_tokenizer.convert_ids_to_tokens([tok.item()])
+                    tokens.append(token[0])
+                else:
+                    tokens.append(vocab.itos[tok])
             else:
                 tokens.append(src_vocab.itos[tok - len(vocab)])
             if tokens[-1] == tgt_field.eos_token:
                 tokens = tokens[:-1]
-                break
+        if pretrained_tokenizer:
+            tokens = pretrained_tokenizer.convert_tokens_to_string(tokens).split()
         if self.replace_unk and attn is not None and src is not None:
             for i in range(len(tokens)):
                 if tokens[i] == tgt_field.unk_token:
@@ -81,7 +90,10 @@ class TranslationBuilder(object):
         # Sorting
         inds, perm = torch.sort(batch.indices)
         if self._has_text_src:
-            src = batch.src[0][:, :, 0].index_select(1, perm)
+            if isinstance(batch.tgt, torch.Tensor) and len(batch.tgt.size()) == 3:
+                src = batch.src[:, :, 0].index_select(1, perm) # src_len, batch_size
+            else:
+                src = batch.src[0][:, :, 0].index_select(1, perm)
         else:
             src = None
 
