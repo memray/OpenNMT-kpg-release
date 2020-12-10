@@ -10,14 +10,14 @@ from onmt.utils.logging import logger
 
 
 def build_report_manager(opt, gpu_rank):
-    if opt.tensorboard and gpu_rank == 0:
+    if opt.tensorboard and gpu_rank <= 0:
         from torch.utils.tensorboard import SummaryWriter
-        tensorboard_log_dir = opt.tensorboard_log_dir
-
-        if not opt.train_from:
-            tensorboard_log_dir += datetime.now().strftime("/%b-%d_%H-%M-%S")
-
-        writer = SummaryWriter(tensorboard_log_dir, comment="Unmt")
+        if not hasattr(opt, 'tensorboard_log_dir_dated'):
+            opt.tensorboard_log_dir_dated = (
+                opt.tensorboard_log_dir +
+                datetime.now().strftime("/%b-%d_%H-%M-%S")
+            )
+        writer = SummaryWriter(opt.tensorboard_log_dir_dated, comment="Unmt")
     else:
         writer = None
 
@@ -55,7 +55,7 @@ class ReportMgrBase(object):
     def log(self, *args, **kwargs):
         logger.info(*args, **kwargs)
 
-    def report_training(self, step, num_steps, learning_rate,
+    def report_training(self, step, num_steps, learning_rate, patience,
                         report_stats, multigpu=False):
         """
         This is the user-defined batch-level traing progress
@@ -78,7 +78,7 @@ class ReportMgrBase(object):
                 report_stats = \
                     onmt.utils.Statistics.all_gather_stats(report_stats)
             self._report_training(
-                step, num_steps, learning_rate, report_stats)
+                step, num_steps, learning_rate, patience, report_stats)
             return onmt.utils.Statistics()
         else:
             return report_stats
@@ -87,17 +87,22 @@ class ReportMgrBase(object):
         """ To be overridden """
         raise NotImplementedError()
 
-    def report_step(self, lr, step, train_stats=None, valid_stats=None):
+    def report_step(self, lr, patience, step, train_stats=None,
+                    valid_stats=None):
         """
         Report stats of a step
 
         Args:
+            lr(float): current learning rate
+            patience(int): current patience
+            step(int): current step
             train_stats(Statistics): training stats
             valid_stats(Statistics): validation stats
-            lr(float): current learning rate
         """
         self._report_step(
-            lr, step, train_stats=train_stats, valid_stats=valid_stats)
+            lr, patience, step,
+            train_stats=train_stats,
+            valid_stats=valid_stats)
 
     def _report_step(self, *args, **kwargs):
         raise NotImplementedError()
@@ -119,12 +124,13 @@ class ReportMgr(ReportMgrBase):
         self.tensorboard_writer = tensorboard_writer
         self.report_wandb = report_wandb
 
-    def maybe_log_tensorboard(self, stats, prefix, learning_rate, step):
+    def maybe_log_tensorboard(self, stats, prefix, learning_rate,
+                              patience, step):
         if self.tensorboard_writer is not None:
             stats.log_tensorboard(
-                prefix, self.tensorboard_writer, learning_rate, step)
+                prefix, self.tensorboard_writer, learning_rate, patience, step)
 
-    def _report_training(self, step, num_steps, learning_rate,
+    def _report_training(self, step, num_steps, learning_rate, patience,
                          report_stats):
         """
         See base class method `ReportMgrBase.report_training`.
@@ -135,6 +141,7 @@ class ReportMgr(ReportMgrBase):
         self.maybe_log_tensorboard(report_stats,
                                    "progress",
                                    learning_rate,
+                                   patience,
                                    step)
 
         if self.report_wandb:
@@ -144,7 +151,9 @@ class ReportMgr(ReportMgrBase):
 
         return report_stats
 
-    def _report_step(self, lr, step, train_stats=None, valid_stats=None):
+    def _report_step(self, lr, patience, step,
+                     train_stats=None,
+                     valid_stats=None):
         """
         See base class method `ReportMgrBase.report_step`.
         """
@@ -155,6 +164,7 @@ class ReportMgr(ReportMgrBase):
             self.maybe_log_tensorboard(train_stats,
                                        "train",
                                        lr,
+                                       patience,
                                        step)
 
             if self.report_wandb:
@@ -167,6 +177,7 @@ class ReportMgr(ReportMgrBase):
             self.maybe_log_tensorboard(valid_stats,
                                        "valid",
                                        lr,
+                                       patience,
                                        step)
 
             if self.report_wandb:

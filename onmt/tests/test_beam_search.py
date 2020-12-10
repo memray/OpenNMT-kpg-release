@@ -1,5 +1,6 @@
 import unittest
 from onmt.translate.beam_search import BeamSearch, GNMTGlobalScorer
+from onmt.translate.beam_search import BeamSearchLM
 
 from copy import deepcopy
 
@@ -61,9 +62,8 @@ class TestBeamSearch(unittest.TestCase):
                     # (but it's still the best score, thus we have
                     # [BLOCKED_SCORE, -inf, -inf, -inf, -inf]
                     expected_scores = torch.tensor(
-                        [0] + [-float('inf')] * (beam_sz - 1))\
-                        .repeat(batch_sz, 1)
-                    expected_scores[:, 0] = self.BLOCKED_SCORE
+                        [self.BLOCKED_SCORE] + [-float('inf')] * (beam_sz - 1)
+                    ).repeat(batch_sz, 1)
                     self.assertTrue(beam.topk_log_probs.equal(expected_scores))
                 else:
                     # repetitions keeps maximizing score
@@ -71,11 +71,9 @@ class TestBeamSearch(unittest.TestCase):
                     # other indexes are -inf so repeating=>BLOCKED_SCORE
                     # which is higher
                     expected_scores = torch.tensor(
-                        [0] + [-float('inf')] * (beam_sz - 1))\
-                        .repeat(batch_sz, 1)
-                    expected_scores[:, :] = self.BLOCKED_SCORE
-                    expected_scores = torch.tensor(
-                        self.BLOCKED_SCORE).repeat(batch_sz, beam_sz)
+                        [self.BLOCKED_SCORE] + [-float('inf')] * (beam_sz - 1)
+                    ).repeat(batch_sz, 1)
+                    self.assertTrue(beam.topk_log_probs.equal(expected_scores))
 
     def test_advance_with_some_repeats_gets_blocked(self):
         # beam 0 and beam >=2 will repeat (beam >= 2 repeat dummy scores)
@@ -137,7 +135,8 @@ class TestBeamSearch(unittest.TestCase):
 
                     expected = torch.full([batch_sz, beam_sz], float("-inf"))
                     expected[:, 0] = no_repeat_score
-                    expected[:, 1:] = self.BLOCKED_SCORE
+                    expected[:, 1:3] = self.BLOCKED_SCORE
+                    expected[:, 3:] = float("-inf")
                     self.assertTrue(
                         beam.topk_log_probs.equal(expected))
 
@@ -446,7 +445,7 @@ class TestBeamSearchAgainstReferenceCase(unittest.TestCase):
         expected_beam_scores, unreduced_preds = new_scores\
             .view(self.BATCH_SZ, self.BEAM_SZ * self.N_WORDS)\
             .topk(self.BEAM_SZ, -1)
-        expected_bptr_1 = unreduced_preds / self.N_WORDS
+        expected_bptr_1 = unreduced_preds // self.N_WORDS
         # [5, 3, 2, 6, 0], so beam 2 predicts EOS!
         expected_preds_1 = unreduced_preds - expected_bptr_1 * self.N_WORDS
         self.assertTrue(beam.topk_log_probs.allclose(expected_beam_scores))
@@ -480,7 +479,7 @@ class TestBeamSearchAgainstReferenceCase(unittest.TestCase):
         expected_beam_scores, unreduced_preds = new_scores\
             .view(self.BATCH_SZ, self.BEAM_SZ * self.N_WORDS)\
             .topk(self.BEAM_SZ, -1)
-        expected_bptr_2 = unreduced_preds / self.N_WORDS
+        expected_bptr_2 = unreduced_preds // self.N_WORDS
         # [2, 5, 3, 6, 0] repeat self.BATCH_SZ, so beam 0 predicts EOS!
         expected_preds_2 = unreduced_preds - expected_bptr_2 * self.N_WORDS
         # [-2.4879, -3.8910, -4.1010, -4.2010, -4.4010] repeat self.BATCH_SZ
@@ -518,7 +517,7 @@ class TestBeamSearchAgainstReferenceCase(unittest.TestCase):
         expected_beam_scores, unreduced_preds = new_scores\
             .view(self.BATCH_SZ, self.BEAM_SZ * self.N_WORDS)\
             .topk(self.BEAM_SZ, -1)
-        expected_bptr_3 = unreduced_preds / self.N_WORDS
+        expected_bptr_3 = unreduced_preds // self.N_WORDS
         # [5, 2, 6, 1, 0] repeat self.BATCH_SZ, so beam 1 predicts EOS!
         expected_preds_3 = unreduced_preds - expected_bptr_3 * self.N_WORDS
         self.assertTrue(beam.topk_log_probs.allclose(
@@ -568,3 +567,54 @@ class TestBeamWithLengthPenalty(TestBeamSearchAgainstReferenceCase):
         expected_beam_scores = self.first_step(beam, expected_beam_scores, 3)
         expected_beam_scores = self.second_step(beam, expected_beam_scores, 4)
         self.third_step(beam, expected_beam_scores, 5)
+
+
+class TestBeamSearchLM(TestBeamSearchAgainstReferenceCase):
+    def finish_first_beam_step(self, beam):
+        scores_finish = torch.log_softmax(torch.tensor(
+            [[0, 0, 10000, 0, 5000, .51, .2, 0],  # beam 0 shouldn't cont
+             [100000, 100001, 0, 0, 0, 0, 0, 0],
+             [0,100000, 0, 0, 0, 5000, 0, 0],
+             [0, 0, 0, .2, .2, .2, .2, .2],
+             [0, 0, 0, 0, .2, .2, .2, .2]]  # beam 4 -> beam 1 should die
+        ), dim=1)
+        scores_finish = scores_finish.repeat(self.BATCH_SZ, 1)
+        scores_finish[:self.BEAM_SZ, beam.eos] = 0
+        beam.advance( scores_finish, None)
+        
+        any_finished = beam.is_finished.any()
+        if any_finished:
+            beam.update_finished()
+
+    def test_beam_lm_increase_memory_length(self):
+        beam = BeamSearchLM(
+            self.BEAM_SZ, self.BATCH_SZ, 0, 1, 2, self.N_BEST,
+            GlobalScorerStub(),
+            0, 30, False, 0, set(),
+            False, 0.)
+        device_init = torch.zeros(1, 1)
+        src_lengths = torch.randint(0, 30, (self.BATCH_SZ,))
+        fn_map_state, _, _, _ = beam.initialize(device_init, src_lengths)
+        expected_beam_scores = self.init_step(beam, 1)
+        expected_beam_scores = self.first_step(beam, expected_beam_scores, 1)
+        expected_beam_scores = self.second_step(beam, expected_beam_scores, 1)
+        self.third_step(beam, expected_beam_scores, 1)
+
+        n_steps = beam.alive_seq.shape[-1] - 1
+        self.assertTrue(beam.memory_lengths.equal(n_steps+fn_map_state(src_lengths, dim=0)))
+    
+    
+    def test_beam_lm_update_memory_length_when_finished(self):
+        beam = BeamSearchLM(
+            self.BEAM_SZ, self.BATCH_SZ, 0, 1, 2, self.N_BEST,
+            GlobalScorerStub(),
+            0, 30, False, 0, set(),
+            False, 0.)
+        device_init = torch.zeros(1, 1)
+        src_lengths = torch.randint(0, 30, (self.BATCH_SZ,))
+        fn_map_state, _, _, _ = beam.initialize(device_init, src_lengths)
+        expected_beam_scores = self.init_step(beam, 1)
+        self.finish_first_beam_step(beam)
+        
+        n_steps = beam.alive_seq.shape[-1] - 1
+        self.assertTrue(beam.memory_lengths.equal(n_steps+fn_map_state(src_lengths[1:], dim=0)))

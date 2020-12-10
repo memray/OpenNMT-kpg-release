@@ -6,7 +6,7 @@ from onmt.utils.misc import tile
 import warnings
 
 
-class BeamSearch(DecodeStrategy):
+class BeamSearchBase(DecodeStrategy):
     """Generation beam search.
 
     Note that the attributes list is not exhaustive. Rather, it highlights
@@ -54,12 +54,11 @@ class BeamSearch(DecodeStrategy):
         hypotheses (list[list[Tuple[Tensor]]]): Contains a tuple
             of score (float), sequence (long), and attention (float or None).
     """
-
     def __init__(self, beam_size, batch_size, pad, bos, eos, n_best,
                  global_scorer, min_length, max_length, return_attention,
                  block_ngram_repeat, exclusion_tokens,
-                 stepwise_penalty, ratio, beam_terminate):
-        super(BeamSearch, self).__init__(
+                 stepwise_penalty, ratio):
+        super(BeamSearchBase, self).__init__(
             pad, bos, eos, batch_size, beam_size, min_length,
             block_ngram_repeat, exclusion_tokens, return_attention,
             max_length)
@@ -96,29 +95,16 @@ class BeamSearch(DecodeStrategy):
             not stepwise_penalty and self.global_scorer.has_cov_pen)
         self._cov_pen = self.global_scorer.has_cov_pen
 
-    def initialize(self, memory_bank, src_lengths, src_map=None, device=None):
-        """Initialize for decoding.
-        Repeat src objects `beam_size` times.
-        """
+        self.memory_lengths = None
 
-        def fn_map_state(state, dim):
-            return tile(state, self.beam_size, dim=dim)
+    def initialize(self, *args, **kwargs):
+        raise NotImplementedError
 
-        if isinstance(memory_bank, tuple):
-            memory_bank = tuple(tile(x, self.beam_size, dim=1)
-                                for x in memory_bank)
-            mb_device = memory_bank[0].device
-        else:
-            memory_bank = tile(memory_bank, self.beam_size, dim=1)
-            mb_device = memory_bank.device
-        if src_map is not None:
-            src_map = tile(src_map, self.beam_size, dim=1)
-        if device is None:
-            device = mb_device
+    def initialize_(self, memory_bank, memory_lengths, src_map, device,
+                    target_prefix):
+        super(BeamSearchBase, self).initialize(
+            memory_bank, memory_lengths, src_map, device, target_prefix)
 
-        self.memory_lengths = tile(src_lengths, self.beam_size)
-        super(BeamSearch, self).initialize(
-            memory_bank, self.memory_lengths, src_map, device)
         self.best_scores = torch.full(
             [self.batch_size], -1e10, dtype=torch.float, device=device)
         self._beam_offset = torch.arange(
@@ -134,7 +120,6 @@ class BeamSearch(DecodeStrategy):
                                     dtype=torch.long, device=device)
         self._batch_index = torch.empty([self.batch_size, self.beam_size],
                                         dtype=torch.long, device=device)
-        return fn_map_state, memory_bank, self.memory_lengths, src_map
 
     @property
     def current_predictions(self):
@@ -151,88 +136,24 @@ class BeamSearch(DecodeStrategy):
     def batch_offset(self):
         return self._batch_offset
 
-    def advance(self, log_probs, attn):
+    def _pick(self, log_probs):
+        """Return token decision for a step.
+
+        Args:
+            log_probs (FloatTensor): (B, vocab_size)
+
+        Returns:
+            topk_scores (FloatTensor): (B, beam_size)
+            topk_ids (LongTensor): (B, beam_size)
+        """
         vocab_size = log_probs.size(-1)
-
-        # using integer division to get an integer _B without casting
-        _B = log_probs.shape[0] // self.beam_size
-
-        if self._stepwise_cov_pen and self._prev_penalty is not None:
-            self.topk_log_probs += self._prev_penalty
-            self.topk_log_probs -= self.global_scorer.cov_penalty(
-                self._coverage + attn, self.global_scorer.beta).view(
-                _B, self.beam_size)
-
-        # force the output to be longer than self.min_length
-        step = len(self)
-        self.ensure_min_length(log_probs)
-
-        # Multiply probs by the beam probability.
-        log_probs += self.topk_log_probs.view(_B * self.beam_size, 1)
-
-        # if the sequence ends now, then the penalty is the current
-        # length + 1, to include the EOS token
-        length_penalty = self.global_scorer.length_penalty(
-            step + 1, alpha=self.global_scorer.alpha)
-
-        curr_scores = log_probs / length_penalty
-
-        # Avoid any direction that would repeat unwanted ngrams
-        self.block_ngram_repeats(curr_scores)
+        # maybe fix some prediction at this step by modifying log_probs
+        log_probs = self.target_prefixing(log_probs)
 
         # Flatten probs into a list of possibilities.
-        curr_scores = curr_scores.reshape(_B, self.beam_size * vocab_size)
-        torch.topk(curr_scores, self.beam_size, dim=-1,
-                   out=(self.topk_scores, self.topk_ids))
-
-        # Recover log probs.
-        # Length penalty is just a scalar. It doesn't matter if it's applied
-        # before or after the topk.
-        torch.mul(self.topk_scores, length_penalty, out=self.topk_log_probs)
-
-        # Resolve beam origin and map to batch index flat representation.
-        self._batch_index = self.topk_ids // vocab_size
-        self._batch_index += self._beam_offset[:_B].unsqueeze(1)
-        self.select_indices = self._batch_index.view(_B * self.beam_size)
-        self.topk_ids.fmod_(vocab_size)  # resolve true word ids
-
-        # Append last prediction.
-        self.alive_seq = torch.cat(
-            [self.alive_seq.index_select(0, self.select_indices),
-             self.topk_ids.view(_B * self.beam_size, 1)], -1)
-
-        self.maybe_update_forbidden_tokens()
-
-        if self.return_attention or self._cov_pen:
-            current_attn = attn.index_select(1, self.select_indices)
-            if step == 1:
-                self.alive_attn = current_attn
-                # update global state (step == 1)
-                if self._cov_pen:  # coverage penalty
-                    self._prev_penalty = torch.zeros_like(self.topk_log_probs)
-                    self._coverage = current_attn
-            else:
-                self.alive_attn = self.alive_attn.index_select(
-                    1, self.select_indices)
-                self.alive_attn = torch.cat([self.alive_attn, current_attn], 0)
-                # update global state (step > 1)
-                if self._cov_pen:
-                    self._coverage = self._coverage.index_select(
-                        1, self.select_indices)
-                    self._coverage += current_attn
-                    self._prev_penalty = self.global_scorer.cov_penalty(
-                        self._coverage, beta=self.global_scorer.beta).view(
-                            _B, self.beam_size)
-
-        if self._vanilla_cov_pen:
-            # shape: (batch_size x beam_size, 1)
-            cov_penalty = self.global_scorer.cov_penalty(
-                self._coverage,
-                beta=self.global_scorer.beta)
-            self.topk_scores -= cov_penalty.view(_B, self.beam_size).float()
-
-        self.is_finished = self.topk_ids.eq(self.eos)
-        self.ensure_max_length()
+        curr_scores = log_probs.reshape(-1, self.beam_size * vocab_size)
+        topk_scores, topk_ids = torch.topk(curr_scores, self.beam_size, dim=-1)
+        return topk_scores, topk_ids
 
     def update_finished(self, last_step=None):
         """
@@ -259,7 +180,7 @@ class BeamSearch(DecodeStrategy):
         # iterate each batch
         for i in range(self.is_finished.size(0)):  # Batch level
             b = self._batch_offset[i]
-            finished_hyp = self.is_finished[i].nonzero(as_tuple=True)[0]
+            finished_hyp = self.is_finished[i].nonzero(as_tuple=False).view(-1)
             # Store finished hypotheses for this batch.
             for j in finished_hyp:  # Beam level: finished beam j in batch i
                 if self.ratio > 0:
@@ -311,6 +232,11 @@ class BeamSearch(DecodeStrategy):
             return
 
         _B_new = non_finished.shape[0]
+        self.remove_finished_batches(_B_new, _B_old, non_finished,
+                                     predictions, attention, step)
+
+    def remove_finished_batches(self, _B_new, _B_old, non_finished,
+                                predictions, attention, step):
         # Remove finished batches for the next step.
         self.top_beam_finished = self.top_beam_finished.index_select(
             0, non_finished)
@@ -324,6 +250,7 @@ class BeamSearch(DecodeStrategy):
             .view(-1, self.alive_seq.size(-1))
         self.topk_scores = self.topk_scores.index_select(0, non_finished)
         self.topk_ids = self.topk_ids.index_select(0, non_finished)
+        self.maybe_update_target_prefix(self.select_indices)
         if self.alive_attn is not None:
             inp_seq_len = self.alive_attn.size(-1)
             self.alive_attn = attention.index_select(1, non_finished) \
@@ -336,6 +263,171 @@ class BeamSearch(DecodeStrategy):
                 if self._stepwise_cov_pen:
                     self._prev_penalty = self._prev_penalty.index_select(
                         0, non_finished)
+
+    def advance(self, log_probs, attn):
+        vocab_size = log_probs.size(-1)
+
+        # using integer division to get an integer _B without casting
+        _B = log_probs.shape[0] // self.beam_size
+
+        if self._stepwise_cov_pen and self._prev_penalty is not None:
+            self.topk_log_probs += self._prev_penalty
+            self.topk_log_probs -= self.global_scorer.cov_penalty(
+                self._coverage + attn, self.global_scorer.beta).view(
+                _B, self.beam_size)
+
+        # force the output to be longer than self.min_length
+        step = len(self)
+        self.ensure_min_length(log_probs)
+
+        # Multiply probs by the beam probability.
+        log_probs += self.topk_log_probs.view(_B * self.beam_size, 1)
+
+        # if the sequence ends now, then the penalty is the current
+        # length + 1, to include the EOS token
+        length_penalty = self.global_scorer.length_penalty(
+            step + 1, alpha=self.global_scorer.alpha)
+
+        curr_scores = log_probs / length_penalty
+
+        # Avoid any direction that would repeat unwanted ngrams
+        self.block_ngram_repeats(curr_scores)
+
+        # Pick up candidate token by curr_scores
+        self.topk_scores, self.topk_ids = self._pick(curr_scores)
+
+        # Recover log probs.
+        # Length penalty is just a scalar. It doesn't matter if it's applied
+        # before or after the topk.
+        torch.mul(self.topk_scores, length_penalty, out=self.topk_log_probs)
+
+        # Resolve beam origin and map to batch index flat representation.
+        self._batch_index = self.topk_ids // vocab_size
+        self._batch_index += self._beam_offset[:_B].unsqueeze(1)
+        self.select_indices = self._batch_index.view(_B * self.beam_size)
+        self.topk_ids.fmod_(vocab_size)  # resolve true word ids
+
+        # Append last prediction.
+        self.alive_seq = torch.cat(
+            [self.alive_seq.index_select(0, self.select_indices),
+             self.topk_ids.view(_B * self.beam_size, 1)], -1)
+
+        self.maybe_update_forbidden_tokens()
+
+        if self.return_attention or self._cov_pen:
+            current_attn = attn.index_select(1, self.select_indices)
+            if step == 1:
+                self.alive_attn = current_attn
+                # update global state (step == 1)
+                if self._cov_pen:  # coverage penalty
+                    self._prev_penalty = torch.zeros_like(self.topk_log_probs)
+                    self._coverage = current_attn
+            else:
+                self.alive_attn = self.alive_attn.index_select(
+                    1, self.select_indices)
+                self.alive_attn = torch.cat([self.alive_attn, current_attn], 0)
+                # update global state (step > 1)
+                if self._cov_pen:
+                    self._coverage = self._coverage.index_select(
+                        1, self.select_indices)
+                    self._coverage += current_attn
+                    self._prev_penalty = self.global_scorer.cov_penalty(
+                        self._coverage, beta=self.global_scorer.beta).view(
+                            _B, self.beam_size)
+
+        if self._vanilla_cov_pen:
+            # shape: (batch_size x beam_size, 1)
+            cov_penalty = self.global_scorer.cov_penalty(
+                self._coverage,
+                beta=self.global_scorer.beta)
+            self.topk_scores -= cov_penalty.view(_B, self.beam_size).float()
+
+        self.is_finished = self.topk_ids.eq(self.eos)
+        self.ensure_max_length()
+
+
+class BeamSearch(BeamSearchBase):
+    """
+        Beam search for seq2seq/encoder-decoder models
+    """
+    def initialize(self, memory_bank, src_lengths, src_map=None, device=None,
+                   target_prefix=None):
+        """Initialize for decoding.
+        Repeat src objects `beam_size` times.
+        """
+
+        def fn_map_state(state, dim):
+            return tile(state, self.beam_size, dim=dim)
+
+        if isinstance(memory_bank, tuple):
+            memory_bank = tuple(tile(x, self.beam_size, dim=1)
+                                for x in memory_bank)
+            mb_device = memory_bank[0].device
+        else:
+            memory_bank = tile(memory_bank, self.beam_size, dim=1)
+            mb_device = memory_bank.device
+        if src_map is not None:
+            src_map = tile(src_map, self.beam_size, dim=1)
+        if device is None:
+            device = mb_device
+
+        self.memory_lengths = tile(src_lengths, self.beam_size)
+        if target_prefix is not None:
+            target_prefix = tile(target_prefix, self.beam_size, dim=1)
+
+        super(BeamSearch, self).initialize_(
+            memory_bank, self.memory_lengths, src_map, device, target_prefix)
+
+        return fn_map_state, memory_bank, self.memory_lengths, src_map
+
+
+class BeamSearchLM(BeamSearchBase):
+    """
+        Beam search for language/decoder only models
+    """
+    def initialize(self, src, src_lengths, src_map=None, device=None,
+                   target_prefix=None):
+        """Initialize for decoding.
+        Repeat src objects `beam_size` times.
+        """
+        def fn_map_state(state, dim):
+            return tile(state, self.beam_size, dim=dim)
+
+        src = fn_map_state(src, dim=1)
+        if src_map is not None:
+            src_map = tile(src_map, self.beam_size, dim=1)
+        if device is None:
+            device = src.device
+
+        self.memory_lengths = tile(src_lengths, self.beam_size)
+        if target_prefix is not None:
+            target_prefix = tile(target_prefix, self.beam_size, dim=1)
+
+        super(BeamSearchLM, self).initialize_(
+            None, self.memory_lengths, src_map=src_map, device=device,
+            target_prefix=target_prefix)
+
+        return fn_map_state, src, self.memory_lengths, src_map
+
+    def advance(self, log_probs, attn):
+        super(BeamSearchLM, self).advance(log_probs, attn)
+
+        # in LM task memory_lengths is associated with currently generated src
+        # and therefore needs to follow the generation
+        self.memory_lengths += 1
+
+    def remove_finished_batches(self, _B_new, _B_old, non_finished,
+                                predictions, attention, step):
+        super(BeamSearchLM, self).remove_finished_batches(
+            _B_new, _B_old, non_finished, predictions, attention, step)
+
+        # in LM task memory_lengths is associated with currently generated src
+        # and therefore needs to follow the generation
+        non_finished = non_finished.to(self.topk_ids.device)
+        self.memory_lengths = self.memory_lengths.view(
+            _B_old, self.beam_size) \
+            .index_select(0, non_finished) \
+            .view(_B_new * self.beam_size)
 
 
 class GNMTGlobalScorer(object):

@@ -1,8 +1,9 @@
 """ Translation main class """
 from __future__ import unicode_literals, print_function
 
+import os
 import torch
-
+from onmt.constants import DefaultTokens
 from onmt.inputters import KeyphraseDataset
 from onmt.inputters.text_dataset import TextMultiField
 from onmt.utils.alignment import build_align_pharaoh
@@ -28,11 +29,17 @@ class TranslationBuilder(object):
                  has_tgt=False, phrase_table=""):
         self.data = data
         self.fields = fields
-        # self._has_text_src = isinstance(dict(self.fields)["src"], TextMultiField)
-        self._has_text_src = False # not tested
+        self._has_text_src = isinstance(
+            dict(self.fields)["src"], TextMultiField)
         self.n_best = n_best
         self.replace_unk = replace_unk
-        self.phrase_table = phrase_table
+        self.phrase_table_dict = {}
+        if phrase_table != "" and os.path.exists(phrase_table):
+            with open(phrase_table) as phrase_table_fd:
+                for line in phrase_table_fd:
+                    phrase_src, phrase_trg = line.rstrip("\n").split(
+                        DefaultTokens.PHRASE_TABLE_SEPARATOR)
+                    self.phrase_table_dict[phrase_src] = phrase_trg
         self.has_tgt = has_tgt
 
     def _build_target_tokens(self, src, src_vocab, src_raw, pred, attn):
@@ -62,11 +69,10 @@ class TranslationBuilder(object):
                 if tokens[i] == tgt_field.unk_token:
                     _, max_index = attn[i][:len(src_raw)].max(0)
                     tokens[i] = src_raw[max_index.item()]
-                    if self.phrase_table != "":
-                        with open(self.phrase_table, "r") as f:
-                            for line in f:
-                                if line.startswith(src_raw[max_index.item()]):
-                                    tokens[i] = line.split('|||')[1].strip()
+                    if self.phrase_table_dict:
+                        src_tok = src_raw[max_index.item()]
+                        if src_tok in self.phrase_table_dict:
+                            tokens[i] = self.phrase_table_dict[src_tok]
         return tokens
 
     def from_batch(self, translation_batch):
@@ -120,7 +126,8 @@ class TranslationBuilder(object):
             pred_sents = [self._build_target_tokens(
                 src[:, b] if src is not None else None,
                 src_vocab, src_raw,
-                preds[b][n], attn[b][n])
+                preds[b][n],
+                align[b][n] if align[b] is not None else attn[b][n])
                 for n in range(min(self.n_best, len(preds[b])))]
             gold_sent = None
             if tgt is not None:

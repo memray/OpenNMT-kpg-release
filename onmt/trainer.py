@@ -16,6 +16,7 @@ import traceback
 import onmt.utils
 from onmt.utils.logging import logger
 
+
 def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     """
     Simplify `Trainer` creation based on user `opt`s*
@@ -26,7 +27,7 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
         fields (dict): dict of fields
         optim (:obj:`onmt.utils.Optimizer`): optimizer used during training
         data_type (str): string describing the type of data
-            e.g. "text", "img", "audio"
+            e.g. "text"
         model_saver(:obj:`onmt.models.ModelSaverBase`): the utility object
             used to save the model
     """
@@ -57,7 +58,7 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
     if device_id >= 0:
         gpu_rank = opt.gpu_ranks[device_id]
     else:
-        gpu_rank = 0
+        gpu_rank = -1
         n_gpu = 0
     gpu_verbose_level = opt.gpu_verbose_level
 
@@ -83,7 +84,7 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
                            n_gpu, gpu_rank,
                            gpu_verbose_level, report_manager,
                            with_align=True if opt.lambda_align > 0 else False,
-                           model_saver=model_saver if gpu_rank == 0 else None,
+                           model_saver=model_saver if gpu_rank <= 0 else None,
                            average_decay=average_decay,
                            average_every=average_every,
                            model_dtype=opt.model_dtype,
@@ -108,7 +109,7 @@ class Trainer(object):
                the optimizer responsible for update
             trunc_size(int): length of truncated back propagation through time
             shard_size(int): compute loss in shards of this size for efficiency
-            data_type(string): type of the source input: [text|img|audio]
+            data_type(string): type of the source input: [text]
             norm_method(string): normalization methods: [sents|tokens]
             accum_count(list): accumulate gradients this many times.
             accum_steps(list): steps for accum gradients changes.
@@ -202,7 +203,7 @@ class Trainer(object):
             self.moving_average = copy_params
         else:
             average_decay = max(self.average_decay,
-                                1 - (step + 1)/(step + 10))
+                                1 - (step + 1) / (step + 10))
             for (i, avg), cpt in zip(enumerate(self.moving_average),
                                      self.model.parameters()):
                 self.moving_average[i] = \
@@ -293,8 +294,8 @@ class Trainer(object):
                         break
 
             if (self.model_saver is not None
-                and (save_checkpoint_steps != 0
-                     and step % save_checkpoint_steps == 0)):
+                    and (save_checkpoint_steps != 0
+                         and step % save_checkpoint_steps == 0)):
                 self.model_saver.save(step, moving_average=self.moving_average)
 
             if train_steps > 0 and step >= train_steps:
@@ -329,15 +330,16 @@ class Trainer(object):
 
             for batch in valid_iter:
                 src, src_lengths = batch.src if isinstance(batch.src, tuple) \
-                                   else (batch.src, None)
+                    else (batch.src, None)
                 tgt = batch.tgt
 
-                # F-prop through the model.
-                outputs, attns = valid_model(src, tgt, src_lengths,
-                                             with_align=self.with_align)
+                with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                    # F-prop through the model.
+                    outputs, attns = valid_model(src, tgt, src_lengths,
+                                                 with_align=self.with_align)
 
-                # Compute loss.
-                _, batch_stats = self.valid_loss(batch, outputs, attns, model=valid_model)
+                    # Compute loss.
+                    _, batch_stats = self.valid_loss(batch, outputs, attns, model=valid_model)
 
                 # Update statistics.
                 stats.update(batch_stats)
@@ -372,7 +374,7 @@ class Trainer(object):
             tgt_outer = batch.tgt
 
             bptt = False
-            for j in range(0, target_size-1, trunc_size):
+            for j in range(0, target_size - 1, trunc_size):
                 # 1. Create truncated target.
                 tgt = tgt_outer[j: j + trunc_size]
 
@@ -380,12 +382,13 @@ class Trainer(object):
                 if self.accum_count == 1:
                     self.optim.zero_grad()
 
-                outputs, attns = self.model(src, tgt, src_lengths, bptt=bptt,
-                                            with_align=self.with_align)
-                bptt = True
+                with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                    outputs, attns = self.model(
+                        src, tgt, src_lengths, bptt=bptt,
+                        with_align=self.with_align)
+                    bptt = True
 
-                # 3. Compute loss.
-                try:
+                    # 3. Compute loss.
                     loss, batch_stats = self.train_loss(
                         batch,
                         outputs,
@@ -397,6 +400,7 @@ class Trainer(object):
                         model=self.model
                     )
 
+                try:
                     if loss is not None:
                         self.optim.backward(loss)
 
@@ -470,7 +474,12 @@ class Trainer(object):
         """
         if self.report_manager is not None:
             return self.report_manager.report_training(
-                step, num_steps, learning_rate, report_stats,
+                step,
+                num_steps,
+                learning_rate,
+                None if self.earlystopper is None
+                else self.earlystopper.current_tolerance,
+                report_stats,
                 multigpu=self.n_gpu > 1)
 
     def _report_step(self, learning_rate, step, train_stats=None,
@@ -481,5 +490,8 @@ class Trainer(object):
         """
         if self.report_manager is not None:
             return self.report_manager.report_step(
-                learning_rate, step, train_stats=train_stats,
+                learning_rate,
+                None if self.earlystopper is None
+                else self.earlystopper.current_tolerance,
+                step, train_stats=train_stats,
                 valid_stats=valid_stats)

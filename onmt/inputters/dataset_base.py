@@ -38,7 +38,7 @@ def _dynamic_dict(example, src_field, tgt_field):
         tgt_field (torchtext.data.Field): Field object.
 
     Returns:
-        torchtext.data.Vocab and ``example``, changed as described.
+        ``example``, changed as described.
     """
     if hasattr(src_field, 'pretrained_tokenizer'):
         src = [src_field.vocab.itos[id] for id in src_field.pretrained_tokenizer.encode(example['src'])]
@@ -48,6 +48,13 @@ def _dynamic_dict(example, src_field, tgt_field):
     # make a small vocab containing just the tokens in the source sequence
     unk = src_field.unk_token
     pad = src_field.pad_token
+
+    # add init_token and eos_token according to src construction
+    if src_field.init_token:
+        src = [src_field.init_token] + src
+    if src_field.eos_token:
+        src.append(src_field.eos_token)
+
     src_ex_vocab = Vocab(Counter(src), specials=[unk, pad])
     unk_idx = src_ex_vocab.stoi[unk]
     # Map source tokens to indices in the dynamic dict.
@@ -80,7 +87,7 @@ def _dynamic_dict(example, src_field, tgt_field):
                 tgt_len += len(tgt)
             example["alignment"] = masks
             example["tgt_length"] = tgt_len
-    return src_ex_vocab, example
+    return example
 
 
 class Dataset(TorchtextDataset):
@@ -115,8 +122,6 @@ class Dataset(TorchtextDataset):
             where ``data_arg`` is passed to the ``read()`` method of the
             reader in ``readers`` at that position. (See the reader object for
             details on the ``Any`` type.)
-        dirs (Iterable[str or NoneType]): A list of directories where
-            data is contained. See the reader object for more details.
         sort_key (Callable[[torchtext.data.Example], Any]): A function
             for determining the value on which data is sorted (i.e. length).
         filter_pred (Callable[[torchtext.data.Example], bool]): A function
@@ -130,13 +135,11 @@ class Dataset(TorchtextDataset):
             predict to copy them.
     """
 
-    def __init__(self, fields, readers, data, dirs, sort_key,
-                 filter_pred=None):
+    def __init__(self, fields, readers, data, sort_key, filter_pred=None):
         self.sort_key = sort_key
         can_copy = 'src_map' in fields and 'alignment' in fields
 
-        read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
-                      in zip(readers, data, dirs)]
+        read_iters = [r.read(dat[1], dat[0]) for r, dat in zip(readers, data)]
 
         # self.src_vocabs is used in collapse_copy_scores and Translator.py
         self.src_vocabs = []
@@ -146,9 +149,9 @@ class Dataset(TorchtextDataset):
                 src_field = fields['src']
                 tgt_field = fields['tgt']
                 # this assumes src_field and tgt_field are both text
-                src_ex_vocab, ex_dict = _dynamic_dict(
+                ex_dict = _dynamic_dict(
                     ex_dict, src_field.base_field, tgt_field.base_field)
-                self.src_vocabs.append(src_ex_vocab)
+                self.src_vocabs.append(ex_dict["src_ex_vocab"])
             ex_fields = {k: [(k, v)] for k, v in fields.items() if
                          k in ex_dict}
             ex = Example.fromdict(ex_dict, ex_fields)
@@ -178,10 +181,9 @@ class Dataset(TorchtextDataset):
 
     @staticmethod
     def config(fields):
-        readers, data, dirs = [], [], []
+        readers, data = [], []
         for name, field in fields:
             if field["data"] is not None:
                 readers.append(field["reader"])
                 data.append((name, field["data"]))
-                dirs.append(field["dir"])
-        return readers, data, dirs
+        return readers, data

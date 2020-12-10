@@ -14,6 +14,7 @@ import torch.nn.functional as F
 import onmt
 from onmt.modules.sparse_losses import SparsemaxLoss
 from onmt.modules.sparse_activations import LogSparsemax
+from onmt.constants import ModelTask
 
 
 def build_loss_compute(model, tgt_field, opt, train=True):
@@ -62,24 +63,52 @@ def build_loss_compute(model, tgt_field, opt, train=True):
         opt.lambda_sem_cov = 0.0
 
     if opt.copy_attn:
-        compute = onmt.modules.CopyGeneratorLossCompute(
-            criterion, loss_gen, tgt_field.vocab, opt.copy_loss_by_seqlength,
-            lambda_coverage=opt.lambda_coverage,
-            lambda_orth_reg=opt.lambda_orth_reg,
-            lambda_sem_cov=opt.lambda_sem_cov,
-            n_neg=opt.num_negsample,
-            semcov_ending_state=opt.use_ending_state
-        )
+        if opt.model_task == ModelTask.SEQ2SEQ:
+            compute = onmt.modules.CopyGeneratorLossCompute(
+                criterion, loss_gen, tgt_field.vocab,
+                opt.copy_loss_by_seqlength,
+                lambda_coverage=opt.lambda_coverage,
+                lambda_orth_reg=opt.lambda_orth_reg,
+                lambda_sem_cov=opt.lambda_sem_cov,
+                n_neg=opt.num_negsample,
+                semcov_ending_state=opt.use_ending_state
+            )
+        elif opt.model_task == ModelTask.LANGUAGE_MODEL:
+            compute = onmt.modules.CopyGeneratorLMLossCompute(
+                criterion, loss_gen, tgt_field.vocab,
+                opt.copy_loss_by_seqlength,
+                lambda_coverage=opt.lambda_coverage
+            )
+        else:
+            raise ValueError(
+                f"No copy generator loss defined for task {opt.model_task}"
+            )
     else:
-        compute = NMTLossCompute(
-            criterion, loss_gen,
-            lambda_coverage=opt.lambda_coverage,
-            lambda_align=opt.lambda_align,
-            lambda_orth_reg=opt.lambda_orth_reg,
-            lambda_sem_cov=opt.lambda_sem_cov,
-            n_neg=opt.num_negsample,
-            semcov_ending_state=opt.use_ending_state
-        )
+        if opt.model_task == ModelTask.SEQ2SEQ:
+            compute = NMTLossCompute(
+                criterion,
+                loss_gen,
+                lambda_coverage=opt.lambda_coverage,
+                lambda_align=opt.lambda_align,
+                lambda_orth_reg=opt.lambda_orth_reg,
+                lambda_sem_cov=opt.lambda_sem_cov,
+                n_neg=opt.num_negsample,
+                semcov_ending_state=opt.use_ending_state
+            )
+        elif opt.model_task == ModelTask.LANGUAGE_MODEL:
+            assert (
+                opt.lambda_align == 0.0
+            ), "lamdba_align not supported in LM loss"
+            compute = LMLossCompute(
+                criterion,
+                loss_gen,
+                lambda_coverage=opt.lambda_coverage,
+                lambda_align=opt.lambda_align,
+            )
+        else:
+            raise ValueError(
+                f"No compute loss defined for task {opt.model_task}"
+            )
     compute.to(device)
 
     return compute
@@ -148,8 +177,7 @@ class LossComputeBase(nn.Module):
                  shard_size=0,
                  trunc_start=0,
                  trunc_size=None,
-                 model=None
-                 ):
+                 model=None):
         """Compute the forward loss, possibly in shards in which case this
         method also runs the backward pass and returns ``None`` as the loss
         value.
@@ -267,18 +295,20 @@ class ReplayMemory(object):
         return len(self.memory)
 
 
-class NMTLossCompute(LossComputeBase):
+class CommonLossCompute(LossComputeBase):
     """
-    Standard NMT Loss Computation.
-    """
+    Loss Computation parent for NMTLossCompute and LMLossCompute
 
+    Implement loss compatible with coverage and alignement shards
+    """
     def __init__(self, criterion, generator, normalization="sents",
-                 lambda_coverage=0.0, lambda_align=0.0,
+                 lambda_coverage=0.0, lambda_align=0.0, tgt_shift_index=1,
                  lambda_orth_reg=0.0, lambda_sem_cov=0.0,
                  n_neg=32, semcov_ending_state=False):
-        super(NMTLossCompute, self).__init__(criterion, generator)
+        super(CommonLossCompute, self).__init__(criterion, generator)
         self.lambda_coverage = lambda_coverage
         self.lambda_align = lambda_align
+        self.tgt_shift_index = tgt_shift_index
         self.lambda_orth_reg = lambda_orth_reg
         self.lambda_sem_cov = lambda_sem_cov
         self.n_neg = n_neg
@@ -289,9 +319,6 @@ class NMTLossCompute(LossComputeBase):
         shard_state = {
             "output": output,
             "target": batch.tgt[range_[0] + 1: range_[1], :, 0],
-            "src_states": attns.get("src_states"), # @memray: dec_hidden_states
-            "dec_states": attns.get("dec_states"), # @memray: dec_hidden_states
-            "tgtenc_states": attns.get("tgtenc_states") # @memray: target_encoder_hidden_states
         }
         if self.lambda_coverage != 0.0:
             coverage = attns.get("coverage", None)
@@ -330,6 +357,22 @@ class NMTLossCompute(LossComputeBase):
                 "ref_align": ref_align[:, range_[0] + 1: range_[1], :]
             })
         return shard_state
+
+    def _add_coverage_shard_state(self, shard_state, attns):
+        coverage = attns.get("coverage", None)
+        std = attns.get("std", None)
+        assert attns is not None
+        assert coverage is not None, (
+            "lambda_coverage != 0.0 requires coverage attention"
+            " that could not be found in the model."
+            " Transformer decoders do not implement coverage"
+        )
+        assert std is not None, (
+            "lambda_coverage != 0.0 requires attention mechanism"
+            " that could not be found in the model."
+        )
+        shard_state.update({"std_attn": attns.get("std"),
+                            "coverage_attn": coverage})
 
     def _compute_loss(self, batch, output, target,
                       std_attn=None, coverage_attn=None,
@@ -392,6 +435,36 @@ class NMTLossCompute(LossComputeBase):
         covloss = torch.min(std_attn, coverage_attn).sum()
         covloss *= self.lambda_coverage
         return covloss
+
+    def _add_align_shard_state(self, shard_state, batch, range_start,
+                               range_end, attns):
+        # attn_align should be in (batch_size, pad_tgt_size, pad_src_size)
+        attn_align = attns.get("align", None)
+        # align_idx should be a Tensor in size([N, 3]), N is total number
+        # of align src-tgt pair in current batch, each as
+        # ['sent_N°_in_batch', 'tgt_id+1', 'src_id'] (check AlignField)
+        align_idx = batch.align
+        assert attns is not None
+        assert attn_align is not None, (
+            "lambda_align != 0.0 requires " "alignement attention head"
+        )
+        assert align_idx is not None, (
+            "lambda_align != 0.0 requires " "provide guided alignement"
+        )
+        pad_tgt_size, batch_size, _ = batch.tgt.size()
+        pad_src_size = batch.src[0].size(0)
+        align_matrix_size = [batch_size, pad_tgt_size, pad_src_size]
+        ref_align = onmt.utils.make_batch_align_matrix(
+            align_idx, align_matrix_size, normalize=True
+        )
+        # NOTE: tgt-src ref alignement that in range_ of shard
+        # (coherent with batch.tgt)
+        shard_state.update(
+            {
+                "align_head": attn_align,
+                "ref_align": ref_align[:, range_start:range_end, :],
+            }
+        )
 
     def _compute_alignement_loss(self, align_head, ref_align):
         """Compute loss between 2 partial alignment matrix."""
@@ -530,42 +603,50 @@ class NMTLossCompute(LossComputeBase):
         loss = loss * self.lambda_sem_cov
         return loss
 
-        """
-        # iterate each example
-        for b in range(batch_size):
-            # 0. find sep positions
-            for i in range(len(tgt_indices[b])):  # target len
-                if tgt_indices[b][i] == tgt_sep_idx:
-                    trg_rep = tgtenc_states[b][i]  # hid
-                    # 1. negative sampling
-                    if len(self.replay_memory) >= n_neg:
-                        neg_list = self.replay_memory.sample(n_neg)
-                        inputs, which = self.random_insert(neg_list, src_states[b])
-                        inputs = torch.stack(inputs, 0)  # n_neg+1 x hid
-                        batch_src_states.append(inputs)
-                        batch_tgtenc_states.append(trg_rep)
-                        batch_labels.append(which)
-            # 2. push source representations into replay memory
-            self.replay_memory.push(src_states[b])
-        if len(batch_src_states) == 0:
-            return 0.0
-        batch_src_states = torch.stack(batch_src_states, 0)  # big_batch x n_neg+1 x source_hid
-        batch_tgtenc_states = torch.stack(batch_tgtenc_states, 0)  # big_batch x target_hid
-        batch_labels = np.array(batch_labels)  # big_batch
-        batch_labels = torch.autograd.Variable(torch.from_numpy(batch_labels.copy()).type(torch.LongTensor))
-        if tgtenc_states.is_cuda:
-            batch_labels = batch_labels.cuda()
-        # 3. prediction
-        batch_tgtenc_states = model.target_encoding_mlp(batch_tgtenc_states)  # big_batch x mlp_hid
-        batch_tgtenc_states = torch.stack([batch_tgtenc_states] * batch_src_states.size(1), 1)  # big_batch x n_neg+1 x mlp_hid
-        pred = model.bilinear_layer(batch_src_states, batch_tgtenc_states).squeeze(-1)  # batch x n_neg+1
-        pred = torch.nn.functional.log_softmax(pred, dim=-1)  # batch x n_neg+1
 
-        # 4. loss compute
-        loss = self.semcov_criterion(pred, batch_labels)
-        loss = loss * self.lambda_sem_cov
-        return loss
-        """
+    def _make_shard_state(self, batch, output, range_, attns=None):
+        range_start = range_[0] + self.tgt_shift_index
+        range_end = range_[1]
+        shard_state = {
+            "output": output,
+            "target": batch.tgt[range_start:range_end, :, 0],
+            "src_states": attns.get("src_states"), # @memray: dec_hidden_states
+            "dec_states": attns.get("dec_states"), # @memray: dec_hidden_states
+            "tgtenc_states": attns.get("tgtenc_states") # @memray: target_encoder_hidden_states
+        }
+        if self.lambda_coverage != 0.0:
+            self._add_coverage_shard_state(shard_state, attns)
+        if self.lambda_align != 0.0:
+            self._add_align_shard_state(
+                shard_state, batch, range_start, range_end, attns
+            )
+        return shard_state
+
+
+class NMTLossCompute(CommonLossCompute):
+    """
+    Standard NMT Loss Computation.
+    """
+    def __init__(self, criterion, generator, normalization="sents",
+                 lambda_coverage=0.0, lambda_align=0.0):
+        super(NMTLossCompute, self).__init__(criterion, generator,
+                                             normalization=normalization,
+                                             lambda_coverage=lambda_coverage,
+                                             lambda_align=lambda_align,
+                                             tgt_shift_index=1)
+
+
+class LMLossCompute(CommonLossCompute):
+    """
+    Standard LM Loss Computation.
+    """
+    def __init__(self, criterion, generator, normalization="sents",
+                 lambda_coverage=0.0, lambda_align=0.0):
+        super(LMLossCompute, self).__init__(criterion, generator,
+                                            normalization=normalization,
+                                            lambda_coverage=lambda_coverage,
+                                            lambda_align=lambda_align,
+                                            tgt_shift_index=0)
 
 
 def filter_shard_state(state, shard_size=None):

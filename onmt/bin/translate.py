@@ -18,7 +18,7 @@ def translate(opt):
     ArgumentParser.validate_translate_opts(opt)
     logger = init_logger(opt.log_file)
 
-    translator = build_translator(opt, report_score=True, logger=logger)
+    translator = build_translator(opt, logger=logger, report_score=True)
     translator.out_file = codecs.open(opt.output, 'w+', 'utf-8')
     src_shards = split_corpus(opt.src, opt.shard_size)
     tgt_shards = split_corpus(opt.tgt, opt.shard_size) \
@@ -30,7 +30,6 @@ def translate(opt):
         translator.translate(
             src=src_shard,
             tgt=tgt_shard,
-            src_dir=opt.src_dir,
             batch_size=opt.batch_size,
             batch_type=opt.batch_type,
             attn_debug=opt.attn_debug,

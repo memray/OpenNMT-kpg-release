@@ -6,28 +6,22 @@ import os
 import codecs
 import math
 
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, OrderedDict
 from functools import partial
 from itertools import chain, cycle
 
 import torch
-import torchtext.data
 from torchtext.data import Field, RawField, LabelField
 from torchtext.vocab import Vocab
-from torchtext.data.utils import RandomShuffler
 
-from onmt.inputters import keyphrase_dataset
+from onmt.constants import DefaultTokens, ModelTask
+from onmt.inputters.text_dataset import text_fields
 from onmt.inputters.news_dataset import update_field_vocab
-from onmt.inputters.text_dataset import text_fields, TextMultiField
-from onmt.inputters.image_dataset import image_fields
-from onmt.inputters.audio_dataset import audio_fields
-from onmt.inputters.vec_dataset import vec_fields
+from onmt.inputters import keyphrase_dataset
 from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField, extra_special_tokens
 from onmt.utils.logging import logger
 # backwards compatibility
 from onmt.inputters.text_dataset import _feature_tokenize  # noqa: F401
-from onmt.inputters.image_dataset import (  # noqa: F401
-    batch_img as make_img)
 
 import gc
 
@@ -135,21 +129,40 @@ def make_align(data, vocab):
     return alignment
 
 
+def get_task_spec_tokens(data_task, pad, bos, eos):
+    """
+    Retrieve pad/bos/eos tokens for each data tasks
+    """
+    if data_task == ModelTask.SEQ2SEQ:
+        return {
+            "src": {"pad": pad, "bos": None, "eos": None},
+            "tgt": {"pad": pad, "bos": bos, "eos": eos},
+        }
+    elif data_task == ModelTask.LANGUAGE_MODEL:
+        return {
+            "src": {"pad": pad, "bos": bos, "eos": None},
+            "tgt": {"pad": pad, "bos": None, "eos": eos},
+        }
+    else:
+        raise ValueError(f"No task specific tokens defined for {data_task}")
+
+
 def get_fields(
     src_data_type,
     n_src_feats,
     n_tgt_feats,
-    pad='<blank>',
-    bos='<s>',
-    eos='</s>',
+    pad=DefaultTokens.PAD,
+    bos=DefaultTokens.BOS,
+    eos=DefaultTokens.EOS,
     dynamic_dict=False,
     with_align=False,
     src_truncate=None,
-    tgt_truncate=None
+    tgt_truncate=None,
+    data_task=ModelTask.SEQ2SEQ
 ):
     """
     Args:
-        src_data_type: type of the source input. Options are [text|img|audio].
+        src_data_type: type of the source input. Options are [text].
         n_src_feats (int): the number of source features (not counting tokens)
             to create a :class:`torchtext.data.Field` for. (If
             ``src_data_type=="text"``, these fields are stored together
@@ -173,35 +186,37 @@ def get_fields(
         the dataset example attributes.
     """
 
-    assert src_data_type in ['text', 'img', 'audio', 'vec', 'keyphrase'], \
+    assert src_data_type in ['text', 'keyphrase'], \
         "Data type not implemented"
     assert not dynamic_dict or src_data_type == 'text' or src_data_type == 'keyphrase', \
         'it is not possible to use dynamic_dict with non-text input'
     fields = {}
 
-    fields_getters = {"text": text_fields,
-                      "img": image_fields,
-                      "audio": audio_fields,
-                      "vec": vec_fields,
-                      "keyphrase": text_fields}
+    fields_getters = {"text": text_fields, "keyphrase": text_fields}
+    task_spec_tokens = get_task_spec_tokens(data_task, pad, bos, eos)
 
-    src_field_kwargs = {"n_feats": n_src_feats,
-                        "include_lengths": True,
-                        "pad": pad, "bos": None, "eos": None,
-                        "truncate": src_truncate,
-                        "base_name": "src"}
+    src_field_kwargs = {
+        "n_feats": n_src_feats,
+        "include_lengths": True,
+        "pad": task_spec_tokens["src"]["pad"],
+        "bos": task_spec_tokens["src"]["bos"],
+        "eos": task_spec_tokens["src"]["eos"],
+        "truncate": src_truncate,
+        "base_name": "src",
+    }
     fields["src"] = fields_getters[src_data_type](**src_field_kwargs)
 
-    tgt_field_kwargs = {"n_feats": n_tgt_feats,
-                        "include_lengths": False,
-                        "pad": pad, "bos": bos, "eos": eos, "sep": keyphrase_dataset.SEP_token,
-                        "truncate": tgt_truncate,
-                        "base_name": "tgt"}
-    # added by @memray, it might be smarter to add field_name to __init__ in the future
-    if src_data_type == "keyphrase":
-        fields['tgt'] = keyphrase_fields(**tgt_field_kwargs)
-    else:
-        fields['tgt'] = text_fields(**tgt_field_kwargs)
+    tgt_field_kwargs = {
+        "n_feats": n_tgt_feats,
+        "include_lengths": False,
+        "pad": task_spec_tokens["tgt"]["pad"],
+        "bos": task_spec_tokens["tgt"]["bos"],
+        "eos": task_spec_tokens["tgt"]["eos"],
+        "sep": keyphrase_dataset.SEP_token,
+        "truncate": tgt_truncate,
+        "base_name": "tgt",
+    }
+    fields["tgt"] = fields_getters[src_data_type](**tgt_field_kwargs)
 
     indices = Field(use_vocab=False, dtype=torch.long, sequential=False)
     fields["indices"] = indices
@@ -564,35 +579,37 @@ def _old_style_vocab(vocab):
         any(isinstance(v[1], Vocab) for v in vocab)
 
 
-def _old_style_nesting(vocab):
-    """Detect old-style nesting (``dict[str, List[Tuple[str, Field]]]``)."""
-    return isinstance(vocab, dict) and \
-        any(isinstance(v, list) for v in vocab.values())
+class IterOnDevice(object):
+    """Sent items from `iterable` on `device_id` and yield."""
 
+    def __init__(self, iterable, device_id):
+        self.iterable = iterable
+        self.device_id = device_id
 
-def _old_style_field_list(vocab):
-    """Detect old-style text fields.
+    @staticmethod
+    def batch_to_device(batch, device_id):
+        """Move `batch` to `device_id`, cpu if `device_id` < 0."""
+        curr_device = batch.indices.device
+        device = torch.device(device_id) if device_id >= 0 \
+            else torch.device('cpu')
+        if curr_device != device:
+            if isinstance(batch.src, tuple):
+                batch.src = tuple([_.to(device) for _ in batch.src])
+            else:
+                batch.src = batch.src.to(device)
+            batch.tgt = batch.tgt.to(device)
+            batch.indices = batch.indices.to(device)
+            batch.alignment = batch.alignment.to(device) \
+                if hasattr(batch, 'alignment') else None
+            batch.src_map = batch.src_map.to(device) \
+                if hasattr(batch, 'src_map') else None
+            batch.align = batch.align.to(device) \
+                if hasattr(batch, 'align') else None
 
-    Not old style vocab, old nesting, and text-type fields not using
-    ``TextMultiField``.
-
-    Args:
-        vocab: some object loaded from a *.vocab.pt file
-
-    Returns:
-        Whether ``vocab`` is not an :func:`_old_style_vocab` and not
-        a :class:`TextMultiField` (using an old-style text representation).
-    """
-
-    # if tgt isn't using TextMultiField, then no text field is.
-    return (not _old_style_vocab(vocab)) and _old_style_nesting(vocab) and \
-        (not isinstance(vocab['tgt'][0][1], TextMultiField))
-
-
-def old_style_vocab(vocab):
-    """The vocab/fields need updated."""
-    return _old_style_vocab(vocab) or _old_style_field_list(vocab) or \
-        _old_style_nesting(vocab)
+    def __iter__(self):
+        for batch in self.iterable:
+            self.batch_to_device(batch, self.device_id)
+            yield batch
 
 
 def filter_example(ex, use_src_len=True, use_tgt_len=True,
@@ -628,64 +645,82 @@ def _pad_vocab_to_multiple(vocab, multiple):
     if vocab_size % multiple == 0:
         return
     target_size = int(math.ceil(vocab_size / multiple)) * multiple
-    padding_tokens = [
-        "averyunlikelytoken%d" % i for i in range(target_size - vocab_size)]
+    padding_tokens = ["{}{}".format(DefaultTokens.VOCAB_PAD, i)
+                      for i in range(target_size - vocab_size)]
     vocab.extend(Vocab(Counter(), specials=padding_tokens))
     return vocab
 
 
 def _build_field_vocab(field, counter, size_multiple=1, **kwargs):
     # this is basically copy-pasted from torchtext.
-    all_specials = [
+    all_special = [
         field.unk_token, field.pad_token, field.init_token, field.eos_token
     ]
     # @memray
     if "extra_special_tokens" in kwargs:
-        all_specials.extend(kwargs["extra_special_tokens"])
+        all_special.extend(kwargs["extra_special_tokens"])
         del kwargs["extra_special_tokens"]
-    specials = [tok for tok in all_specials if tok is not None]
+    all_special.extend(list(kwargs.pop('specials', [])))
+    specials = list(OrderedDict.fromkeys(
+        tok for tok in all_special if tok is not None))
     field.vocab = field.vocab_cls(counter, specials=specials, **kwargs)
     if size_multiple > 1:
         _pad_vocab_to_multiple(field.vocab, size_multiple)
 
 
-def _load_vocab(vocab_path, name, counters, min_freq):
+def _load_vocab(vocab_path, name, counters, min_freq=0):
+    """Inplace update `counters`[`name`] with vocab in `vocab_path`.
+
+    Each line of `vocab_path` have a token, possible with a count.
+    If not with count, each token will be assigned one so that the order
+    of counters[name] will be same with `vocab_path`, and the minimum count
+    number to be `min_freq` which defaults 0.
+    """
     # counters changes in place
-    vocab = _read_vocab_file(vocab_path, name)
+    vocab, has_count = _read_vocab_file(vocab_path, name)
     vocab_size = len(vocab)
     logger.info('Loaded %s vocab has %d tokens.' % (name, vocab_size))
-    for i, token in enumerate(vocab):
-        # keep the order of tokens specified in the vocab file by
-        # adding them to the counter with decreasing counting values
-        counters[name][token] = vocab_size - i + min_freq
+    if not has_count:
+        for i, token in enumerate(vocab):
+            # keep the order of tokens specified in the vocab file by
+            # adding them to the counter with decreasing counting values
+            counters[name][token] = vocab_size - i + min_freq
+    else:
+        for token, count in vocab:
+            counters[name][token] = int(count)
     return vocab, vocab_size
 
 
-def _build_fv_from_multifield(multifield, counters, build_fv_args,
+def _build_fv_from_multifield(multifield, counters, build_fv_kwargs,
                               size_multiple=1):
     for name, field in multifield:
         _build_field_vocab(
             field,
             counters[name],
             size_multiple=size_multiple,
-            **build_fv_args[name])
+            **build_fv_kwargs[name])
         logger.info(" * %s vocab size: %d." % (name, len(field.vocab)))
 
 
 def _build_fields_vocab(fields, counters, data_type, share_vocab,
                         vocab_size_multiple,
                         src_vocab_size, src_words_min_frequency,
-                        tgt_vocab_size, tgt_words_min_frequency):
-    build_fv_args = defaultdict(dict)
-    build_fv_args["src"] = dict(
-        max_size=src_vocab_size, min_freq=src_words_min_frequency)
-    build_fv_args["tgt"] = dict(
-        max_size=tgt_vocab_size, min_freq=tgt_words_min_frequency)
+                        tgt_vocab_size, tgt_words_min_frequency,
+                        src_specials=None, tgt_specials=None):
+    src_specials = list(src_specials) if src_specials is not None else []
+    tgt_specials = list(tgt_specials) if tgt_specials is not None else []
+    build_fv_kwargs = defaultdict(dict)
+    build_fv_kwargs["src"] = dict(
+        max_size=src_vocab_size, min_freq=src_words_min_frequency,
+        specials=src_specials)
+    build_fv_kwargs["tgt"] = dict(
+        max_size=tgt_vocab_size, min_freq=tgt_words_min_frequency,
+        specials=tgt_specials)
     tgt_multifield = fields["tgt"]
     _build_fv_from_multifield(
         tgt_multifield,
         counters,
-        build_fv_args,
+        build_fv_kwargs,
         size_multiple=vocab_size_multiple if not share_vocab else 1)
 
     if data_type == 'text' or data_type == 'keyphrase':
@@ -693,17 +728,20 @@ def _build_fields_vocab(fields, counters, data_type, share_vocab,
         _build_fv_from_multifield(
             src_multifield,
             counters,
-            build_fv_args,
+            build_fv_kwargs,
             size_multiple=vocab_size_multiple if not share_vocab else 1)
+
         if share_vocab:
             # `tgt_vocab_size` is ignored when sharing vocabularies
             logger.info(" * merging src and tgt vocab...")
             src_field = src_multifield.base_field
             tgt_field = tgt_multifield.base_field
+            _all_specials = [item for item in src_specials + tgt_specials]
             _merge_field_vocabs(
                 src_field, tgt_field, vocab_size=src_vocab_size,
                 min_freq=src_words_min_frequency,
-                vocab_size_multiple=vocab_size_multiple)
+                vocab_size_multiple=vocab_size_multiple,
+                specials=_all_specials)
             logger.info(" * merged vocab size: %d." % len(src_field.vocab))
 
     return fields
@@ -811,18 +849,20 @@ def build_vocab(train_dataset_files, fields, data_type, share_vocab,
 
 
 def _merge_field_vocabs(src_field, tgt_field, vocab_size, min_freq,
-                        vocab_size_multiple):
+                        vocab_size_multiple, specials):
     # in the long run, shouldn't it be possible to do this by calling
     # build_vocab with both the src and tgt data?
-    specials = [tgt_field.unk_token, tgt_field.pad_token,
+    init_specials = [tgt_field.unk_token, tgt_field.pad_token,
                 tgt_field.init_token, tgt_field.eos_token]
-    # added by @memray, but in a not elegant way
-    specials.extend(extra_special_tokens)
+    # @memray, add extra specials
+    all_specials = list(OrderedDict.fromkeys(
+        tok for tok in init_specials + specials + extra_special_tokens
+        if tok is not None))
     merged = sum(
         [src_field.vocab.freqs, tgt_field.vocab.freqs], Counter()
     )
     merged_vocab = Vocab(
-        merged, specials=specials,
+        merged, specials=all_specials,
         max_size=vocab_size, min_freq=min_freq
     )
     if vocab_size_multiple > 1:
@@ -837,9 +877,8 @@ def _read_vocab_file(vocab_path, tag):
 
     Args:
         vocab_path (str): Path to utf-8 text file containing vocabulary.
-            Each token should be on a line by itself. Tokens must not
-            contain whitespace (else only before the whitespace
-            is considered).
+            Each token should be on a line, may followed with a count number
+            seperate by space if `with_count`. No extra whitespace is allowed.
         tag (str): Used for logging which vocab is being read.
     """
 
@@ -850,45 +889,14 @@ def _read_vocab_file(vocab_path, tag):
             "{} vocabulary not found at {}".format(tag, vocab_path))
     else:
         with codecs.open(vocab_path, 'r', 'utf-8') as f:
-            return [line.strip().split()[0] for line in f if line.strip()]
-
-
-def batch_iter(data, batch_size, batch_size_fn=None, batch_size_multiple=1):
-    """Yield elements from data in chunks of batch_size, where each chunk size
-    is a multiple of batch_size_multiple.
-
-    This is an extended version of torchtext.data.batch.
-    """
-    if batch_size_fn is None:
-        def batch_size_fn(new, count, sofar):
-            return count
-    minibatch, size_so_far = [], 0
-    for ex in data:
-        minibatch.append(ex)
-        size_so_far = batch_size_fn(ex, len(minibatch), size_so_far)
-        if size_so_far >= batch_size:
-            overflowed = 0
-            if size_so_far > batch_size:
-                overflowed += 1
-            if batch_size_multiple > 1:
-                overflowed += (
-                    (len(minibatch) - overflowed) % batch_size_multiple)
-            if overflowed == 0:
-                yield minibatch
-                minibatch, size_so_far = [], 0
+            lines = [line.strip() for line in f if line.strip()]
+            first_line = lines[0].split(None, 1)
+            has_count = (len(first_line) == 2 and first_line[-1].isdigit())
+            if has_count:
+                vocab = [line.split(None, 1) for line in lines]
             else:
-                if overflowed == len(minibatch):
-                    logger.warning(
-                        "An example was ignored, more tokens"
-                        " than allowed by tokens batch_size")
-                else:
-                    yield minibatch[:-overflowed]
-                    minibatch = minibatch[-overflowed:]
-                    size_so_far = 0
-                    for i, ex in enumerate(minibatch):
-                        size_so_far = batch_size_fn(ex, i + 1, size_so_far)
-    if minibatch:
-        yield minibatch
+                vocab = [line.strip().split()[0] for line in lines]
+            return vocab, has_count
 
 
 def _pool(data, batch_size, batch_size_fn, batch_size_multiple,

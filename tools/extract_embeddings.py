@@ -4,7 +4,8 @@ import torch
 
 import onmt
 import onmt.model_builder
-import onmt.inputters as inputters
+
+from onmt.utils.parse import ArgumentParser
 import onmt.opts
 
 from onmt.utils.misc import use_gpu
@@ -43,11 +44,7 @@ def main():
                             map_location=lambda storage, loc: storage)
     model_opt = checkpoint['opt']
 
-    vocab = checkpoint['vocab']
-    if inputters.old_style_vocab(vocab):
-        fields = onmt.inputters.load_old_vocab(vocab)
-    else:
-        fields = vocab
+    fields = checkpoint['vocab']
     src_dict = fields['src'].base_field.vocab  # assumes src is text
     tgt_dict = fields['tgt'].base_field.vocab
 
@@ -56,9 +53,13 @@ def main():
         if arg not in model_opt:
             model_opt.__dict__[arg] = dummy_opt.__dict__[arg]
 
+    # build_base_model expects updated and validated opts
+    ArgumentParser.update_model_opts(model_opt)
+    ArgumentParser.validate_model_opts(model_opt)
+
     model = onmt.model_builder.build_base_model(
         model_opt, fields, use_gpu(opt), checkpoint)
-    encoder = model.encoder
+    encoder = model.encoder  # no encoder for LM task
     decoder = model.decoder
 
     encoder_embeddings = encoder.embeddings.word_lut.weight.data.tolist()
