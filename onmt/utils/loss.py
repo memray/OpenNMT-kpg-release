@@ -498,7 +498,7 @@ class NMTLossCompute(LossComputeBase):
             # i-th example is positive class
             pos_idx = torch.Tensor([i] * n_sep).long()
             # negative sampling from the rest examples in the same batch
-            neg_idx = np.random.randint(0, batch_size-1, size=(n_sep * n_neg))
+            neg_idx = np.random.randint(0, batch_size, size=(n_sep * n_neg))
             for idx, neg_id in enumerate(neg_idx):
                 if neg_id >= i:
                     neg_idx[idx] += 1
