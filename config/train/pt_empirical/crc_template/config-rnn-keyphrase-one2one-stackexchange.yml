@@ -1,0 +1,51 @@
+model_type: keyphrase
+tgt_type: one2one
+
+
+data: data/keyphrase/meng17/stackexchange
+save_checkpoint_steps: 10000
+keep_checkpoint: 20
+seed: 3435
+train_steps: 100000
+valid_steps: 20000
+report_every: 1
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+
+optim: adagrad
+learning_rate: 0.05
+adagrad_accumulator_init: 0.1
+max_grad_norm: 2
+
+batch_size: 8
+valid_batch_size: 128
+dropout: 0.0
+
+global_attention: mlp
+copy_attn: 'true'
+reuse_copy_attn: 'true'
+bridge: 'true'
+tensorboard: 'true'
+log_file_level: DEBUG
+
+# new added on April 17, 2019
+context_gate: 'both'
+input_feed: 1
+share_embeddings: 'true'
+position_encoding: 'true'
+copy_loss_by_seqlength: 'false'
+
+exp: kp20k-one2one-birnn-GRU150-EMB100-ATTNmlp-local
+save_model: models/keyphrase/meng17/kp20k.one2one.birnn.local
+log_file: output/keyphrase/meng17/kp20k.one2one.birnn.local.log
+tensorboard_log_dir: runs/keyphrase/meng17/kp20k.one2one.birnn.local/
+
+world_size: 1
+gpu_ranks: []
+#- 0
+#- 1
+#master_port: 5000

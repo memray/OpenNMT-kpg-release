@@ -1,0 +1,57 @@
+model_type: keyphrase
+
+data: data/keyphrase/meng17/kp20k
+save_checkpoint_steps: 10000
+keep_checkpoint: 40
+seed: 3435
+
+encoder_type: transformer
+decoder_type: transformer
+word_vec_size: 512
+rnn_size: 512
+layers: 4
+
+position_encoding: true
+
+optim: adam
+learning_rate: 2
+param_init: 0
+warmup_steps: 8000
+decay_method: noam
+label_smoothing: 0.1
+adam_beta2: 0.998
+
+batch_type: tokens
+normalization: tokens
+max_generator_batches: 2
+accum_count: 4
+
+# batch_size is actually: num_example * max(#word in src/tgt)
+batch_size: 4096
+#batch_size: 8192
+#batch_size: 24576
+valid_batch_size: 256
+
+train_steps: 300000
+valid_steps: 10000
+report_every: 100
+
+#dropout: 0.2
+
+share_embeddings: 'true'
+copy_attn: 'true'
+param_init_glorot: 'true'
+log_file_level: DEBUG
+tensorboard: 'true'
+
+exp: kp20k-one2one-transformer-Layer4-Dim512-Emb512-Dropout0.2
+save_model: models/kp20k/kp20k.one2one.transformer
+log_file: output/kp20k.one2one.transformer.log
+tensorboard_log_dir: runs/kp20k.one2one.transformer/
+
+world_size: 1
+gpu_ranks:
+- 0
+#- 1
+#- 2
+#master_port: 10000

@@ -1,0 +1,67 @@
+model_type: keyphrase
+tgt_type: random
+
+exp: kp20k-one2seq-birnn-GRU150-EMB100-diverse-test
+exp_dir: output/meng17-one2seq-debug/kp20k-one2seq-birnn-GRU150-EMB100-diverse-test
+wandb_project: kp20k-meng17-one2seq
+wandb: 'true'
+wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
+
+data: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/kp20k_pt_shard100k/
+vocab: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp20k.vocab.pt
+#data: data/keyphrase/meng17/kp20k
+#data: data/keyphrase/meng17/stackexchange
+save_checkpoint_steps: 10000
+keep_checkpoint: 10
+seed: 3435
+train_steps: 200000
+valid_steps: 100000
+report_every: 10
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+
+optim: adam
+learning_rate: 1e-3
+max_grad_norm: 2
+
+batch_size: 128
+valid_batch_size: 128
+dropout: 0.0
+batch_type: sents
+normalization: sents
+
+global_attention: mlp
+
+tensorboard: 'false'
+log_file_level: DEBUG
+
+copy_attn: 'false'
+reuse_copy_attn: 'true'
+coverage_attn: 'true'
+position_encoding: 'true'
+
+context_gate: 'both'
+input_feed: 1
+copy_loss_by_seqlength: 'false'
+share_embeddings: 'true'
+bridge: 'true'
+
+orth_reg: 'true'
+lambda_orth_reg: 0.1
+sem_cov: 'true'
+lambda_sem_cov: 1.0
+
+num_negsample: 32
+use_ending_state: 'true'
+tgt_enc: 'rnn'
+detach_tgt_enc: 'true'
+
+world_size: 1
+gpu_ranks: #[]
+  - 0
+#- 1
+master_port: 5000

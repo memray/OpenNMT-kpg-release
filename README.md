@@ -1,186 +1,127 @@
-# OpenNMT-py: Open-Source Neural Machine Translation
-
-[![Build Status](https://travis-ci.org/OpenNMT/OpenNMT-py.svg?branch=master)](https://travis-ci.org/OpenNMT/OpenNMT-py)
-[![Run on FH](https://img.shields.io/badge/Run%20on-FloydHub-blue.svg)](https://floydhub.com/run?template=https://github.com/OpenNMT/OpenNMT-py)
-
-This is a [Pytorch](https://github.com/pytorch/pytorch)
-port of [OpenNMT](https://github.com/OpenNMT/OpenNMT),
-an open-source (MIT) neural machine translation system. It is designed to be research friendly to try out new ideas in translation, summary, image-to-text, morphology, and many other domains. Some companies have proven the code to be production ready.
-
-We love contributions. Please consult the Issues page for any [Contributions Welcome](https://github.com/OpenNMT/OpenNMT-py/issues?q=is%3Aissue+is%3Aopen+label%3A%22contributions+welcome%22) tagged post. 
-
-<center style="padding: 40px"><img width="70%" src="http://opennmt.github.io/simple-attn.png" /></center>
-
-Before raising an issue, make sure you read the requirements and the documentation examples.
-
-Unless there is a bug, please use the [Forum](http://forum.opennmt.net) or [Gitter](https://gitter.im/OpenNMT/OpenNMT-py) to ask questions.
+# Keyphrase Generation (built on OpenNMT-py)
 
 
-Table of Contents
-=================
-  * [Full Documentation](http://opennmt.net/OpenNMT-py/)
-  * [Requirements](#requirements)
-  * [Features](#features)
-  * [Quickstart](#quickstart)
-  * [Run on FloydHub](#run-on-floydhub)
-  * [Acknowledgements](#acknowledgements)
-  * [Citation](#citation)
+This is a repository providing code and datasets used in [An Empirical Study on Neural Keyphrase Generation](https://arxiv.org/abs/2009.10229), [One Size Does Not Fit All: Generating and Evaluating Variable Number of Keyphrases](https://arxiv.org/abs/1810.05241) and [Does Order Matter? An Empirical Study on Generating Multiple Keyphrases as a Sequence](https://arxiv.org/abs/1909.03590).
 
-## Requirements
-
-Install `OpenNMT-py` from `pip`:
-```bash
-pip install OpenNMT-py
-```
-
-or from the sources:
-```bash
-git clone https://github.com/OpenNMT/OpenNMT-py.git
-cd OpenNMT-py
-python setup.py install
-```
-
-Note: If you have MemoryError in the install try to use `pip` with `--no-cache-dir`.
-
-*(Optionnal)* some advanced features (e.g. working audio, image or pretrained models) requires extra packages, you can install it with:
-```bash
-pip install -r requirements.opt.txt
-```
-
-Note:
-
-- some features require Python 3.5 and after (eg: Distributed multigpu, entmax)
-- we currently only support PyTorch 1.2 (should work with 1.1)
-
-## Features
-
-- [Seq2Seq models (encoder-decoder) with multiple RNN cells (lstm/gru) and attention (dotprod/mlp) types](http://opennmt.net/OpenNMT-py/options/train.html#model-encoder-decoder)
-- [Transformer models](http://opennmt.net/OpenNMT-py/FAQ.html#how-do-i-use-the-transformer-model)
-- [Copy and Coverage Attention](http://opennmt.net/OpenNMT-py/options/train.html#model-attention)
-- [Pretrained Embeddings](http://opennmt.net/OpenNMT-py/FAQ.html#how-do-i-use-pretrained-embeddings-e-g-glove)
-- [Source word features](http://opennmt.net/OpenNMT-py/options/train.html#model-embeddings)
-- [Image-to-text processing](http://opennmt.net/OpenNMT-py/im2text.html)
-- [Speech-to-text processing](http://opennmt.net/OpenNMT-py/speech2text.html)
-- [TensorBoard logging](http://opennmt.net/OpenNMT-py/options/train.html#logging)
-- [Multi-GPU training](http://opennmt.net/OpenNMT-py/FAQ.html##do-you-support-multi-gpu)
-- [Data preprocessing](http://opennmt.net/OpenNMT-py/options/preprocess.html)
-- [Inference (translation) with batching and beam search](http://opennmt.net/OpenNMT-py/options/translate.html)
-- Inference time loss functions.
-- [Conv2Conv convolution model]
-- SRU "RNNs faster than CNN" paper
-- Mixed-precision training with [APEX](https://github.com/NVIDIA/apex), optimized on [Tensor Cores](https://developer.nvidia.com/tensor-cores)
+## Resources
+ - (2021.1 update) **MagKP-CS** data is released [magkp_train.json.zip](https://drive.google.com/file/d/16gQMh3WPgdEEXRBsqBBaVOEhKB4uZ76A/view?usp=sharing)
+ - All datasets and selected model checkpoints in the papers can be downloaded here ([data.zip](https://drive.google.com/open?id=1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP) and [models.zip](https://drive.google.com/open?id=18Pfs0ePAMl17kfjYRU_9HxYc0eUXet-_)). Unzip the file `data.zip and models.zip` and override the original `data/ and model/` folder. 
 
 ## Quickstart
 
-[Full Documentation](http://opennmt.net/OpenNMT-py/)
+All the config files used for training and evaluation can be found in folder `config/`.
+For more examples, you can refer to scripts placed in folder `script/`.
 
 
-### Step 1: Preprocess the data
-
-```bash
-onmt_preprocess -train_src data/src-train.txt -train_tgt data/tgt-train.txt -valid_src data/src-val.txt -valid_tgt data/tgt-val.txt -save_data data/demo
-```
-
-We will be working with some example data in `data/` folder.
-
-The data consists of parallel source (`src`) and target (`tgt`) data containing one sentence per line with tokens separated by a space:
-
-* `src-train.txt`
-* `tgt-train.txt`
-* `src-val.txt`
-* `tgt-val.txt`
-
-Validation files are required and used to evaluate the convergence of the training. It usually contains no more than 5000 sentences.
-
-
-After running the preprocessing, the following files are generated:
-
-* `demo.train.pt`: serialized PyTorch file containing training data
-* `demo.valid.pt`: serialized PyTorch file containing validation data
-* `demo.vocab.pt`: serialized PyTorch file containing vocabulary data
-
-
-Internally the system never touches the words themselves, but uses these indices.
-
-### Step 2: Train the model
+### Preprocess the data
 
 ```bash
-onmt_train -data data/demo -save_model demo-model
+source kp_convert.sh # dump json to src/tgt files (OpenNMT format)
+python preprocess.py -config config/preprocess/config-preprocess-keyphrase-kp20k.yml
 ```
 
-The main train command is quite simple. Minimally it takes a data file
-and a save file.  This will run the default model, which consists of a
-2-layer LSTM with 500 hidden units on both the encoder/decoder.
-If you want to train on GPU, you need to set, as an example:
-CUDA_VISIBLE_DEVICES=1,3
-`-world_size 2 -gpu_ranks 0 1` to use (say) GPU 1 and 3 on this node only.
-To know more about distributed training on single or multi nodes, read the FAQ section.
-
-### Step 3: Translate
+### Train a One2Seq model with Diversity Mechanisms enabled
 
 ```bash
-onmt_translate -model demo-model_acc_XX.XX_ppl_XXX.XX_eX.pt -src data/src-test.txt -output pred.txt -replace_unk -verbose
+python train.py -config config/train/config-rnn-keyphrase-one2seq-diverse.yml
 ```
 
-Now you have a model which you can use to predict on new data. We do this by running beam search. This will output predictions into `pred.txt`.
+### Train a One2One model
 
-!!! note "Note"
-    The predictions are going to be quite terrible, as the demo dataset is small. Try running on some larger datasets! For example you can download millions of parallel sentences for [translation](http://www.statmt.org/wmt16/translation-task.html) or [summarization](https://github.com/harvardnlp/sent-summary).
+```bash
+python train.py -config config/train/config-rnn-keyphrase-one2one-stackexchange.yml
+```
 
-## Alternative: Run on FloydHub
+### Run generation and evaluation 
 
-[![Run on FloydHub](https://static.floydhub.com/button/button.svg)](https://floydhub.com/run?template=https://github.com/OpenNMT/OpenNMT-py)
+```bash
+python kp_gen_eval.py -tasks pred eval report -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq-kp20k-topmodels/ -output_dir output/meng17-one2seq-topbeam-selfterminating/meng17-one2many-beam10-maxlen40/ -testsets duc inspec semeval krapivin nus -gpu -1 --verbose --beam_size 10 --batch_size 32 --max_length 40 --onepass --beam_terminate topbeam --eval_topbeam
+```
 
-Click this button to open a Workspace on [FloydHub](https://www.floydhub.com/?utm_medium=readme&utm_source=opennmt-py&utm_campaign=jul_2018) for training/testing your code.
+## Evaluation and Datasets
+You may refer to `notebook/json_process.ipynb` to have a glance at the pre-processing.
+
+We follow the data pre-processing and evaluation protocols in [Meng et al. 2017](https://arxiv.org/pdf/1704.06879.pdf). We pre-process both document texts and ground-truth keyphrases, including word segmentation, lowercasing and replacing all digits with symbol \<digit\>. 
+
+We manually clean the data examples in the valid/test set of KP20k (clean noisy text, replace erroneous keyphrases with actual author keyphrases, remove examples without any ground-truth keyphrases) and use scripts to remove invalid training examples (without any author keyphrase).
+ 
+We evaluate models' performance on predicting present and absent phrases separately. Specifically, we first tokenize, lowercase and stem (using the Porter Stemmer of [NLTK](https://www.nltk.org/api/nltk.stem.html\#module-nltk.stem.porter)) the text, then we determine the presence of each ground-truth keyphrase by checking whether its words can be found verbatim in the source text.
+ 
+To evaluate present phrase performance, we compute Precision/Recall/F1-score for each document taking only present ground-truth keyphrases as target and ignore the absent ones. We report the macro-averaged scores over documents that have at least one present ground-truth phrases (corresponding to the column \#PreDoc in the Table below, and similarly to the case of absent phrase evaluation. 
 
 
-## Pretrained embeddings (e.g. GloVe)
+![metrics](images/metric_formula.gif "metrics")
 
-Please see the FAQ: [How to use GloVe pre-trained embeddings in OpenNMT-py](http://opennmt.net/OpenNMT-py/FAQ.html#how-do-i-use-pretrained-embeddings-e-g-glove)
+where #(pred) and #(target) are the number of predicted and ground-truth keyphrases respectively; and #(correct@k) is the number of correct predictions among the first k results.
 
-## Pretrained Models
 
-The following pretrained models can be downloaded and used with translate.py.
+We clarify that, since our study mainly focuses on keyword/keyphrase extraction/generation on short text, we only used the abstract of Semeval and NUS as source text. Therefore statistics like #PreKP may be different from the ones computed with fulltext, which also affect the final F1-scores. For the ease of reproduction, we post the detailed statistics in the following table and processed testsets with present/absent phrases split can be found in the released data (e.g. `data/json/kp20k/kp20k_test_meng17token.json`). 
 
-http://opennmt.net/Models-py/
 
-## Acknowledgements
+| **Dataset** | **#Train** | **#Valid** | **#Test** | **#KP** | **#PreDoc** | **#PreKP** | **#AbsDoc** | **#AbsKP** |
+| :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: 
+| **KP20k** | 514k | 19,992 | 19,987 | 105,181 | 19,048 | 66,595 | 16,357 | 38,586|
+| **MagKP** | 2.7m | -- | -- | 34.8m | -- | -- | -- | -- |
+| **Inspec** | -- | 1,500 | 500| 4,913 | 497 | 3,858 | 381 | 1,055 |
+| **Krapivin** | -- | 1,844 | 460 | 2,641 | 437 | 1,485 | 417 | 1,156 |
+| **NUS** | -- | - | 211 | 2,461 | 207 | 1,263 | 195 | 1,198 |
+| **Semeval** | -- | 144 | 100 | 1,507 | 100 | 671 | 99 | 836|
+| **StackEx** | 298k | 16,000 | 16,000 | 43,131 | 13,475 | 24,809 | 10,984 | 18,322 |
+| **DUC** | -- | -- | 308 | 2,484 | 308 | 2,421 | 38 | 63 |
 
-OpenNMT-py is run as a collaborative open-source project.
-The original code was written by [Adam Lerer](http://github.com/adamlerer) (NYC) to reproduce OpenNMT-Lua using Pytorch.
 
+
+
+## Contributers
 Major contributors are:
-[Sasha Rush](https://github.com/srush) (Cambridge, MA)
-[Vincent Nguyen](https://github.com/vince62s) (Ubiqus)
-[Ben Peters](http://github.com/bpopeters) (Lisbon)
-[Sebastian Gehrmann](https://github.com/sebastianGehrmann) (Harvard NLP)
-[Yuntian Deng](https://github.com/da03) (Harvard NLP)
-[Guillaume Klein](https://github.com/guillaumekln) (Systran)
-[Paul Tardy](https://github.com/pltrdy) (Ubiqus / Lium)
-[François Hernandez](https://github.com/francoishernandez) (Ubiqus)
-[Jianyu Zhan](http://github.com/jianyuzhan) (Shanghai)
-[Dylan Flaute](http://github.com/flauted (University of Dayton)
-and more !
+- [Rui Meng](https://github.com/memray/) (University of Pittsburgh)
+- [Eric Yuan](https://github.com/xingdi-eric-yuan) (Microsoft Research, Montréal)
+- [Tong Wang](https://github.com/wangtong106) (Microsoft Research, Montréal)
+- [Khushboo Thaker](https://github.com/khushsi) (University of Pittsburgh)
 
-OpentNMT-py belongs to the OpenNMT project along with OpenNMT-Lua and OpenNMT-tf.
 
 ## Citation
 
-[OpenNMT: Neural Machine Translation Toolkit](https://arxiv.org/pdf/1805.11462)
-
-[OpenNMT technical report](https://doi.org/10.18653/v1/P17-4012)
+Please cite the following papers if you are interested in using our code and datasets.
 
 ```
-@inproceedings{opennmt,
-  author    = {Guillaume Klein and
-               Yoon Kim and
-               Yuntian Deng and
-               Jean Senellart and
-               Alexander M. Rush},
-  title     = {Open{NMT}: Open-Source Toolkit for Neural Machine Translation},
-  booktitle = {Proc. ACL},
-  year      = {2017},
-  url       = {https://doi.org/10.18653/v1/P17-4012},
-  doi       = {10.18653/v1/P17-4012}
+@article{meng2020empirical,
+  title={An Empirical Study on Neural Keyphrase Generation},
+  author={Meng, Rui and Yuan, Xingdi and Wang, Tong and Zhao, Sanqiang and Trischler, Adam and He, Daqing},
+  journal={arXiv preprint arXiv:2009.10229},
+  year={2020}
+}
+```
+```
+@inproceedings{yuan2018onesizenotfit,
+    title = "One Size Does Not Fit All: Generating and Evaluating Variable Number of Keyphrases",
+    author = "Yuan, Xingdi  and  Wang, Tong  and  Meng, Rui  and   Thaker, Khushboo  and  Brusilovsky, Peter  and  He, Daqing  and Trischler, Adam",
+    booktitle = "Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics",
+    month = jul,
+    year = "2020",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://www.aclweb.org/anthology/2020.acl-main.710",
+    doi = "10.18653/v1/2020.acl-main.710",
+    pages = "7961--7975",
+}
+```
+```
+@article{meng2019ordermatters,
+  title={Does Order Matter? An Empirical Study on Generating Multiple Keyphrases as a Sequence},
+  author={Meng, Rui and Yuan, Xingdi and Wang, Tong and Brusilovsky, Peter and Trischler, Adam and He, Daqing},
+  journal={arXiv preprint arXiv:1909.03590},
+  url={https://arxiv.org/pdf/1909.03590.pdf},
+  year={2019}
+}
+```
+```
+@inproceedings{meng2017kpgen,
+  title={Deep keyphrase generation},
+  author={Meng, Rui and Zhao, Sanqiang and Han, Shuguang and He, Daqing and Brusilovsky, Peter and Chi, Yu},
+  booktitle={Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)},
+  pages={582--592},
+  url={https://arxiv.org/pdf/1704.06879.pdf},
+  year={2017}
 }
 ```

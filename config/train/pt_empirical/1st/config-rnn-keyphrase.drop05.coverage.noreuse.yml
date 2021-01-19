@@ -1,0 +1,50 @@
+model_type: keyphrase
+
+data: data/keyphrase/meng17/kp20k
+save_checkpoint_steps: 10000
+keep_checkpoint: 20
+seed: 3435
+train_steps: 100000
+valid_steps: 20000
+report_every: 100
+
+encoder_type: brnn
+rnn_type: GRU
+word_vec_size: 100
+rnn_size: 150
+layers: 1
+
+optim: adagrad
+learning_rate: 0.15
+adagrad_accumulator_init: 0.1
+max_grad_norm: 2
+
+batch_size: 128
+valid_batch_size: 128
+dropout: 0.5
+
+copy_attn: 'true'
+global_attention: mlp
+reuse_copy_attn: 'false'
+bridge: 'true'
+coverage_attn: 'true'
+tensorboard: 'true'
+log_file_level: DEBUG
+
+# new added on April 17, 2019
+context_gate: 'both'
+input_feed: 1
+share_embeddings: 'true'
+position_encoding: 'true'
+copy_loss_by_seqlength: 'false'
+
+save_model: models/keyphrase/meng17/kp20k.one2one.birnn.Dropout05.CovATT.NoReuse
+exp: kp20k-one2one-birnn-GRU512-EMB128-ATTNmlp-Dropout05-CovATT-NoReuse
+log_file: output/keyphrase/meng17/kp20k.one2one.birnn.Dropout05.CovATT.NoReuse.log
+tensorboard_log_dir: runs/keyphrase/meng17/kp20k.one2one.birnn.Dropout05.CovATT.NoReuse/
+
+world_size: 1
+gpu_ranks:
+- 0
+#- 1
+master_port: 5003
