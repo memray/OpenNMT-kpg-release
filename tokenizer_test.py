@@ -13,9 +13,14 @@ __email__ = "rui.meng@pitt.edu"
 if __name__ == '__main__':
     original_tokenizer_path = '/Users/memray/project/kp/hf_vocab/roberta-base/'
     tokenizer_path = '/Users/memray/project/kp/hf_vocab/roberta-base-kp/'
+    # original_tokenizer_path = '/zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base/'
+    # tokenizer_path = '/zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-kp/'
+
     tokenizer_file = 'tokenizer.json'
     bpe_vocab = 'vocab.json'
     bpe_merges = 'merges.txt'
+
+    original_tokenizer = RobertaTokenizer.from_pretrained("roberta-base", dropout=0.5)
 
     sep_token = '<sep>'
     kp_special_tokens = ['<present>', '<absent>', '<category>']
@@ -52,15 +57,16 @@ if __name__ == '__main__':
                                                            vocab_file=tokenizer_path+bpe_vocab,
                                                            merges_file=tokenizer_path+bpe_merges)
 
-    print(fast_tokenizer3.tokenize('<s> what is wrong with <mask> <sep> I do not know either </s> <present> <absent> <category>'))
-    encoding = fast_tokenizer3.encode_plus('<s> what is wrong with <mask> <sep> I do not know either </s> <present> <absent> <category>')
+    test_str = fast_tokenizer3.bos_token+'what is wrong with <mask> <sep> I do not know either </s> <present> <absent> <category>'+fast_tokenizer3.eos_token
+    print(fast_tokenizer3.tokenize(test_str))
+    encoding = fast_tokenizer3.encode_plus(test_str, add_special_tokens=False)
+    decoded = fast_tokenizer3.decode(encoding["input_ids"])
     print(encoding["input_ids"])
     print(encoding.tokens())
+    print(decoded)
 
-    print()
-
-    converted_tokenizer = convert_slow_tokenizer(tokenizer)
-    encoding = converted_tokenizer.encode('<s> what is wrong with <mask> <sep> I do not know either </s> <present> <absent> <category>')
+    encoding = original_tokenizer.encode_plus(test_str)
     print(encoding["input_ids"])
-    print(encoding.tokens())
-    print()
+    print(original_tokenizer.tokenize(test_str))
+    decoded = fast_tokenizer3.decode(encoding["input_ids"])
+    print(decoded)

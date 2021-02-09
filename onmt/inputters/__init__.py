@@ -14,11 +14,14 @@ from onmt.inputters.datareader_base import DataReaderBase
 str2reader = {
     "text": TextDataReader, "keyphrase": KeyphraseDataReader}
 str2sortkey = {
-    'text': text_sort_key, "keyphrase": KeyphraseDataset
+    'text': text_sort_key, "keyphrase": text_sort_key
 }
-
+str2dataset = {
+    'text': Dataset, "keyphrase": KeyphraseDataset
+}
 
 __all__ = ['Dataset', 'get_fields', 'DataReaderBase', 'filter_example',
            'build_vocab', 'OrderedIterator', 'max_tok_len',
            'text_sort_key', 'TextDataReader',
-           'kp_sort_key', 'KeyphraseDataReader']
+           'kp_sort_key', 'KeyphraseDataReader',
+           'Dataset', 'KeyphraseDataset']

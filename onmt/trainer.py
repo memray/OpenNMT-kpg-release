@@ -75,6 +75,10 @@ def build_trainer(opt, device_id, model, fields, optim, model_saver=None):
         datetime = now.strftime("-%Y%m%d-%H%M%S")
         wandb.login(key=opt.wandb_key)
         wandb.init(project=opt.wandb_project, id=opt.exp+datetime, resume=True, dir=opt.wandb_log_dir)
+        # @memray, set is not JSON serializable
+        for k, v in opt.__dict__.items():
+            if isinstance(v, set):
+                setattr(opt, k, list(v))
         wandb.config.update(opt, allow_val_change=True)
         wandb.watch(model, log='all')
 
@@ -359,19 +363,31 @@ class Trainer(object):
             self.optim.zero_grad()
 
         for k, batch in enumerate(true_batches):
+            # @memray issue with dynamic data pipeline (same in translator._translate_batch_with_strategy())
+            #   OpenNMT expects:
+            #       src.shape [src_len, batch_size, num_feature], src_lengths.shape=[batch_size]
+            #   but somehow, it turns out to be: src.shape [S,B,1 or F], src_lengths.shape=[B], so permute it
+            #   transformed in onmt.inputters.text_dataset.py L127
+            if batch.src[0].shape[0] == batch.batch_size:
+                if isinstance(batch.src, tuple):
+                    batch.src = (batch.src[0].permute([1, 0, 2]), batch.src[1])
+                else:
+                    batch.src = batch.src.permute([1, 0, 2]) # [src_len, B, 1]
+                batch.tgt = batch.tgt.permute([1, 0, 2]) # [tgt_len, B, 1]
+
             target_size = batch.tgt.size(0)
             # Truncated BPTT: reminder not compatible with accum > 1
             if self.trunc_size:
                 trunc_size = self.trunc_size
             else:
                 trunc_size = target_size
-
             src, src_lengths = batch.src if isinstance(batch.src, tuple) \
                 else (batch.src, None)
             if src_lengths is not None:
                 report_stats.n_src_words += src_lengths.sum().item()
-
+            # tgt.shape = [tgt_len, batch_size, 1]
             tgt_outer = batch.tgt
+
 
             bptt = False
             for j in range(0, target_size - 1, trunc_size):
@@ -383,6 +399,7 @@ class Trainer(object):
                     self.optim.zero_grad()
 
                 with torch.cuda.amp.autocast(enabled=self.optim.amp):
+                    # outputs.shape=[tgt_len-1,B,hid_dim], attn.shape=[tgt_len-1,B,src_len]
                     outputs, attns = self.model(
                         src, tgt, src_lengths, bptt=bptt,
                         with_align=self.with_align)

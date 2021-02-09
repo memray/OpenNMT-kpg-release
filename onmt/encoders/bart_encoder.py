@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch
 
 from fairseq.models.bart import BARTModel
-from fairseq.models.transformer import EncoderOut
 
 from onmt.encoders.encoder import EncoderBase
 import logging
@@ -19,7 +18,7 @@ class BARTEncoder(EncoderBase):
     """
     large: 24-layer, 1024-hidden, 16-heads, 355M parameters
     """
-    def __init__(self, model_name, cache_dir, max_src_length, vocab_size, opt,
+    def __init__(self, model_name, embeddings, cache_dir, max_src_length, vocab_size, opt,
                  bart_model=None, prev_checkpoint=None):
         super(BARTEncoder, self).__init__()
         self.model_name = model_name
@@ -84,6 +83,7 @@ class BARTEncoder(EncoderBase):
         """Alternate constructor."""
         return cls(
             model_name='bart',
+            embeddings=embeddings,
             cache_dir=opt.cache_dir,
             max_src_length=opt.src_seq_length_trunc,
             # vocab_size should be additionally added (after reloading fields news_dataset.reload_news_fields())
@@ -105,10 +105,11 @@ class BARTEncoder(EncoderBase):
                 you’re often better with averaging or pooling the sequence of hidden-states for the whole input sequence.
         """
         # input to BART must be batch_first, src should be (batch_size, sequence_length)
+        src = src.permute(1, 0, 2)
         # don't know how to add token_type_ids because embedding is processed inside
-        src_tokens = src[:, :, 0].permute(1, 0)
+        src_tokens = src[:, :, 0]
         if src.shape[2] > 1:
-            src_labels = src[:, :, 1].permute(1, 0)
+            src_labels = src[:, :, 1]
         else:
             src_labels = None
 
@@ -119,7 +120,7 @@ class BARTEncoder(EncoderBase):
         encoder_output = self.model(self.model, src_tokens, src_lengths,
                                     return_all_hiddens=False, src_labels=src_labels)
         # return last_hidden_state and memory_bank in shape of [src_len, batch_size, hid_dim] and length as is
-        last_hidden_state = encoder_output.encoder_out
+        last_hidden_state = encoder_output['encoder_out'][0]
 
         return last_hidden_state, last_hidden_state, encoder_output
 
@@ -190,7 +191,7 @@ def forward_bart_encoder(self,
     # compute padding mask
     encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
-    encoder_states = [] if return_all_hiddens else None
+    encoder_states = []
 
     # encoder layers
     for layer in self.layers:
@@ -202,13 +203,22 @@ def forward_bart_encoder(self,
     if self.layer_norm is not None:
         x = self.layer_norm(x)
 
-    return EncoderOut(
-        encoder_out=x,  # T x B x C
-        encoder_padding_mask=encoder_padding_mask,  # B x T
-        encoder_embedding=None,  # B x T x C
-        encoder_states=None,  # List[T x B x C]
-        # encoder_embedding=encoder_embedding,  # B x T x C
-        # encoder_states=encoder_states,  # List[T x B x C]
-        src_tokens=None,
-        src_lengths=None,
-    )
+    return {
+        "encoder_out": [x],  # T x B x C
+        "encoder_padding_mask": [encoder_padding_mask],  # B x T
+        "encoder_embedding": [encoder_embedding],  # B x T x C
+        "encoder_states": encoder_states,  # List[T x B x C]
+        "src_tokens": [],
+        "src_lengths": [],
+    }
+    # return EncoderOut(
+    #     encoder_out=x,  # T x B x C
+    #     encoder_padding_mask=encoder_padding_mask,  # B x T
+    #     encoder_embedding=None,  # B x T x C
+    #     encoder_states=None,  # List[T x B x C]
+    #     # encoder_embedding=encoder_embedding,  # B x T x C
+    #     # encoder_states=encoder_states,  # List[T x B x C]
+    #     src_tokens=None,
+    #     src_lengths=None,
+    # )
+

@@ -4,6 +4,7 @@ import json
 import random
 import shutil
 
+from onmt.constants import ModelTask
 from onmt.translate.translator import build_translator
 from onmt.utils.parse import ArgumentParser
 import os
@@ -25,6 +26,9 @@ def scan_new_checkpoints(ckpt_dir):
         for file in files:
             if file.endswith('.pt'):
                 ckpt_name = file[: file.find('.pt')]
+                if ckpt_name == 'checkpoint_last':
+                    # skip the last ckpt of fairseq jobs
+                    continue
                 ckpt_path = os.path.join(subdir, file)
                 exp_dir = os.path.dirname(subdir)
                 exp_name = exp_dir[exp_dir.rfind('/') + 1: ]
@@ -43,8 +47,10 @@ def scan_new_checkpoints(ckpt_dir):
 def _get_parser():
     parser = ArgumentParser(description='run_kp_eval_transfer.py')
 
-    opts.config_opts(parser)
     opts.translate_opts(parser)
+    # opts.train_opts(parser)
+    opts.model_opts(parser)
+    opts.dynamic_prepare_opts(parser, build_vocab_only=False)
 
     return parser
 
@@ -71,6 +77,15 @@ if __name__ == "__main__":
     parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
 
     opt = parser.parse_args()
+    if isinstance(opt.data, str):
+        setattr(opt, 'data', json.loads(opt.data.replace('\'', '"')))
+    setattr(opt, 'data_task', ModelTask.SEQ2SEQ)
+    ArgumentParser._get_all_transform(opt)
+
+    opt.__setattr__('valid_batch_size', opt.batch_size)
+    opt.__setattr__('batch_size_multiple', 1)
+    opt.__setattr__('bucket_size', 128)
+    opt.__setattr__('pool_factor', 256)
 
     # np.random.seed()
     wait_time = np.random.randint(opt.wait_time) if opt.wait_time > 0 else 0
@@ -83,8 +98,14 @@ if __name__ == "__main__":
         logger.info('Sleep for %d sec to avoid conflicting with other threads' % wait_time)
         time.sleep(wait_time)
 
-    logger.info(opt)
+    # do generate summarized report
+    if 'report' in opt.tasks:
+        report_path = os.path.join(opt.exp_root_dir, '%s_summary_%s.csv' % (current_time, '%s'))
+        kp_evaluate.gather_eval_results(eval_root_dir=opt.exp_root_dir, report_csv_path=report_path)
+        logger.warning('Report accomplished, exit!')
+        exit(0)
 
+    logger.info(opt)
     testset_path_dict = {}
     for testset in opt.testsets:
         for split in opt.splits:
@@ -142,9 +163,6 @@ if __name__ == "__main__":
                 pred_path = os.path.join(pred_dir, pred_file)
                 printout_path = os.path.join(pred_dir, report_file)
                 eval_path = os.path.join(eval_dir, eval_file)
-                # eval_path = os.path.join(eval_dir, ckpt_name + '-%s-%s.json'
-                #                          % (datasplit_name, 'selfterminating' if opt.eval_topbeam else 'exhaustive'))
-                report_path = os.path.join(eval_dir, '%s_summary_%s.csv' % (current_time, '%s'))
 
                 # create dirs
                 if not os.path.exists(pred_dir):
@@ -184,6 +202,9 @@ if __name__ == "__main__":
                             logger.exception('Error while validating or deleting PRED file: %s' % pred_path)
 
                 if 'pred' in opt.tasks:
+                    opt.data['valid']['path_src'] = src_path
+                    opt.data['valid']['path_tgt'] = src_path
+                    opt.data['valid']['path_align'] = None
                     try:
                         if do_trans_flag or opt.ignore_existing:
                             # if it's BART model, OpenNMT has to do something additional
@@ -201,21 +222,21 @@ if __name__ == "__main__":
                             codecs.open(pred_path, 'w+', 'utf-8').close()
                             # set output_file for each dataset (instead of outputting to opt.output)
                             translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                            logger.info("*" * 50)
                             logger.info("Start translating [%s] for %s." % (datasplit_name, ckpt_name))
                             logger.info("\t exporting PRED result to %s." % (pred_path))
                             _, _ = translator.translate(
-                                src=src_shard,
-                                tgt=tgt_shard,
-                                src_dir=src_path,
+                                src=None,
                                 batch_size=opt.batch_size,
                                 attn_debug=opt.attn_debug,
                                 opt=opt
                             )
                             job_done = True
+                            logger.info("Complete translating [%s], PRED file: %s." % (datasplit_name, pred_path))
                         else:
                             logger.info("Skip translating [%s] for %s, PRED file: %s." % (datasplit_name, ckpt_name, pred_path))
                     except Exception as e:
-                        logger.exception('Error while translating')
+                        logger.exception('Error while translating [%s], PRED file: %s.' % (datasplit_name, pred_path))
 
                 # do evaluation
                 do_eval_flag = True
@@ -270,7 +291,8 @@ if __name__ == "__main__":
                         if do_eval_flag or opt.ignore_existing:
                             logger.info("Start evaluating [%s] for %s" % (datasplit_name, ckpt_name))
                             logger.info("\t will export eval result to %s." % (eval_path))
-                            score_dict = kp_evaluate.keyphrase_eval(src_path, tgt_path,
+                            score_dict = kp_evaluate.keyphrase_eval(datasplit_name,
+                                                                    src_path, tgt_path,
                                                                     pred_path=pred_path, logger=logger,
                                                                     verbose=opt.verbose,
                                                                     report_path=printout_path
@@ -284,10 +306,6 @@ if __name__ == "__main__":
                             logger.info("Skip evaluating [%s] for %s, EVAL file: %s." % (datasplit_name, ckpt_name, eval_path))
                     except Exception as e:
                         logger.exception('Error while evaluating')
-
-                # do generate summarized report
-                if 'report' in opt.tasks:
-                    kp_evaluate.gather_eval_results(eval_root_dir=eval_dir, report_csv_path=report_path)
 
         if job_done: # reset current_patience if no real job is done in the current iteration
             current_patience = opt.wait_patience

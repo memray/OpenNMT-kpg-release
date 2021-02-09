@@ -1,3 +1,31 @@
 # transfer, pred & eval
+source script/transfer/run_pred_o2o_gpu.sh
 source script/transfer/run_pred_gpu.sh
-source script/transfer/run_pred_eval.sh
+
+source script/transfer/run_eval.sh
+source script/transfer/run_eval_o2o.sh
+
+sbatch script/transfer/kppred_v100.sh
+
+
+# train
+sbatch script/transfer/train/kpgen-transformer-presabs-kp20k-nocopy.sh
+sbatch script/transfer/train/kpgen-transformer-presabs-kp20k-lower.sh
+
+sbatch script/transfer/train/kpgen-transformer-presabs-kp20k.sh
+sbatch script/transfer/train/kpgen-transformer-presabs-kp20k-nocopy-lower.sh
+
+sbatch script/transfer/train/kpgen-transformer-presabs-kptimes.sh
+sbatch script/transfer/train/kpgen-transformer-presabs-openkp.sh
+sbatch script/transfer/train/kpgen-transformer-presabs-stackex.sh
+
+
+# BART
+sbatch script/transfer/train/kpgen-bart-presabs-kp20k.sh
+sbatch script/transfer/train/kpgen-bart-presabs-kp20k-resume.sh
+sbatch script/transfer/train/kpgen-bart-presabs-openkp.sh
+sbatch script/transfer/train/kpgen-bart-presabs-openkp-resume.sh
+
+# BART-one2one
+sbatch script/transfer/train/kpgen-bart-one2one-kp20k.sh
+sbatch script/transfer/train/kpgen-bart-one2one-openkp.sh

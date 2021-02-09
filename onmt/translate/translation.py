@@ -26,11 +26,14 @@ class TranslationBuilder(object):
     """
 
     def __init__(self, data, fields, n_best=1, replace_unk=False,
-                 has_tgt=False, phrase_table=""):
+                 has_tgt=False, phrase_table="", use_dynamic_transform=False):
         self.data = data
         self.fields = fields
-        self._has_text_src = isinstance(
-            dict(self.fields)["src"], TextMultiField)
+        self._has_text_src = (self.data is not None) and \
+                             (isinstance(dict(self.fields)["src"], TextMultiField))
+        self.use_dynamic_transform = use_dynamic_transform
+        if use_dynamic_transform:
+            self._has_text_src = True
         self.n_best = n_best
         self.replace_unk = replace_unk
         self.phrase_table_dict = {}
@@ -63,7 +66,8 @@ class TranslationBuilder(object):
             if tokens[-1] == tgt_field.eos_token:
                 tokens = tokens[:-1]
         if pretrained_tokenizer:
-            tokens = pretrained_tokenizer.convert_tokens_to_string(tokens).split()
+            sep = pretrained_tokenizer.sep_token
+            tokens = pretrained_tokenizer.convert_tokens_to_string(tokens).replace(sep, ' %s ' % sep).split()
         if self.replace_unk and attn is not None and src is not None:
             for i in range(len(tokens)):
                 if tokens[i] == tgt_field.unk_token:
@@ -93,18 +97,18 @@ class TranslationBuilder(object):
         if not any(align):  # when align is a empty nested list
             align = [None] * batch_size
 
-        # Sorting
+        # batch has been sorted by src length, now sort it back to recover
         inds, perm = torch.sort(batch.indices)
         if self._has_text_src:
-            if isinstance(batch.tgt, torch.Tensor) and len(batch.tgt.size()) == 3:
-                src = batch.src[:, :, 0].index_select(1, perm) # src_len, batch_size
-            else:
+            if isinstance(batch.src, tuple):
                 src = batch.src[0][:, :, 0].index_select(1, perm)
+            else:
+                src = batch.src[:, :, 0].index_select(1, perm) # src_len, batch_size
         else:
             src = None
 
-        # if only one tgt: batch.tgt.dim=[max_seq_len, batch_size, 1]
-        # if multiple tgts: batch.tgt.dim=[max_seq_len, batch_size, max_seq_num, 1]
+        # if only one tgt (one2seq): batch.tgt.dim=[max_seq_len, batch_size, 1]
+        # if multiple tgts (one2one): batch.tgt.dim=[max_seq_len, batch_size, max_seq_num, 1]
         if self.has_tgt:
             if len(batch.tgt.size()) == 3:
                 tgt = batch.tgt[:, :, 0].index_select(1, perm)
@@ -113,9 +117,18 @@ class TranslationBuilder(object):
         else:
             tgt = None
 
+        if self.use_dynamic_transform and hasattr(batch, 'src_ex_vocab'):
+            _perm = perm.cpu().numpy().tolist() if perm.is_cuda else perm.numpy().tolist()
+            src_vocabs = [batch.src_ex_vocab[i] for i in _perm]
+        else:
+            src_vocabs = None
+
         translations = []
         for b in range(batch_size):
-            if self._has_text_src:
+            if self.use_dynamic_transform:
+                src_vocab = src_vocabs[b] if src_vocabs else None
+                src_raw = None
+            elif self._has_text_src:
                 src_vocab = self.data.src_vocabs[inds[b]] \
                     if self.data.src_vocabs else None
                 src_raw = self.data.examples[inds[b]].src[0]
@@ -182,6 +195,14 @@ class Translation(object):
                  attn, pred_scores, tgt_sent, gold_score, preds, word_aligns):
         self.src = src
         self.src_raw = src_raw
+        if tgt_sent:
+            _tgt_sent = []
+            for t in tgt_sent:
+                _t = t
+                while _t.endswith('<pad>'):
+                    _t = _t[: -5]
+                _tgt_sent.append(_t)
+            tgt_sent = _tgt_sent
         self.gold_sent = tgt_sent
         self.gold_score = gold_score
         self.attns = attn
@@ -245,6 +266,9 @@ class Translation(object):
         for slot in self.__slots__:
             if ret[slot] is None:
                 continue
+            if slot == 'gold_score':
+                ret[slot] = ret[slot].item()
+                continue
             if torch.cuda.is_available():
                 if slot.endswith('src'):
                     ret[slot] = ret[slot].cpu().numpy().tolist()
@@ -261,16 +285,18 @@ class Translation(object):
                     ret[slot] = [t.numpy().tolist() for t in ret[slot]]
 
             if slot == "dup_pred_tuples":
-                for tid, t in enumerate(ret["dup_pred_tuples"]):
-                    if torch.cuda.is_available():
-                        nt = (t[0].cpu().numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
-                              t[1],
-                              t[2].cpu().item() if isinstance(t[2], torch.Tensor) else t[2])
-                    else:
-                        nt = (t[0].numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
-                              t[1],
-                              t[2].item() if isinstance(t[2], torch.Tensor) else t[2])
-                    ret["dup_pred_tuples"][tid] = nt
+                # to save disk storage
+                ret["dup_pred_tuples"] = None
+                # for tid, t in enumerate(ret["dup_pred_tuples"]):
+                #     if torch.cuda.is_available():
+                #         nt = (t[0].cpu().numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
+                #               t[1],
+                #               t[2].cpu().item() if isinstance(t[2], torch.Tensor) else t[2])
+                #     else:
+                #         nt = (t[0].numpy().tolist() if isinstance(t[0], torch.Tensor) else t[0],
+                #               t[1],
+                #               t[2].item() if isinstance(t[2], torch.Tensor) else t[2])
+                #     ret["dup_pred_tuples"][tid] = nt
 
         return ret
 
@@ -284,12 +310,16 @@ class Translation(object):
 
         best_pred = self.pred_sents[0]
         best_score = self.pred_scores[0]
-        pred_sent = ' '.join(best_pred)
+        pred_sent = ' '.join(best_pred) if isinstance(best_pred, list) else best_pred
         msg.append('PRED {}: {}\n'.format(sent_number, pred_sent))
         msg.append("PRED SCORE: {:.4f}\n".format(best_score))
 
+
         if self.gold_sent is not None:
-            tgt_sent = '\n\t'.join([' '.join(tgt) for tgt in self.gold_sent])
+            if len(self.gold_sent) > 0 and isinstance(self.gold_sent[0], str):
+                tgt_sent = ' '.join(self.gold_sent)
+            else:
+                tgt_sent = '\n\t'.join([' '.join(tgt) for tgt in self.gold_sent])
             msg.append('GOLD {}: \n\t{}\n'.format(sent_number, tgt_sent))
             msg.append(("GOLD SCORE: {:.4f}\n".format(self.gold_score)))
         if len(self.pred_sents) > 1:
@@ -298,7 +328,19 @@ class Translation(object):
                 tmp_pred = pred.cpu().numpy().tolist() if torch.cuda.is_available() else pred.numpy().tolist()
                 msg.append("[{}][{:.4f}] {} {} {}\n".format(t_id + 1, score, sent, tmp_pred, '[Copy!]' if any(copied_flag) else ''))
 
+        msg.append("#Original sequence: {}\n".format(len(self.ori_pred_sents)))
+        unique_first_words = set([s[0] for s in self.ori_pred_sents if len(s)>0])
+        msg.append("#Unique 1st words in original sequence: [{}] {}\n".format(len(unique_first_words), unique_first_words))
+        unique_first_words = set([s[0] for s in self.pred_sents if len(s) > 0])
+        msg.append("#Unique 1st words in splitted sequence: [{}] {}\n".format(len(unique_first_words), unique_first_words))
+
+        unique_first_ids = set([t[0].item() for t in self.ori_preds if t.size(0) > 0])
+        msg.append("#Unique 1st index in original sequence: [{}] {}\n".format(len(unique_first_ids), unique_first_ids))
+        unique_first_ids = set([t[0].item() for t in self.preds if t.size(0) > 0])
+        msg.append("#Unique 1st index in splitted sequence: [{}] {}\n".format(len(unique_first_ids), unique_first_ids))
+
         return "".join(msg)
+
 
     def add_copied_flags(self, vocab_size):
         copied_flags = [pred.ge(vocab_size) for pred in self.preds]

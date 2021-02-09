@@ -1,5 +1,5 @@
 # coding: utf-8
-
+import logging
 from itertools import chain, starmap
 from collections import Counter
 
@@ -7,6 +7,7 @@ import torch
 from torchtext.data import Dataset as TorchtextDataset
 from torchtext.data import Example
 from torchtext.vocab import Vocab
+from transformers import RobertaTokenizer, RobertaTokenizerFast
 
 
 def _join_dicts(*args):
@@ -41,19 +42,32 @@ def _dynamic_dict(example, src_field, tgt_field):
         ``example``, changed as described.
     """
     if hasattr(src_field, 'pretrained_tokenizer'):
-        src = [src_field.vocab.itos[id] for id in src_field.pretrained_tokenizer.encode(example['src'])]
+        src = example['src'].split() # it should have been tokenized in a previous transform
+        # @memray (deprecated) process subwords, or it causes mismatches for copy.
+        #   - Simple lower and trim doesn't work since the new temp vocab cannot be merged with original vocab (out of index error)
+        #   - Similarly, strip('Ġġ') also cause problems:
+        #       - e.g. expect [2-degenerate] but model outputs ['Ġ2', '-', 'deg', 'Ġener', 'ATE'], i.e. [2-deg enerATE]
+        #       - this might be because some copied tokens are wrongly merged, say the prob of a copied token is merged into 'Ġener' rather than 'ener'
+        #       - thus 'Ġġ' in the src_ex_vocab here should not be trimmed
+        # if isinstance(src_field.pretrained_tokenizer, RobertaTokenizer) \
+        #         or isinstance(src_field.pretrained_tokenizer, RobertaTokenizerFast):
+        #     src = [t.lower().strip('Ġġ') for t in src]
+        # else:
+        #     logging.warning('Using a pretrained tokenizer other than Roberta, '
+        #                     'the leading special token is not properly trimmed.')
     else:
         src = src_field.tokenize(example["src"])
-    example["src_length"] = len(src)
     # make a small vocab containing just the tokens in the source sequence
     unk = src_field.unk_token
     pad = src_field.pad_token
 
     # add init_token and eos_token according to src construction
+    # bos/eos will be added later in OpenNMT pipeline
     if src_field.init_token:
         src = [src_field.init_token] + src
     if src_field.eos_token:
         src.append(src_field.eos_token)
+    example["src_length"] = len(src)
 
     src_ex_vocab = Vocab(Counter(src), specials=[unk, pad])
     unk_idx = src_ex_vocab.stoi[unk]
@@ -63,30 +77,26 @@ def _dynamic_dict(example, src_field, tgt_field):
     example["src_ex_vocab"] = src_ex_vocab
 
     if "tgt" in example:
-        # added by Rui, to be compatible with multiple target sequences
-        if not isinstance(example["tgt"], list):
-            if hasattr(tgt_field, 'pretrained_tokenizer'):
-                tgt = [tgt_field.vocab.itos[id] for id in tgt_field.pretrained_tokenizer.encode(example['tgt'])]
-            else:
-                tgt = tgt_field.tokenize(example["tgt"])
-            mask = torch.LongTensor(
-                [unk_idx] + [src_ex_vocab.stoi[w] for w in tgt] + [unk_idx])
-            example["alignment"] = mask
-            example["tgt_length"] = len(tgt)
+        if hasattr(tgt_field, 'pretrained_tokenizer'):
+            # @memray we need to normalize the target vocab to resolve the unmatchable issue in copy loss
+            #   see copy_generator.py, collapse_copy_scores(), L29
+            #   deprecated, see above comments
+            # norm_stoi = {}
+            # for s, i in tgt_field.vocab.stoi.items():
+            #     norm_stoi[s.lower().strip('Ġġ')] = i
+            #     norm_stoi[s] = i
+            # setattr(tgt_field.vocab, 'norm_stoi', norm_stoi)
+            tgt = example['tgt'].split()
+            # if isinstance(src_field.pretrained_tokenizer, RobertaTokenizer) \
+            #     or isinstance(src_field.pretrained_tokenizer, RobertaTokenizerFast):
+            #     tgt = [t.lower().strip('Ġġ') for t in tgt]
         else:
-            masks = []
-            tgt_len = 0
-            for tgt in example["tgt"]:
-                if hasattr(tgt_field, 'pretrained_tokenizer'):
-                    tgt = [tgt_field.vocab.itos[id] for id in tgt_field.pretrained_tokenizer.encode(tgt)]
-                else:
-                    tgt = tgt_field.tokenize(tgt)
-                mask = torch.LongTensor(
-                    [unk_idx] + [src_ex_vocab.stoi[w] for w in tgt] + [unk_idx])
-                masks.append(mask)
-                tgt_len += len(tgt)
-            example["alignment"] = masks
-            example["tgt_length"] = tgt_len
+            tgt = tgt_field.tokenize(example["tgt"])
+        mask = torch.LongTensor(
+            [unk_idx] + [src_ex_vocab.stoi[w] for w in tgt] + [unk_idx])
+        example["alignment"] = mask
+        example["tgt_length"] = len(mask)
+
     return example
 
 

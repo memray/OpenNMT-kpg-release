@@ -11,6 +11,7 @@ from itertools import count, zip_longest
 import torch
 import tqdm
 
+from onmt.bin.train import prepare_fields_transforms
 from onmt.constants import DefaultTokens
 import onmt.model_builder
 import onmt.inputters as inputters
@@ -19,6 +20,8 @@ import onmt.decoders.ensemble
 from onmt.inputters import KeyphraseDataset
 from onmt.decoders import BARTDecoder
 from onmt.encoders import PretrainedEncoder, BARTEncoder
+from onmt.inputters.inputter import IterOnDevice
+from onmt.train_single import _build_valid_iter
 
 from onmt.translate.beam_search import BeamSearch, BeamSearchLM
 from onmt.translate.greedy_search import GreedySearch, GreedySearchLM
@@ -39,9 +42,9 @@ def build_translator(opt, report_score=True, logger=None, out_file=None):
     )
     fields, model, model_opt = load_test_model(opt)
 
-    # added by @memray, ignore alignment field during testing for keyphrase task
-    if opt.data_type == 'keyphrase' and 'alignment' in fields:
-        del fields['alignment']
+    # (deprecated after dynamic data loading) added by @memray, ignore alignment field during testing for keyphrase task
+    # if opt.data_type == 'keyphrase' and 'alignment' in fields:
+    #     del fields['alignment']
 
     scorer = onmt.translate.GNMTGlobalScorer.from_opt(opt)
 
@@ -162,9 +165,12 @@ class Inference(object):
         report_score=True,
         logger=None,
         seed=-1,
-        tgt_type=None,
-        model_tgt_type=None,
-        beam_terminate=None
+        kp_concat_type=None,
+        model_kp_concat_type=None,
+        beam_terminate=None,
+        # **kwargs
+        opt=None,
+        model_opt=None
     ):
         self.model = model
         self.fields = fields
@@ -232,10 +238,12 @@ class Inference(object):
         self._filter_pred = None
 
         # added by @memray, to accommodate multiple targets
-        self.tgt_type=tgt_type
-        self.model_tgt_type=model_tgt_type
+        self.kp_concat_type = kp_concat_type
+        self.model_kp_concat_type = model_kp_concat_type
         # beam search termination condition
-        self.beam_terminate=beam_terminate
+        self.beam_terminate = beam_terminate
+        self.opt = opt
+        self.model_opt = model_opt
 
         # for debugging
         self.beam_trace = self.dump_beam != ""
@@ -286,10 +294,10 @@ class Inference(object):
         src_reader = inputters.str2reader[opt.data_type].from_opt(opt)
         # @memray a different tgt_reader for keyphrase
         if opt.data_type == 'keyphrase':
-            trg_data_type = 'keyphrase'
+            data_type = 'keyphrase'
         else:
-            trg_data_type = 'text'
-        tgt_reader = inputters.str2reader[trg_data_type].from_opt(opt)
+            data_type = 'text'
+        tgt_reader = inputters.str2reader[data_type].from_opt(opt)
         return cls(
             model,
             fields,
@@ -320,9 +328,11 @@ class Inference(object):
             report_score=report_score,
             logger=logger,
             seed=opt.seed,
-            tgt_type=opt.tgt_type,
-            model_tgt_type=model_opt.tgt_type,
-            beam_terminate=opt.beam_terminate
+            kp_concat_type=opt.kp_concat_type,
+            model_kp_concat_type=model_opt.kp_concat_type,
+            beam_terminate=opt.beam_terminate,
+            opt=opt,
+            model_opt=model_opt
         )
 
     def _log(self, msg):
@@ -383,52 +393,73 @@ class Inference(object):
             * all_predictions is a list of `batch_size` lists
                 of `n_best` predictions
         """
-
         if batch_size is None:
             raise ValueError("batch_size must be set")
 
         if self.tgt_prefix and tgt is None:
             raise ValueError("Prefix should be feed to tgt if -tgt_prefix.")
 
-        src_data = {"reader": self.src_reader, "data": src}
-        tgt_data = {"reader": self.tgt_reader, "data": tgt}
-        _readers, _data = inputters.Dataset.config(
-            [("src", src_data), ("tgt", tgt_data)]
-        )
+        if self.data_type == 'text':
+            use_dynamic_transform = False
+            # original testing data pipeline
+            src_data = {"reader": self.src_reader, "data": src}
+            tgt_data = {"reader": self.tgt_reader, "data": tgt}
+            _readers, _data = inputters.Dataset.config(
+                [("src", src_data), ("tgt", tgt_data)]
+            )
 
-        # modified by @memray to accommodate keyphrase
-        data = inputters.str2dataset[self.data_type](
-            self.fields,
-            readers=_readers,
-            data=_data,
-            sort_key=inputters.str2sortkey[self.data_type],
-            filter_pred=self._filter_pred,
-            data_format=opt.data_format,
-            tgt_concat_type=opt.tgt_type
-        )
+            # modified by @memray to accommodate keyphrase
+            data = inputters.str2dataset[self.data_type](
+                self.fields,
+                readers=_readers,
+                data=_data,
+                sort_key=inputters.str2sortkey[self.data_type],
+                filter_pred=self._filter_pred,
+                data_format=opt.data_format,
+                tgt_concat_type=opt.kp_concat_type
+            )
 
-        # @memray, as Dataset is only instantiated here, having to use this plugin setter
-        if isinstance(data, KeyphraseDataset):
-            data.tgt_type=self.tgt_type
+            # @memray, as Dataset is only instantiated here, having to use this plugin setter
+            if isinstance(data, KeyphraseDataset):
+                data.kp_concat_type=self.kp_concat_type
 
-        data_iter = inputters.OrderedIterator(
-            dataset=data,
-            device=self._dev,
-            batch_size=batch_size,
-            batch_size_fn=max_tok_len if batch_type == "tokens" else None,
-            train=False,
-            sort=False,
-            sort_within_batch=False, #@memray: set False to keep the original order
-            shuffle=False
-        )
+            data_iter = inputters.OrderedIterator(
+                dataset=data,
+                device=self._dev,
+                batch_size=batch_size,
+                batch_size_fn=max_tok_len if batch_type == "tokens" else None,
+                train=False,
+                sort=False,
+                sort_within_batch=False, #@memray: set False to keep the original order
+                shuffle=False
+            )
+            src_vocabs = data.src_vocabs
+            has_tgt = True if tgt is not None else False
+        elif self.data_type == 'keyphrase':
+            # dynamic data pipeline, lowercase must be inherited from model_opt
+            use_dynamic_transform = True
+            if hasattr(self.model_opt, 'lowercase'):
+                setattr(opt, 'lowercase', self.model_opt.lowercase)
+                setattr(self.opt, 'lowercase', self.model_opt.lowercase)
+
+            _, transforms_cls = prepare_fields_transforms(opt)
+            _data_iter = _build_valid_iter(opt, self.fields, transforms_cls)
+            data_iter = IterOnDevice(_data_iter, device_id=self._gpu)
+            data = None
+            # src_vocabs is used in collapse_copy_scores and Translator.py
+            src_vocabs = None
+            has_tgt = True
+        else:
+            raise NotImplementedError('Currently only support data type=text/keyphrase.')
 
         xlation_builder = onmt.translate.TranslationBuilder(
             data,
             self.fields,
             self.n_best,
             self.replace_unk,
-            tgt,
+            has_tgt,
             self.phrase_table,
+            use_dynamic_transform=use_dynamic_transform
         )
         # Statistics
         counter = count(1)
@@ -442,21 +473,40 @@ class Inference(object):
 
         num_examples = 0
         for batch_idx, batch in tqdm.tqdm(enumerate(data_iter), desc='Translating in batches'):
-            num_examples += batch_size
-            print("Translating %d/%d" % (num_examples, len(src)))
+            _batch_size = batch.batch_size
+            num_examples += _batch_size
+
+            # @memray reshaping for dynamic preprocessing and keyphrase dataset
+            if self.data_type == 'keyphrase':
+                src, _ = (batch.src if isinstance(batch.src, tuple) else (batch.src, None))
+                # for compatibility with previous versions, make src/tgt's dim to 3
+                if len(src.shape) == 2:
+                    src = src.unsqueeze(2)
+                    tgt = batch.tgt.unsqueeze(2)
+                    # required in generator
+                    batch.src = src
+                    batch.tgt = tgt
+            # Output of dynamic batching is src.shape=[batch_size, length, num_feat]
+            #   but OpenNMT expects [length, batch_size, num_feat]
+            if batch.src[0].shape[0] == _batch_size:
+                if isinstance(batch.src, tuple):
+                    batch.src = (batch.src[0].permute([1, 0, 2]), batch.src[1])
+                else:
+                    batch.src = batch.src.permute([1, 0, 2])  # [src_len, B, 1]
+                batch.tgt = batch.tgt.permute([1, 0, 2])  # [tgt_len, B, 1]
 
             batch_data = self.translate_batch(
-                batch, data.src_vocabs, attn_debug
+                batch, src_vocabs, attn_debug
             )
             translations = xlation_builder.from_batch(batch_data)
 
             # @memray
             if self.data_type == "keyphrase":
                 # post-process for one2seq outputs, split seq into individual phrases
-                if self.model_tgt_type != 'one2one':
+                if self.model_kp_concat_type != 'one2one':
                     translations = self.segment_one2seq_trans(translations)
                 # add statistics of kps(pred_num, beamstep_num etc.)
-                translations = self.add_trans_stats(translations, self.model_tgt_type)
+                translations = self.add_trans_stats(translations, self.kp_concat_type)
 
                 # add copied flag
                 if hasattr(self.fields['src'], 'base_field'):
@@ -813,7 +863,8 @@ class Translator(Inference):
                     exclusion_tokens=self._exclusion_idxs,
                     stepwise_penalty=self.stepwise_penalty,
                     ratio=self.ratio,
-                    beam_terminate = self.beam_terminate)
+                    beam_terminate=self.beam_terminate
+                )
             return self._translate_batch_with_strategy(
                 batch, src_vocabs, decode_strategy)
 
@@ -823,15 +874,6 @@ class Translator(Inference):
         )
         if src_lengths is None and hasattr(batch, 'src_length'):
             src_lengths = batch.src_length
-        tgt = batch.tgt
-
-        # for compatibility with previous versions, make src/tgt's dim to 3
-        if len(src.shape) == 2:
-            src = src.unsqueeze(2)
-            tgt = tgt.unsqueeze(2)
-            # required in generator
-            batch.src = src
-            batch.tgt = tgt
 
         if isinstance(self.model.encoder, BARTEncoder):
             enc_states, memory_bank, encoder_output = self.model.encoder(src, src_lengths)
@@ -869,34 +911,40 @@ class Translator(Inference):
             step=None,
             batch_offset=None,
             encoder_output=None,
-            last_word=False,
-            incremental_state=None):
+            incremental_state=None,
+            # @memray in general we just need the prediction of last word,
+            #   but for _gold_score/_score_target we need to return the whole sequence
+            last_word=True,
+    ):
         if self.copy_attn:
             # Turn any copied words into UNKs.
             decoder_in = decoder_in.masked_fill(
                 decoder_in.gt(self._tgt_vocab_len - 1), self._tgt_unk_idx
             )
-        # Decoder forward, takes [tgt_len, batch, nfeats] as input
-        # and [src_len, batch, hidden] as memory_bank
-        # in case of inference tgt_len = 1, batch = beam times batch_size
-        #   i.e. dec_out is in shape of [1, beam_size * batch_size, hidden]
+        # Inputs:
+        #     decoder_in: [tgt_len, batch, nfeats]
+        #     memory_bank: [src_len, batch, hidden]
+        # Outputs:
+        #    In case of inference tgt_len = 1, batch = beam x batch_size
+        #        dec_out is in shape of [1, beam_size * batch_size, hidden]
         #        dec_attn is a dict which values are in shape of [1, beam_size * batch_size, src_len]
-        # in case of Gold Scoring tgt_len = actual length, batch = 1 batch
-        # dec_out: [tgt_len, batch_size, dec_dim]
-        # dec_attn['std']: [tgt_len, batch_size, src_len]
+        #    In case of Gold Scoring tgt_len = actual length, batch = 1 x batch
+        #        dec_out: [tgt_len, batch_size, dec_dim]
+        #        dec_attn['std']: [tgt_len, batch_size, src_len]
         if isinstance(self.model.decoder, BARTDecoder):
-            # actually in BARTDecoder, only decoder_in and encoder_output are used
-            # decoder_in must be of shape (tgt_len, batch_size, 1)
-            #   output=(tgt_len, batch_size, dec_dim), attn=(tgt_len, batch_size, dec_dim)
+            # BARTDecoder only uses decoder_in and encoder_output
+            #    decoder_in.shape = (tgt_len, batch_size, 1)
+            #    output=(tgt_len, batch_size, dec_dim), attn=(tgt_len, batch_size, src_len)
             dec_out, dec_attn = self.model.decoder(decoder_in, memory_bank,
                                                    memory_lengths=memory_lengths,
                                                    encoder_output=encoder_output,
                                                    incremental_state=incremental_state,
                                                    )
-            # only preserve the output of last word
+            # only preserve the output of last word, [tgt_len, B, D] -> [1, B, D]
             if last_word:
                 dec_out = dec_out[-1, :, :].unsqueeze(0)
-                dec_attn = {k:v[-1, :, :].unsqueeze(0) for k,v in dec_attn.items()}
+                if dec_attn:
+                    dec_attn = {k:v[-1, :, :].unsqueeze(0) for k,v in dec_attn.items()}
         else:
             dec_out, dec_attn = self.model.decoder(
                 decoder_in, memory_bank, memory_lengths=memory_lengths, step=step
@@ -904,7 +952,7 @@ class Translator(Inference):
 
         # Generator forward.
         if not self.copy_attn:
-            if "std" in dec_attn:
+            if dec_attn and "std" in dec_attn:
                 attn = dec_attn["std"]
             else:
                 attn = None
@@ -912,12 +960,14 @@ class Translator(Inference):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
         else:
+            assert dec_attn is not None, 'for copy generator, attention is required'
             attn = dec_attn["copy"]
             # for beam search, here we have scores [tgt_len x batch, vocab/cvocab] or [beam x batch, vocab/cvocab]
             scores = self.model.generator(dec_out.view(-1, dec_out.size(2)),
                                           attn.view(-1, attn.size(2)),
                                           src_map)
-            # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
+            # gold_score [tgt_lenxbatch, tmp_vocab] -> [tgt_len, batch, tmp_vocab]???
+            # beam search [beamxbatch, tmp_vocab] -> [batch, beam, tmp_vocab]
             if batch_offset is None:
                 scores = scores.view(-1, batch.batch_size, scores.size(-1))
                 scores = scores.transpose(0, 1).contiguous()
@@ -931,11 +981,12 @@ class Translator(Inference):
                 batch_dim=0,
                 batch_offset=batch_offset
             )
-
+            # Gold score: [batch, tgt_len, merged_vocab] -> [tgt_len, batch, merged_vocab]
+            # Beam search: [batch, beam, merged_vocab] -> [1, batch*beam, merged_vocab]
             scores = scores.view(-1, decoder_in.size(1), scores.size(-1)) # to be compatible with BART. previous: scores.view(decoder_in.size(0), -1, scores.size(-1))
+            # Gold score: [tgt_len, batch_size, vocab]
+            # Beam search: [batch_size x beam_size, vocab]
             log_probs = scores.squeeze(0).log()
-            # returns [batch_size x beam_size , vocab ] when 1 step
-            # or [ tgt_len, batch_size, vocab ] when full sentence
 
         # attn=(tgt_len, batch_size, dec_dim)
         return log_probs, attn
@@ -960,7 +1011,7 @@ class Translator(Inference):
         batch_size = batch.batch_size
 
         # (1) Run the encoder on the src.
-        src, enc_states, memory_bank, src_lengths = self._run_encoder(batch)
+        src, enc_states, memory_bank, src_lengths, encoder_output = self._run_encoder(batch)
         self.model.decoder.init_state(src, memory_bank, enc_states)
 
         gold_score = self._gold_score(
@@ -996,6 +1047,7 @@ class Translator(Inference):
 
         # (3) Begin decoding step by step:
         for step in range(decode_strategy.max_length):
+            # print(step)
             if isinstance(self.model.decoder, BARTDecoder):
                 # keep all predicted tokens, length is used for position embedding, (pred_len, batch_size * beam_size, 1)
                 decoder_input = decode_strategy.alive_seq.permute(1, 0).unsqueeze(2)
@@ -1014,7 +1066,6 @@ class Translator(Inference):
                 step=step,
                 batch_offset=decode_strategy.batch_offset,
                 encoder_output=encoder_output,
-                last_word=True,
                 incremental_state=incremental_state,
             )
 
@@ -1040,15 +1091,22 @@ class Translator(Inference):
 
                 if src_map is not None:
                     src_map = src_map.index_select(1, select_indices)
-
             if parallel_paths > 1 or any_finished:
-                # reorder decoder internal states based on the prev choice of beams
+                # @memray re-order decoder internal states based on the prev choice of beams
+                # and drop the finished batched
                 if isinstance(self.model.decoder, BARTDecoder):
-                    self.model.decoder.model.reorder_incremental_state(incremental_state, select_indices)
+                    self.model.decoder.model.reorder_incremental_state_scripting(incremental_state, select_indices)
                     encoder_output = self.model.encoder.model.reorder_encoder_out(encoder_output, select_indices)
+                    # print('#select_indices=%d' % len(select_indices))
+                    # print(select_indices)
+                    # print('#finished=%d' % (torch.sum(decode_strategy.is_finished.int()).item()))
+                    # print('incremental_state[0].shape=%s' % str(list(incremental_state.values())[0]['prev_key'].shape))
+                    # print('encoder_output[0].shape=%s' % str(encoder_output[0].shape))
                 else:
                     self.model.decoder.map_state(
-                        lambda state, dim: state.index_select(dim, select_indices))
+                        lambda state, dim: state.index_select(dim, select_indices)
+                    )
+
 
         return self.report_results(
             gold_score,
@@ -1075,7 +1133,8 @@ class Translator(Inference):
             src_vocabs,
             memory_lengths=src_lengths,
             src_map=src_map,
-            encoder_output=encoder_output
+            encoder_output=encoder_output,
+            last_word=False
         )
 
         log_probs[:, :, self._tgt_pad_idx] = 0
@@ -1084,6 +1143,106 @@ class Translator(Inference):
         gold_scores = gold_scores.sum(dim=0).view(-1)
 
         return gold_scores
+
+
+    def _report_kpeval(self, src_path, tgt_path, pred_path):
+        import subprocess
+        path = os.path.abspath(__file__ + "/../../..")
+        msg = subprocess.check_output(
+            "python %s/tools/kp_eval.py -src %s -tgt %s -pred %s"
+            % (path, src_path, tgt_path, pred_path),
+            shell=True, stdin=self.out_file
+        ).decode("utf-8").strip()
+        return msg
+
+    def add_trans_stats(self, trans, kp_concat_type):
+        for tran in trans:
+            if kp_concat_type == 'one2one':
+                tran.unique_pred_num = len(tran.preds)
+                tran.dup_pred_num = len(tran.preds)
+                tran.beam_num = len(tran.preds)
+                tran.beamstep_num = sum([len(t) for t in tran.preds])
+            else:
+                tran.beam_num = len(tran.ori_preds)
+                tran.beamstep_num = sum([len(t) for t in tran.ori_preds])
+
+        return trans
+
+    def segment_one2seq_trans(self, trans):
+        """
+        For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rerank them
+        :param trans: a list of translations, length=batch_size, each translation contains multiple beams corresponding to one source text
+        :return: a list of translations, each beam in each translation (multiple phrases delimited by <sep>) is a phrase
+        """
+        for tran in trans:
+            dup_pred_tuples = []
+
+            new_preds = []
+            new_pred_sents = []
+            new_pred_scores = []
+            new_pred_counter = {}
+
+            topseq_preds = []
+            topseq_pred_sents = []
+            topseq_pred_scores = []
+            for sent_i in range(len(tran.pred_sents)):
+                pred_sent = tran.pred_sents[sent_i]
+                sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == inputters.keyphrase_dataset.SEP_token]
+                sep_indices = [-1] + sep_indices + [len(pred_sent)]
+
+                for kp_i in range(len(sep_indices)-1):
+                    start_idx = sep_indices[kp_i] + 1
+                    end_idx = sep_indices[kp_i + 1]
+                    new_kp = pred_sent[start_idx: end_idx]
+                    new_kp_str = '_'.join(new_kp)
+
+                    # keep all preds, even duplicate
+                    dup_pred_tuples.append((tran.preds[sent_i][start_idx: end_idx],
+                                      tran.pred_sents[sent_i][start_idx: end_idx],
+                                      tran.pred_scores[sent_i]))
+
+                    # skip duplicate
+                    if new_kp_str in new_pred_counter:
+                        new_pred_counter[new_kp_str] += 1
+                        continue
+
+                    # TODO, no account for attns and copies
+                    new_pred_counter[new_kp_str] = 1
+                    new_preds.append(tran.preds[sent_i][start_idx: end_idx])
+                    new_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
+                    new_pred_scores.append(tran.pred_scores[sent_i])
+
+                    # first beam (top-rank sequence)
+                    if sent_i == 0:
+                        topseq_preds.append(tran.preds[sent_i][start_idx: end_idx])
+                        topseq_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
+                        topseq_pred_scores.append(tran.pred_scores[sent_i])
+
+            # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
+            # print(new_pred_counter)
+
+            # one2seq-specific stats
+            tran.unique_pred_num = len(new_pred_counter)
+            tran.dup_pred_num = sum(new_pred_counter.values())
+
+            # still keep the original pred beams
+            tran.ori_preds = tran.preds
+            tran.ori_pred_sents = tran.pred_sents
+            tran.ori_pred_scores = tran.pred_scores
+
+            # segmented predictions from the top-score sequence
+            tran.topseq_preds = topseq_preds
+            tran.topseq_pred_sents = topseq_pred_sents
+            tran.topseq_pred_scores = topseq_pred_scores
+
+            # all segmented predictions
+            tran.preds = new_preds
+            tran.pred_sents = new_pred_sents
+            tran.pred_scores = new_pred_scores
+
+            tran.dup_pred_tuples = dup_pred_tuples
+
+        return trans
 
 
 class GeneratorLM(Inference):
@@ -1321,102 +1480,3 @@ class GeneratorLM(Inference):
         gold_scores = gold_scores.sum(dim=0).view(-1)
 
         return gold_scores
-
-    def _report_kpeval(self, src_path, tgt_path, pred_path):
-        import subprocess
-        path = os.path.abspath(__file__ + "/../../..")
-        msg = subprocess.check_output(
-            "python %s/tools/kp_eval.py -src %s -tgt %s -pred %s"
-            % (path, src_path, tgt_path, pred_path),
-            shell=True, stdin=self.out_file
-        ).decode("utf-8").strip()
-        return msg
-
-    def add_trans_stats(self, trans, tgt_type):
-        for tran in trans:
-            if tgt_type == 'one2one':
-                tran.unique_pred_num = len(tran.preds)
-                tran.dup_pred_num = len(tran.preds)
-                tran.beam_num = len(tran.preds)
-                tran.beamstep_num = sum([len(t) for t in tran.preds])
-            else:
-                tran.beam_num = len(tran.ori_preds)
-                tran.beamstep_num = sum([len(t) for t in tran.ori_preds])
-
-        return trans
-
-    def segment_one2seq_trans(self, trans):
-        """
-        For keyphrase generation tasks, one2seq models output sequences consisting of multiple phrases. Split them by delimiters and rerank them
-        :param trans: a list of translations, length=batch_size, each translation contains multiple beams corresponding to one source text
-        :return: a list of translations, each beam in each translation (multiple phrases delimited by <sep>) is a phrase
-        """
-        for tran in trans:
-            dup_pred_tuples = []
-
-            new_preds = []
-            new_pred_sents = []
-            new_pred_scores = []
-            new_pred_counter = {}
-
-            topseq_preds = []
-            topseq_pred_sents = []
-            topseq_pred_scores = []
-            for sent_i in range(len(tran.pred_sents)):
-                pred_sent = tran.pred_sents[sent_i]
-                sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == inputters.keyphrase_dataset.SEP_token]
-                sep_indices = [-1] + sep_indices + [len(pred_sent)]
-
-                for kp_i in range(len(sep_indices)-1):
-                    start_idx = sep_indices[kp_i] + 1
-                    end_idx = sep_indices[kp_i + 1]
-                    new_kp = pred_sent[start_idx: end_idx]
-                    new_kp_str = '_'.join(new_kp)
-
-                    # keep all preds, even duplicate
-                    dup_pred_tuples.append((tran.preds[sent_i][start_idx: end_idx],
-                                      tran.pred_sents[sent_i][start_idx: end_idx],
-                                      tran.pred_scores[sent_i]))
-
-                    # skip duplicate
-                    if new_kp_str in new_pred_counter:
-                        new_pred_counter[new_kp_str] += 1
-                        continue
-
-                    # TODO, no account for attns and copies
-                    new_pred_counter[new_kp_str] = 1
-                    new_preds.append(tran.preds[sent_i][start_idx: end_idx])
-                    new_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
-                    new_pred_scores.append(tran.pred_scores[sent_i])
-
-                    # first beam (top-rank sequence)
-                    if sent_i == 0:
-                        topseq_preds.append(tran.preds[sent_i][start_idx: end_idx])
-                        topseq_pred_sents.append(tran.pred_sents[sent_i][start_idx: end_idx])
-                        topseq_pred_scores.append(tran.pred_scores[sent_i])
-
-            # print('#(unique)/#(kp) = %d/%d' % (len(new_pred_counter), sum(new_pred_counter.values())))
-            # print(new_pred_counter)
-
-            # one2seq-specific stats
-            tran.unique_pred_num = len(new_pred_counter)
-            tran.dup_pred_num = sum(new_pred_counter.values())
-
-            # still keep the original pred beams
-            tran.ori_preds = tran.preds
-            tran.ori_pred_sents = tran.pred_sents
-            tran.ori_pred_scores = tran.pred_scores
-
-            # segmented predictions from the top-score sequence
-            tran.topseq_preds = topseq_preds
-            tran.topseq_pred_sents = topseq_pred_sents
-            tran.topseq_pred_scores = topseq_pred_scores
-
-            # all segmented predictions
-            tran.preds = new_preds
-            tran.pred_sents = new_pred_sents
-            tran.pred_scores = new_pred_scores
-
-            tran.dup_pred_tuples = dup_pred_tuples
-
-        return trans

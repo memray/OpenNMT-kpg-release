@@ -12,7 +12,7 @@ def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs=None,
     corresponeding to a batch, sums together copies,
     with a dictionary word when it is ambiguous.
     """
-    offset = len(tgt_vocab)
+    offset = len(tgt_vocab)  # vocab_size
     for b in range(scores.size(batch_dim)):
         blank = []
         fill = []
@@ -26,8 +26,16 @@ def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs=None,
 
         for i in range(1, len(src_vocab)):
             sw = src_vocab.itos[i]
+            #  (deprecated) normalize subwords to reduce mismatches, but it causes many unmergable words such as '2-deg enerATE' ['Ġ2', '-', 'deg', 'Ġener', 'ATE']
+            # if hasattr(tgt_vocab, 'norm_stoi'):
+            #     ti = tgt_vocab.norm_stoi[sw]
+            # else:
+            #     ti = tgt_vocab.stoi[sw]
             ti = tgt_vocab.stoi[sw]
-            if ti != 0:
+
+            # @memray, for pretrained tokenizer, pad_index can be non-zero
+            pad_index = tgt_vocab.pad_index if hasattr(tgt_vocab, 'pad_index') else 0
+            if ti != pad_index:
                 blank.append(offset + i)
                 fill.append(ti)
         if blank:
@@ -206,20 +214,21 @@ class CommonCopyGeneratorLossCompute(CommonLossCompute):
 
         Args:
             batch: the current batch.
-            output: the predict output from the model.
-            target: the validate target to compare output with.
-            copy_attn: the copy attention value.
-            align: the align info.
+            output: the predict output from the model, shape=[tgt_len-1, B, hidden_dim].
+            target: the validate target to compare output with, shape=[tgt_len-1, B, src_len].
+            copy_attn: the copy attention value, shape=[tgt_len-1, B, src_len].
+            align: the align info, shape=[tgt_len-1, B].
         """
         target_indices = target # before flattening
 
-        target = target.view(-1)
-        align = align.view(-1)
-        scores = self.generator(
+        target = target.contiguous().view(-1) # [tgt_len-1, B] -> (tgt_len-1)*B
+        align = align.view(-1) # (tgt_len-1)*B
+
+        scores = self.generator( # [(tgt_len-1)*B, vocab_size+tmp_vocab_size]
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
-        # loss = 0.0
-        loss = self.criterion(scores, align, target)
+
+        loss = self.criterion(scores, align, target) # (tgt_len-1)*B
         # print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
@@ -303,13 +312,13 @@ class CommonCopyGeneratorLossCompute(CommonLossCompute):
 
 class CopyGeneratorLossCompute(CommonCopyGeneratorLossCompute):
     """Copy Generator Loss Computation."""
-    def __init__(self, criterion, generator, tgt_vocab, normalize_by_length,
-                 lambda_coverage=0.0):
+    def __init__(self, criterion, generator, tgt_vocab, normalize_by_length, **kwargs):
         super(CopyGeneratorLossCompute, self).__init__(criterion, generator,
                                                        tgt_vocab,
                                                        normalize_by_length,
-                                                       lambda_coverage=0.0,
-                                                       tgt_shift_index=1)
+                                                       # lambda_coverage=0.0, # @memray
+                                                       tgt_shift_index=1,
+                                                       **kwargs)
 
 
 class CopyGeneratorLMLossCompute(CommonCopyGeneratorLossCompute):

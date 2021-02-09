@@ -209,9 +209,9 @@ def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
 
     for name, results in zip(results_names, results_list):
         # print @5@10@O@M for present_exact, print @50@M for absent_exact
-        if name in ['present_exact', 'absent_exact']:
-            if name.startswith('present'):
-                topk_list = ['5', '10', 'k', 'M']
+        if name in ['all_exact', 'present_exact', 'absent_exact']:
+            if name.startswith('all') or name.startswith('present'):
+                topk_list = ['1', '3', '10', 'k']
             else:
                 topk_list = ['50', 'M']
 
@@ -222,6 +222,8 @@ def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
                                                                           results['recall@{}'.format(topk)],
                                                                           results['f_score@{}'.format(topk)],
                                                                           )
+                # note the reported results might be different from the numbers here
+                #   since we remove data points that have zero valid targets in average (see kp_report.summarize_scores)
                 print_out += "\n --- total {} Corr/P/R/F1 @{}: \t".format(name, topk) \
                              + " {:6} , {:.4f} , {:.4f} , {:.4f}".format(
                                 int(np.sum(score_dict['{}_correct@{}'.format(name, topk)])),

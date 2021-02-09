@@ -57,7 +57,7 @@ class BeamSearchBase(DecodeStrategy):
     def __init__(self, beam_size, batch_size, pad, bos, eos, n_best,
                  global_scorer, min_length, max_length, return_attention,
                  block_ngram_repeat, exclusion_tokens,
-                 stepwise_penalty, ratio):
+                 stepwise_penalty, ratio, beam_terminate):
         super(BeamSearchBase, self).__init__(
             pad, bos, eos, batch_size, beam_size, min_length,
             block_ngram_repeat, exclusion_tokens, return_attention,

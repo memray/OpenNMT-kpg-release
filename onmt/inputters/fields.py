@@ -4,7 +4,7 @@ import torch
 from onmt.utils.logging import logger
 from onmt.utils.misc import check_path
 from onmt.inputters.inputter import get_fields, _load_vocab, \
-    _build_fields_vocab
+    _build_fields_vocab, load_roberta_kp_tokenizer, reload_keyphrase_fields
 
 
 def _get_dynamic_fields(opts):
@@ -12,7 +12,7 @@ def _get_dynamic_fields(opts):
     src_nfeats = 0
     tgt_nfeats = 0
     with_align = hasattr(opts, 'lambda_align') and opts.lambda_align > 0.0
-    fields = get_fields('text', src_nfeats, tgt_nfeats,
+    fields = get_fields(opts.data_type, src_nfeats, tgt_nfeats,
                         dynamic_dict=opts.copy_attn,
                         src_truncate=opts.src_seq_length_trunc,
                         tgt_truncate=opts.tgt_seq_length_trunc,
@@ -50,6 +50,14 @@ def build_dynamic_fields(opts, src_specials=None, tgt_specials=None):
         opts.src_vocab_size, opts.src_words_min_frequency,
         opts.tgt_vocab_size, opts.tgt_words_min_frequency,
         src_specials=src_specials, tgt_specials=tgt_specials)
+
+    # load a Fairseq-trained model, such as BART
+    if opts.data_type == 'keyphrase':
+        tokenizer = None
+        if opts.pretrained_tokenizer:
+            tokenizer = load_roberta_kp_tokenizer(opts.src_vocab, opts.bpe_dropout)
+            setattr(opts, 'vocab_size', len(tokenizer))
+        fields = reload_keyphrase_fields(fields, opts, tokenizer=tokenizer)
 
     return fields
 

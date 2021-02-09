@@ -66,14 +66,14 @@ class BARTDecoder(DecoderBase):
 
         self.embed_positions = self.model.embed_positions
 
-        if embeddings is None:
-            raise NotImplementedError
-            # self.embed_tokens = self.model.embed_tokens
-        else:
-            self.model.embed_tokens = embeddings
-            self.embed_tokens = embeddings
-            logging.getLogger().info('Replace BART embedding with token_embed.shape=%s'
-                                     % (str(self.model.embed_tokens.weight.shape)))
+        # if embeddings is None:
+        #     raise NotImplementedError
+        #     # self.embed_tokens = self.model.embed_tokens
+        # else:
+        #     self.model.embed_tokens = embeddings
+        #     self.embed_tokens = embeddings
+        #     logging.getLogger().info('Replace BART embedding with token_embed.shape=%s'
+        #                              % (str(self.model.embed_tokens.weight.shape)))
 
         self._std_attn_idx = -1
         self._copy_attn_idx = -1
@@ -90,17 +90,7 @@ class BARTDecoder(DecoderBase):
         pass
 
     def map_state(self, fn):
-        def _recursive_map(struct, batch_dim=0):
-            for k, v in struct.items():
-                if v is not None:
-                    if isinstance(v, dict):
-                        _recursive_map(v)
-                    else:
-                        struct[k] = fn(v, batch_dim)
-
-        self.state["src"] = fn(self.state["src"], 1)
-        if self.state["cache"] is not None:
-            _recursive_map(self.state["cache"])
+        pass
 
     def forward(self, tgt, memory_bank=None,
                 step=None,
@@ -110,14 +100,15 @@ class BARTDecoder(DecoderBase):
                 **kwargs):
         """
         :param tgt: (tgt_len, batch_size, 1)
-        :param memory_bank:
+        :param memory_bank: (src_len, batch_size, dim)
         :param step:
-        :param memory_lengths:
-        :param encoder_output:
+        :param memory_lengths: (batch_size)
+        :param encoder_output: encoder_out.shape=(src_len, batch_size, dim)
+        :param incremental_state: attention of previous timestep, each shape=(batch_size, num_head, 1, attn_dim)
         :param kwargs:
         :return:
         """
-        # make them batch-first, to (batch_size, tgt_len)
+        # make them batch-first, (tgt_len, batch_size, 1) -> (batch_size, tgt_len)
         prev_output_tokens = tgt.squeeze(2).permute(1, 0)
         # Inputs:
         #     prev_output_tokens (LongTensor): previous decoder outputs of shape `(batch, tgt_len)`, for teacher forcing
@@ -148,14 +139,19 @@ class BARTDecoder(DecoderBase):
         # (batch, tgt_len, hid_dim) -> (tgt_len, batch, hid_dim)
         dec_outs = output.transpose(0, 1).contiguous()
         attn_heads = extra['attn'][0]
-        attns = {"std": attn_heads[self._std_attn_idx].transpose(0, 1).contiguous()}
-        attns["copy"] = attn_heads[self._copy_attn_idx].transpose(0, 1).contiguous()
-        if kwargs.pop('return_all_attention', False):
-            # (num_head, batch_size, tgt_len, src_len) -> (tgt_len, batch_size, num_head, src_len)
-            attns["all"] = attn_heads.permute(2, 1, 0, 3).contiguous()
 
-        for head_id, target in enumerate(alignment_targets):
-            attns["alignment_%s" % target] = attn_heads[head_id].transpose(0, 1).contiguous()
+        # @memray as of 20201216, fairseq disables returning attentions
+        if attn_heads is not None:
+            attns = {"std": attn_heads[self._std_attn_idx].transpose(0, 1).contiguous()}
+            attns["copy"] = attn_heads[self._copy_attn_idx].transpose(0, 1).contiguous()
+            if kwargs.pop('return_all_attention', False):
+                # (num_head, batch_size, tgt_len, src_len) -> (tgt_len, batch_size, num_head, src_len)
+                attns["all"] = attn_heads.permute(2, 1, 0, 3).contiguous()
+
+            for head_id, target in enumerate(alignment_targets):
+                attns["alignment_%s" % target] = attn_heads[head_id].transpose(0, 1).contiguous()
+        else:
+            attns = None
 
         return dec_outs, attns
 
@@ -290,8 +286,15 @@ def extract_features(
 
         x, layer_attn, _ = layer(
             x,
-            encoder_out.encoder_out if encoder_out is not None else None,
-            encoder_out.encoder_padding_mask if encoder_out is not None else None,
+            encoder_out["encoder_out"][0]
+            if (encoder_out is not None and len(encoder_out["encoder_out"]) > 0)
+            else None,
+            encoder_out["encoder_padding_mask"][0]
+            if (
+                encoder_out is not None
+                and len(encoder_out["encoder_padding_mask"]) > 0
+            )
+            else None,
             incremental_state,
             self_attn_mask=self_attn_mask,
             self_attn_padding_mask=self_attn_padding_mask,

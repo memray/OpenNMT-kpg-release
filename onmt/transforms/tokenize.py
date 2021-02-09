@@ -1,4 +1,7 @@
 """Transforms relate to tokenization/subword."""
+import os
+
+from onmt.inputters.inputter import load_roberta_kp_tokenizer
 from onmt.utils.logging import logger
 from onmt.transforms import register_transform
 from .transform import Transform
@@ -196,8 +199,6 @@ class BPETransform(TokenizerTransform):
 
     def _parse_opts(self):
         super()._parse_opts()
-        self.dropout = {'src': self.src_subword_alpha,
-                        'tgt': self.tgt_subword_alpha}
 
     def _set_seed(self, seed):
         """set seed to ensure reproducibility."""
@@ -238,6 +239,120 @@ class BPETransform(TokenizerTransform):
         bpe_model = self.load_models[side]
         dropout = self.dropout[side] if is_train else 0
         segmented = bpe_model.segment_tokens(tokens, dropout=dropout)
+        return segmented
+
+    def apply(self, example, is_train=False, stats=None, **kwargs):
+        """Apply bpe subword encode to src & tgt."""
+        src_out = self._tokenize(example['src'], 'src', is_train)
+        tgt_out = self._tokenize(example['tgt'], 'tgt', is_train)
+        if stats is not None:
+            n_words = len(example['src']) + len(example['tgt'])
+            n_subwords = len(src_out) + len(tgt_out)
+            stats.subword(n_subwords, n_words)
+        example['src'], example['tgt'] = src_out, tgt_out
+        return example
+
+
+@register_transform(name='roberta_tokenize_kpg')
+class RoBERTaTransform(TokenizerTransform):
+    """RoBERTa subword transform class."""
+
+    def __init__(self, opts):
+        """Initialize necessary options for subword_nmt."""
+        super().__init__(opts)
+        self.bpe_dropout = opts.bpe_dropout
+        self.src_vocab = opts.src_vocab
+        self.tgt_vocab = opts.tgt_vocab
+        self.seq_length_trunc = {}
+        self.seq_length_trunc['src'] = opts.src_seq_length_trunc
+        self.seq_length_trunc['tgt'] = opts.tgt_seq_length_trunc
+
+    def _parse_opts(self):
+        super()._parse_opts()
+        self.dropout = {'src': self.src_subword_alpha,
+                        'tgt': self.tgt_subword_alpha}
+
+    @classmethod
+    def add_options(cls, parser):
+        """Available options relate to Subword."""
+        super().add_options(parser)
+        group = parser.add_argument_group('Transform/Subword/HFRobertaTokenizer')
+        group.add('--bpe_dropout', '-bpe_dropout',
+                  type=float, default=0.0,
+                  help="Dropout rate for BPE.")
+
+    def _set_seed(self, seed):
+        """set seed to ensure reproducibility."""
+        import random
+        random.seed(seed)
+
+    def _load_tokenizer(self, vocab_path):
+        return load_roberta_kp_tokenizer(vocab_path, self.bpe_dropout)
+
+    def warm_up(self, vocabs=None):
+        """Load subword models."""
+        super().warm_up(None)
+        load_src_model = self._load_tokenizer(self.src_vocab)
+        if self.share_vocab:
+            self.load_models = {
+                'src': load_src_model,
+                'tgt': load_src_model
+            }
+        else:
+            load_tgt_model = self._load_tokenizer(self.tgt_vocab)
+            self.load_models = {
+                'src': load_src_model,
+                'tgt': load_tgt_model
+            }
+        # test_str = load_src_model.bos_token+'what is wrong with <mask> <sep> I do not know either <present>, <absent>, <category>'+load_src_model.eos_token
+        # print('tokenize:', str(load_src_model.tokenize(test_str, add_special_tokens=False)))
+        # print('encoding:', str(load_src_model.encode(test_str, add_special_tokens=False)))
+        # print('decoded encoding:', str(load_src_model.decode(load_src_model.encode(test_str, add_special_tokens=False))))
+        # print()
+
+    def _tokenize(self, tokens_str, side='src', is_train=False):
+        """Do bpe subword tokenize."""
+        bpe_model = self.load_models[side]
+        seq_length_trunc = self.seq_length_trunc[side]
+        # bos/eos is later added by OpenNMT pipeline
+        # As mentioned in https://github.com/huggingface/transformers/issues/7199:
+        #   "Please note that the RoBERTa tokenizer is built using only
+        #   <s> (the BOS token) and </s> (the SEP token), with two </s></s> as the separator."
+        if seq_length_trunc is not None:
+            segmented = bpe_model.tokenize(tokens_str, add_special_tokens=False,
+                                         truncation=True,
+                                         max_length=seq_length_trunc - 2) # account for bos/eos
+        else:
+            segmented = bpe_model.tokenize(tokens_str, add_special_tokens=False)
+
+        # print(side)
+        # notruncate_segmented = bpe_model.tokenize(tokens_str, add_special_tokens=False)
+        # notruncate_segmented = [bpe_model.bos_token] + notruncate_segmented + [bpe_model.eos_token]
+        # print('no-truncate length:', len(notruncate_segmented))
+        # print('truncated length:', len(segmented))
+        return segmented
+
+    def _encode(self, tokens_str, side='src', is_train=False):
+        """Do bpe subword encoding."""
+        # TODO, bpe_dropout should be disabled if is_train is True. Current tokenizers don't support this
+        bpe_model = self.load_models[side]
+        seq_length_trunc = self.seq_length_trunc[side]
+        # bos/eos is later added by OpenNMT pipeline
+        # As mentioned in https://github.com/huggingface/transformers/issues/7199:
+        #   "Please note that the RoBERTa tokenizer is built using only
+        #   <s> (the BOS token) and </s> (the SEP token), with two </s></s> as the separator."
+        if seq_length_trunc is not None:
+            segmented = bpe_model.encode(tokens_str, add_special_tokens=False,
+                                         truncation=True,
+                                         max_length=seq_length_trunc - 2) # account for bos/eos
+        else:
+            segmented = bpe_model.encode(tokens_str, add_special_tokens=False)
+
+        # print(side)
+        # notruncate_segmented = bpe_model.encode(tokens_str, add_special_tokens=False)
+        # notruncate_segmented = [bpe_model.bos_token_id] + notruncate_segmented + [bpe_model.eos_token_id]
+        # print('no-truncate length:', len(notruncate_segmented))
+        # print('truncated length:', len(segmented))
         return segmented
 
     def apply(self, example, is_train=False, stats=None, **kwargs):

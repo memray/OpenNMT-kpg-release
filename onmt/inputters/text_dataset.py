@@ -124,6 +124,7 @@ class TextMultiField(RawField):
                  for i, (_, ff) in enumerate(self.fields[1:], 1)]
         levels = [base_data] + feats
         # data: seq_len x batch_size x len(self.fields)
+        # @memray, shape is actually [batch_size x seq_len x len(self.fields)]
         data = torch.stack(levels, 2)
         if self.base_field.include_lengths:
             return data, lengths

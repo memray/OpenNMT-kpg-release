@@ -47,9 +47,13 @@ def infer_dataset_type(filepath):
         dataset_type = 'qa'
     elif 'openkp' in filepath:
         dataset_type = 'webpage'
-    elif 'times' in filepath:
+    elif 'kptimes' in filepath or 'jptimes' in filepath:
         dataset_type = 'news'
     elif 'kp20k' in filepath or 'magkp' in filepath:
+        dataset_type = 'scipaper'
+    elif 'duc' in filepath or 'inspec' in filepath or 'krapivin' in filepath \
+            or 'nus' in filepath or 'semeval' in filepath:
+        # duc is an outlier
         dataset_type = 'scipaper'
 
     assert dataset_type is not None, 'Fail to detect the data type of the given input file.' \
@@ -65,15 +69,15 @@ def parse_src_fn(ex_dict, title_field, text_field):
     return concat_str
 
 
-def kpdict_parse_fn(ex_dict, tokenizer, tgt_concat_type, dataset_type='scipaper', max_target_phrases=-1, lowercase=False):
+def kpdict_parse_fn(example, tokenizer, tgt_concat_type, dataset_type='scipaper', max_target_phrases=-1, lowercase=False):
     assert dataset_type in KP_DATASET_FIELDS
     title_field, text_field, keyword_field, category_field = KP_DATASET_FIELDS[dataset_type]
 
-    src_str = parse_src_fn(ex_dict, title_field, text_field)
-    if isinstance(ex_dict[keyword_field], str):
-        tgt_kps = ex_dict[keyword_field].split(';')
+    src_str = parse_src_fn(example, title_field, text_field)
+    if isinstance(example[keyword_field], str):
+        tgt_kps = example[keyword_field].split(';')
     else:
-        tgt_kps = ex_dict[keyword_field]
+        tgt_kps = example[keyword_field]
     if tgt_concat_type == 'one2one':
         # sample one tgt from multiple tgts and use it as the only tgt
         rand_idx = np.random.randint(len(tgt_kps))
@@ -162,7 +166,7 @@ class KeyphraseDataset(TorchtextDataset):
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
                       in zip(readers, data, dirs)]
 
-        # self.src_vocabs is used in collapse_copy_scores and Translator.py
+        # self.src_vocabs is temp vocab/alignment, used in collapse_copy_scores and Translator.py
         self.src_vocabs = []
         examples = []
         for ex_dict in tqdm(starmap(_join_dicts, zip(*read_iters)), desc='Loading and parsing data'):

@@ -1,6 +1,7 @@
 
 import argparse
 import json
+import re
 import time
 
 import tqdm
@@ -18,19 +19,21 @@ from onmt.keyphrase.utils import if_present_duplicate_phrases, validate_phrases,
 from onmt.utils.logging import init_logger
 
 
-def evaluate(src_list, tgt_list, pred_list,
+def evaluate(dataset_name, src_list, tgt_list, pred_list,
              unk_token,
              logger=None, verbose=False,
              report_path=None, eval_topbeam=False):
     # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
 
+    apply_meng_tokenize = dataset_name in ['kp20k', 'inspec', 'krapivin', 'nus', 'semeval']
+
     if report_path:
         report_file = open(report_path, 'w+')
     else:
         report_file = None
-    # 'k' means the number of phrases in ground-truth
-    topk_range = [5, 10, 'k', 'M']
-    absent_topk_range = [10, 50, 'M']
+    # 'k' means the number of phrases in ground-truth, add 1,3 for openkp
+    topk_range = [5, 10, 'k', 'M', 1, 3]
+    absent_topk_range = [10, 50, 'k', 'M']
     # 'precision_hard' and 'f_score_hard' mean that precision is calculated with denominator strictly as K (say 5 or 10), won't be lessened even number of preds is smaller
     metric_names = ['correct', 'precision', 'recall', 'f_score', 'precision_hard', 'f_score_hard']
 
@@ -56,6 +59,11 @@ def evaluate(src_list, tgt_list, pred_list,
             pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
             copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
 
+        # for scipaper datasets, we re-tokenize generated phrases
+        if apply_meng_tokenize:
+            _pred_seqs = [' '.join(pred_seq) for pred_seq in pred_seqs]
+            pred_seqs = [utils.meng17_tokenize(tgt_str) for tgt_str in _pred_seqs]
+
         # 1st filtering, ignore phrases having <unk> and puncs
         valid_pred_flags = validate_phrases(pred_seqs, unk_token)
         # 2nd filtering: filter out phrases that don't appear in text, and keep unique ones after stemming
@@ -66,8 +74,8 @@ def evaluate(src_list, tgt_list, pred_list,
         valid_and_absent_flags = valid_pred_flags * ~present_pred_flags if len(valid_pred_flags) > 0 else []
 
         # compute match scores (exact, partial and mixed), for exact it's a list otherwise matrix
-        match_scores_exact = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, type='exact')
-        match_scores_partial = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, type='ngram')
+        match_scores_exact = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, do_lower=True, do_stem=True, type='exact')
+        match_scores_partial = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, do_lower=True, do_stem=True, type='ngram')
         # simply add full-text to n-grams might not be good as its contribution is not clear
         # match_scores_mixed = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, type='mixed')
 
@@ -80,19 +88,19 @@ def evaluate(src_list, tgt_list, pred_list,
         valid_preds = [seq for seq, valid in zip(pred_seqs, valid_pred_flags) if valid]
         valid_present_pred_flags = present_pred_flags[valid_pred_flags]
 
-        match_scores_exact = match_scores_exact[valid_pred_flags]
-        match_scores_partial = match_scores_partial[valid_pred_flags]
+        valid_match_scores_exact = match_scores_exact[valid_pred_flags]
+        valid_match_scores_partial = match_scores_partial[valid_pred_flags]
         # match_scores_mixed = match_scores_mixed[valid_pred_flags]
 
         # split preds by present/absent and exact/partial/mixed
         valid_present_preds = [pred for pred, present in zip(valid_preds, valid_present_pred_flags) if present]
         valid_absent_preds = [pred for pred, present in zip(valid_preds, valid_present_pred_flags) if ~present]
         if len(valid_present_pred_flags) > 0:
-            present_exact_match_scores = match_scores_exact[valid_present_pred_flags]
-            present_partial_match_scores = match_scores_partial[valid_present_pred_flags][:, present_tgt_flags]
+            present_exact_match_scores = valid_match_scores_exact[valid_present_pred_flags]
+            present_partial_match_scores = valid_match_scores_partial[valid_present_pred_flags][:, present_tgt_flags]
             # present_mixed_match_scores = match_scores_mixed[present_pred_flags][:, present_tgt_flags]
-            absent_exact_match_scores = match_scores_exact[~valid_present_pred_flags]
-            absent_partial_match_scores = match_scores_partial[~valid_present_pred_flags][:, ~present_tgt_flags]
+            absent_exact_match_scores = valid_match_scores_exact[~valid_present_pred_flags]
+            absent_partial_match_scores = valid_match_scores_partial[~valid_present_pred_flags][:, ~present_tgt_flags]
             # absent_mixed_match_scores = match_scores_mixed[~present_pred_flags][:, ~present_tgt_flags]
         else:
             present_exact_match_scores = []
@@ -113,13 +121,17 @@ def evaluate(src_list, tgt_list, pred_list,
         2. Compute metrics
         """
         # get the scores on different scores (for absent results, only recall matters)
+        all_exact_results = run_classic_metrics(valid_match_scores_exact, valid_preds, tgt_seqs, metric_names, topk_range)
         present_exact_results = run_classic_metrics(present_exact_match_scores, valid_present_preds, present_tgts, metric_names, topk_range)
         absent_exact_results = run_classic_metrics(absent_exact_match_scores, valid_absent_preds, absent_tgts, metric_names, absent_topk_range)
+
+        all_partial_results = run_classic_metrics(valid_match_scores_partial, valid_preds, tgt_seqs, metric_names, topk_range, type='partial')
         present_partial_results = run_classic_metrics(present_partial_match_scores, valid_present_preds, present_tgts, metric_names, topk_range, type='partial')
         absent_partial_results = run_classic_metrics(absent_partial_match_scores, valid_absent_preds, absent_tgts, metric_names, absent_topk_range, type='partial')
         # present_mixed_results = run_metrics(present_mixed_match_scores, present_preds, present_tgts, metric_names, topk_range, type='partial')
         # absent_mixed_results = run_metrics(absent_mixed_match_scores, absent_preds, absent_tgts, metric_names, absent_topk_range, type='partial')
 
+        all_exact_advanced_results = run_advanced_metrics(valid_match_scores_exact, valid_preds, tgt_seqs)
         present_exact_advanced_results = run_advanced_metrics(present_exact_match_scores, valid_present_preds, present_tgts)
         absent_exact_advanced_results = run_advanced_metrics(absent_exact_match_scores, valid_absent_preds, absent_tgts)
         # print(advanced_present_exact_results)
@@ -129,15 +141,17 @@ def evaluate(src_list, tgt_list, pred_list,
         3. Gather scores
         """
         eval_results_names = [
+            'all_exact', 'all_partial',
             'present_exact', 'absent_exact',
             'present_partial', 'absent_partial',
             # 'present_mixed', 'absent_mixed'
-            'present_exact_advanced', 'absent_exact_advanced',
+            'all_exact_advanced', 'present_exact_advanced', 'absent_exact_advanced',
             ]
-        eval_results_list = [present_exact_results, absent_exact_results,
+        eval_results_list = [all_exact_results, all_partial_results,
+                             present_exact_results, absent_exact_results,
                              present_partial_results, absent_partial_results,
                              # present_mixed_results, absent_mixed_results
-                             present_exact_advanced_results, absent_exact_advanced_results
+                             all_exact_advanced_results, present_exact_advanced_results, absent_exact_advanced_results
                             ]
         # update score_dict, appending new scores (results_list) to it
         individual_score_dict = {result_name: results for result_name, results in zip(eval_results_names, eval_results_list)}
@@ -227,11 +241,14 @@ def baseline_pred_loader(pred_path, model_name):
     return pred_dict_list
 
 
-def keyphrase_eval(src_path, tgt_path, pred_path,
+def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
                    unk_token='<unk>', verbose=False, logger=None,
                    report_path=None, eval_topbeam=False, model_name='nn'):
     # change data loader to iterator, otherwise it consumes more than 64gb RAM
     # check line numbers first
+    dataset_name = '_'.join(datasplit_name.split('_')[: -1])
+    split_name = datasplit_name.split('_')[-1]
+    dataset_name = dataset_name.strip().lower()
     src_line_number = sum([1 for _ in open(src_path, "r")])
     tgt_line_number = sum([1 for _ in open(tgt_path, "r")])
     if model_name == 'nn':
@@ -254,20 +271,26 @@ def keyphrase_eval(src_path, tgt_path, pred_path,
 
             for src_ex, tgt_ex in zip(src_data, tgt_data):
                 src_str = parse_src_fn(src_ex, title_field, text_field)
-                src_tokens = utils.meng17_tokenize(src_str)
                 if isinstance(tgt_ex[keyword_field], str):
                     tgt_kps = tgt_ex[keyword_field].split(';')
                 else:
                     tgt_kps = tgt_ex[keyword_field]
-                tgt_kps_tokens = [utils.meng17_tokenize(tgt_str) for tgt_str in tgt_kps]
-                src_ex['src'] = ' '.join(src_tokens)
-                tgt_ex['tgt'] = [' '.join(tgt_tokens) for tgt_tokens in tgt_kps_tokens]
+
+                # TODO, using meng17 tokenization might not be proper for other domains, only apply for paper datasets
+                if dataset_name in ['kp20k', 'inspec', 'krapivin', 'nus', 'semeval']:
+                    src_tokens = utils.meng17_tokenize(src_str)
+                    tgt_kps_tokens = [utils.meng17_tokenize(tgt_str) for tgt_str in tgt_kps]
+                    src_ex['src'] = ' '.join(src_tokens)
+                    tgt_ex['tgt'] = [' '.join(tgt_tokens) for tgt_tokens in tgt_kps_tokens]
+                else:
+                    src_ex['src'] = src_str
+                    tgt_ex['tgt'] = tgt_kps
         if model_name == 'nn':
             pred_data = [json.loads(l) for l in open(pred_path, "r")]
         else:
             pred_data = baseline_pred_loader(pred_path, model_name)
         start_time = time.time()
-        results_dict = evaluate(src_data, tgt_data, pred_data,
+        results_dict = evaluate(dataset_name, src_data, tgt_data, pred_data,
                                 unk_token=unk_token,
                                 logger=logger, verbose=verbose,
                                 report_path=report_path, eval_topbeam=eval_topbeam)
@@ -280,14 +303,16 @@ def keyphrase_eval(src_path, tgt_path, pred_path,
         return None
 
 
-def summarize_scores(ckpt_name, score_dict):
+def summarize_scores(ckpt_name, score_dict, exp_name=None, pred_name=None):
     avg_dict = {}
     avg_dict['checkpoint_name'] = ckpt_name
     if ckpt_name.find('_') > 0:
-        avg_dict['model_name'] = '_'.join(ckpt_name.rsplit('_')[:-1])
+        avg_dict['exp_name'] = exp_name
+        avg_dict['pred_name'] = pred_name
         avg_dict['#train_step'] = ckpt_name.rsplit('_')[-1]
     else:
-        avg_dict['model_name'] = ckpt_name
+        avg_dict['exp_name'] = exp_name
+        avg_dict['pred_name'] = pred_name
         avg_dict['#train_step'] = ''
 
     # doc stat
@@ -340,7 +365,10 @@ def summarize_scores(ckpt_name, score_dict):
             continue
 
         # various scores (precision, recall, f-score)
-        if score_name.startswith('present'):
+        # NOTE! here can be tricky, we can average over all data examples or just valid examples
+        #  in empirical paper, we use the former, to keep it consistent and simple
+        '''
+        if score_name.startswith('all') or score_name.startswith('present'):
             tmp_scores = [score for score, num in zip(score_list, present_tgt_num) if num > 0]
             avg_dict[score_name] = np.average(tmp_scores)
         elif score_name.startswith('absent'):
@@ -349,6 +377,8 @@ def summarize_scores(ckpt_name, score_dict):
         else:
             logger.error("NotImplementedError: found key %s" % score_name)
             raise NotImplementedError
+        '''
+        avg_dict[score_name] = np.average(score_list)
 
     columns = list(avg_dict.keys())
     # print(columns)
@@ -363,36 +393,65 @@ def summarize_scores(ckpt_name, score_dict):
 def gather_eval_results(eval_root_dir, report_csv_path=None):
     dataset_scores_dict = {}
 
-    # total_file_num = len(*[[file for file in files if file.endswith('.json')] for subdir, dirs, files in os.walk(json_root_dir)])
-    # file_count = 0
+    total_file_num = len([file for subdir, dirs, files in os.walk(eval_root_dir)
+                          for file in files if file.endswith('.json') or file.endswith('.eval')])
+    file_count = 0
 
     for subdir, dirs, files in os.walk(eval_root_dir):
         for file in files:
-            if not file.endswith('.eval'):
+            # back-compatible with previous version, which uses .json extension name.
+            if not (file.endswith('.eval') or file.endswith('exhaustive.json') or file.endswith('selfterminating.json')):
                 continue
-            # file_count += 1
-            # print("file_count/file_num=%d/%d" % (file_count, total_file_num))
+            file_count += 1
+            print("file_count/file_num=%d/%d" % (file_count, total_file_num))
 
-            file_name = file[: file.find('.eval')]
-            ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
-            dataset_name = file_name[file.rfind('-')+1: ]
-            # if dataset_name != "kp20k_valid2k":
-            #     print("Skip "+dataset_name)
-            #     continue
+            if file.endswith('.eval'):
+                file_name = file[: file.find('.eval')]
+                ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
+                exp_name = re.search('exps/kp/(.*?)/outputs', subdir).group(1)
+                pred_name = re.search('outputs/(.*?)/eval', subdir).group(1)
+                dataset_name = file_name[file.rfind('-')+1: ]
+                decoding_type = 'exhaustive' # TODO
+            else:
+                # previous version
+                file_name = file[: file.find('.json')]
+                split_idx = file.rfind('-')
+                decoding_type = file_name[split_idx + 1:]
+                file_name = file_name[: split_idx]
+
+                split_idx = file_name.rfind('-')
+                dataset_name = file_name[split_idx + 1:]
+                file_name = file_name[: split_idx]
+
+                split_idx = file_name.rfind('_step_')
+                ckpt_name = file_name[split_idx + 1:].strip('_')
+                exp_name = file_name[:split_idx]
+
+                pred_name = re.search('-(beam.*?)/eval', subdir).group(1)
+
             # key is dataset name, value is a dict whose key is metric name and value is a list of floats
             score_dict = json.load(open(os.path.join(subdir, file), 'r'))
             # ignore scores where no tgts available and return the average
-            score_df = summarize_scores(ckpt_name, score_dict)
+            score_df = summarize_scores(ckpt_name, score_dict, exp_name, pred_name)
 
-            if dataset_name in dataset_scores_dict:
-                dataset_scores_dict[dataset_name] = dataset_scores_dict[dataset_name].append(score_df)
+            df_key = dataset_name + '_' + decoding_type
+            # print(df_key)
+            if df_key in dataset_scores_dict:
+                dataset_scores_dict[df_key] = dataset_scores_dict[df_key].append(score_df)
             else:
-                dataset_scores_dict[dataset_name] = score_df
+                dataset_scores_dict[df_key] = score_df
+
+            # if file_count > 20:
+            #     break
+
+        # if file_count > 20:
+        #     break
 
     if report_csv_path:
-        for dataset, score_df in dataset_scores_dict.items():
-            print("Writing summary to: %s" % (report_csv_path % dataset))
-            score_df.to_csv(report_csv_path % dataset)
+        for df_key, score_df in dataset_scores_dict.items():
+            print("Writing summary to: %s" % (report_csv_path % df_key))
+            score_df = score_df.sort_values(by=['exp_name', '#train_step'])
+            score_df.to_csv(report_csv_path % df_key)
 
     return dataset_scores_dict
 

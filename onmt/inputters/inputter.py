@@ -11,11 +11,14 @@ from functools import partial
 from itertools import chain, cycle
 
 import torch
+import torchtext
 from torchtext.data import Field, RawField, LabelField
+from torchtext.data.utils import RandomShuffler
 from torchtext.vocab import Vocab
 
 from onmt.constants import DefaultTokens, ModelTask
-from onmt.inputters.text_dataset import text_fields
+from onmt.inputters.iterator import batch_iter
+from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.news_dataset import update_field_vocab
 from onmt.inputters import keyphrase_dataset
 from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField, extra_special_tokens
@@ -58,10 +61,12 @@ def preprocessing_tokenize(data, tokenizer, max_length=None):
                                      max_length=max_length)
     return torch.tensor(token_indices, dtype=torch.int64)
 
+
 def postprocessing_length_cap(data, vocab, max_length):
     return [min(max_length, l) for l in data]
 
-def make_tgt(data, vocab, pad_idx):
+
+def make_tgt(data, vocab, pad_idx=0):
     """
     pad zero to the data, size=[max_len, batch_size]
     """
@@ -74,10 +79,12 @@ def make_tgt(data, vocab, pad_idx):
         alignment[:sent.size(0), i] = sent
     return alignment
 
+
 class AlignField(LabelField):
     """
     Parse ['<src>-<tgt>', ...] into ['<src>','<tgt>', ...]
     """
+
     def __init__(self, **kwargs):
         kwargs['use_vocab'] = False
         kwargs['preprocessing'] = parse_align_idx
@@ -253,7 +260,74 @@ def get_fields(
     return fields
 
 
-def reload_keyphrase_fields(opt, tokenizer=None):
+def load_roberta_kp_tokenizer(vocab_path, bpe_dropout):
+    try:
+        # from transformers import AutoTokenizer
+        from transformers import RobertaTokenizer, RobertaTokenizerFast, AddedToken
+    except ImportError:
+        raise ImportError(
+            'Please install huggingface/tokenizers with: '
+            'pip install transformers'
+        )
+    vocab_dir = os.path.dirname(vocab_path)
+    bpe_vocab = os.path.join(vocab_dir, 'vocab.json')
+    bpe_merges = os.path.join(vocab_dir, 'merges.txt')
+
+    assert os.path.exists(bpe_vocab) and os.path.exists(bpe_merges),\
+        "Both vocab and merges are needed to load Huggingface tokenizer"
+
+    print('Loading pretrained vocabulary from %s' % (vocab_dir))
+    # tokenizer = RobertaTokenizer(vocab_file=bpe_vocab, merges_file=bpe_merges)
+    sep_token = '<sep>'
+    kp_special_tokens = ['<present>', '<absent>', '<category>']
+    roberta_kp_tokenizer = RobertaTokenizer(vocab_file=bpe_vocab,
+                                 merges_file=bpe_merges,
+                                 sep=sep_token,  # doesn't work
+                                 additional_special_tokens=kp_special_tokens)
+    sep_token_id = roberta_kp_tokenizer.convert_tokens_to_ids(sep_token)
+    added_sep_token = AddedToken(sep_token, lstrip=False, rstrip=False)
+    roberta_kp_tokenizer.sep_token = sep_token
+    roberta_kp_tokenizer._sep_token = added_sep_token
+    roberta_kp_tokenizer.init_kwargs['sep_token'] = sep_token
+    roberta_kp_tokenizer.all_special_ids.append(sep_token_id)
+    roberta_kp_tokenizer.all_special_tokens.append(sep_token)
+    roberta_kp_tokenizer.all_special_tokens_extended.append(added_sep_token)
+    roberta_kp_tokenizer.special_tokens_map['sep_token'] = sep_token
+    roberta_kp_tokenizer.special_tokens_map_extended['sep_token'] = added_sep_token
+
+    roberta_kp_tokenizer.unique_no_split_tokens = roberta_kp_tokenizer.all_special_tokens
+
+    roberta_kp_tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base",
+                                                     __slow_tokenizer=roberta_kp_tokenizer, tokenizer_file=None,
+                                                     vocab_file=bpe_vocab,
+                                                     merges_file=bpe_merges)
+    print('Vocab size=%d, base vocab size=%d' % (len(roberta_kp_tokenizer), roberta_kp_tokenizer.vocab_size))
+    if isinstance(roberta_kp_tokenizer, RobertaTokenizerFast) and float(bpe_dropout) > 0.0:
+        workaround_files = roberta_kp_tokenizer._tokenizer.model.save(vocab_dir, 'workaround')
+        roberta_kp_tokenizer._tokenizer.model = type(roberta_kp_tokenizer._tokenizer.model)(*workaround_files, dropout=float(bpe_dropout))
+
+    return roberta_kp_tokenizer
+
+
+def reload_keyphrase_fields(fields, opt, tokenizer=None):
+    # update the vocabs in src/tgt field
+    if tokenizer is not None:
+        pad_idx = tokenizer.pad_token_id
+        partial_make_tgt_pad = partial(make_tgt, pad_idx=pad_idx)
+
+        new_field = update_field_vocab(fields['src'].base_field, tokenizer)
+        if hasattr(new_field, 'postprocessing'):
+            new_field.postprocessing = partial_make_tgt_pad
+        fields['src'].fields[0] = (fields['src'].fields[0][0], new_field)
+
+        new_field = update_field_vocab(fields['tgt'].base_field, tokenizer)
+        if hasattr(new_field, 'postprocessing'):
+            new_field.postprocessing = partial_make_tgt_pad
+        fields['tgt'].fields[0] = (fields['src'].fields[0][0], new_field)
+
+    return fields
+
+def deprecated_reload_keyphrase_fields(fields, opt, tokenizer=None):
     """
     In preprocessing phrase, the fields doesn't contain feature column information, thus len(fields['src'].fields)==1
     We add additional features on-the-fly, thus we need to add corresponding fields here
@@ -347,236 +421,6 @@ def reload_keyphrase_fields(opt, tokenizer=None):
             setattr(new_field, 'postprocessing', partial_make_tgt_pad)
         new_fields['tgt'] = new_field
     return new_fields
-
-
-def reload_news_fields(opt, tokenizer=None):
-    """
-    In preprocessing phrase, the fields doesn't contain feature column information, thus len(fields['src'].fields)==1
-    We add additional features on-the-fly, thus we need to add corresponding fields here
-    Additionally, if we load a pretrained model, we need to override all the vocabs in fields
-    :param fields: for using pretraiend encoder the fields can be None
-    :param opt:
-    :return:
-    """
-    src_nfeats = 0
-    tgt_nfeats = 0
-    if opt.field_label:
-        src_nfeats += 1
-    dynamic_dict = True
-    new_fields = get_fields(
-        opt.data_type,
-        src_nfeats,
-        tgt_nfeats,
-        dynamic_dict=dynamic_dict,
-        src_truncate=opt.src_seq_length_trunc,
-        tgt_truncate=opt.tgt_seq_length_trunc
-    )
-
-    # if fields:
-    #     for name, field in new_fields['src'].fields:
-    #         setattr(field, 'vocab', fields['src'].base_field.vocab)
-    #     for name, field in new_fields['tgt'].fields:
-    #         setattr(field, 'vocab', fields['tgt'].base_field.vocab)
-
-    # masks are required by huggingface Transformers
-    # prepare tensors on our own and ignore previous src/tgt fields
-    if opt.data_format == 'jsonl' and opt.pretrained_tokenizer and opt.pretrained_tokenizer != 'none':
-    # if opt.encoder_type=='pretrained':
-        pad_idx = tokenizer.pad_token_id if tokenizer is not None else 0
-        partial_make_tgt = partial(make_tgt, pad_idx=pad_idx)
-
-        src = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=partial_make_tgt, sequential=False)
-        new_fields["src"] = src
-
-        src_lengths = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=None, sequential=False)
-        new_fields["src_length"] = src_lengths
-
-        tgt = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=make_tgt, sequential=False)
-        new_fields["tgt"] = tgt
-
-        tgt_length = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=None, sequential=False)
-        new_fields["tgt_length"] = tgt_length
-
-        # this is the field tokens on the source side
-        field = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=partial_make_tgt, sequential=False)
-        new_fields["src_field"] = field
-
-        src_mask = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=partial_make_tgt, sequential=False)
-        new_fields["src_mask"] = src_mask
-        tgt_mask = Field(
-            use_vocab=False, dtype=torch.long,
-            postprocessing=partial_make_tgt, sequential=False)
-        new_fields["tgt_mask"] = tgt_mask
-
-        mask_names = ['ext_word', 'ext_verb',
-                      'ext_noun_phrase', 'ext_ner',
-                      'ext_bottomup',
-                      'ext_sentence', 'ext_sentence_head',
-                      'ext_best_fragment', 'ext_all_fragment']
-
-        for mask_name in mask_names:
-            mask_field = Field(
-                use_vocab=False, dtype=torch.long,
-                postprocessing=partial_make_tgt, sequential=False)
-            new_fields[mask_name] = mask_field
-
-        if hasattr(opt, 'alignment_loss'):
-            stemmed_src_map = Field(
-                use_vocab=False, dtype=torch.float,
-                postprocessing=make_src, sequential=False)
-            new_fields["stemmed_src_map"] = stemmed_src_map
-            stemmed_src_ex_vocab = RawField()
-            new_fields["stemmed_src_ex_vocab"] = stemmed_src_ex_vocab
-
-            for mask_name in mask_names:
-                mask_name = mask_name[4:] # remove the heading 'ext_'
-                if opt.alignment_loss == 'pointer':
-                    mask_field = Field(
-                        use_vocab=False, dtype=torch.long,
-                        postprocessing=partial_make_tgt, sequential=False)
-                else:
-                    mask_field = Field(
-                        use_vocab=False, dtype=torch.long,
-                        postprocessing=make_align, sequential=False)
-                new_fields['alignment_%s' % mask_name] = mask_field
-
-    # update the vocabs in src/tgt field
-    if tokenizer is not None:
-        # update the vocab depending on what fields are used (OpenNMT uses a MultiField, pretraiend model uses tensorized data and normal Field)
-        if opt.data_format != 'jsonl':
-            for field_id, (name, field) in enumerate(new_fields['src'].fields):
-                new_field = update_field_vocab(field, tokenizer)
-                # no bos/eos for src, otherwise it causes length mismatch later in training
-                setattr(new_field, 'bos', None)
-                setattr(new_field, 'bos_token', None)
-                setattr(new_field, 'eos', None)
-                setattr(new_field, 'eos_token', None)
-                new_fields['src'].fields[field_id] = (name, new_field)
-                if hasattr(new_field, 'postprocessing'):
-                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-
-                if opt.field_label:
-                    setattr(new_field, 'word_feat_share', True)
-                    setattr(new_field, 'feat_num', 1)
-
-            for field_id, (name, field) in enumerate(new_fields['tgt'].fields):
-                new_field = update_field_vocab(field, tokenizer)
-                new_fields['tgt'].fields[field_id] = (name, new_field)
-                if hasattr(new_field, 'postprocessing'):
-                    partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                    setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-
-        else:
-            new_field = update_field_vocab(new_fields['src'], tokenizer)
-            # no bos/eos for src, otherwise it causes length mismatch later in training
-            setattr(new_field, 'bos', None)
-            setattr(new_field, 'bos_token', None)
-            setattr(new_field, 'eos', None)
-            setattr(new_field, 'eos_token', None)
-            if hasattr(new_field, 'postprocessing'):
-                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-            if opt.field_label:
-                setattr(new_field, 'word_feat_share', True)
-                setattr(new_field, 'feat_num', 1)
-            new_fields['src'] = new_field
-
-            new_field = update_field_vocab(new_fields['tgt'], tokenizer)
-            if hasattr(new_field, 'postprocessing'):
-                partial_make_tgt_pad = partial(make_tgt, pad_idx=tokenizer.pad_token_id)
-                setattr(new_field, 'postprocessing', partial_make_tgt_pad)
-            new_fields['tgt'] = new_field
-
-    return new_fields
-
-
-def load_old_vocab(vocab, data_type="text", dynamic_dict=False):
-    """Update a legacy vocab/field format.
-
-    Args:
-        vocab: a list of (field name, torchtext.vocab.Vocab) pairs. This is the
-            format formerly saved in *.vocab.pt files. Or, text data
-            not using a :class:`TextMultiField`.
-        data_type (str): text, img, or audio
-        dynamic_dict (bool): Used for copy attention.
-
-    Returns:
-        a dictionary whose keys are the field names and whose values Fields.
-    """
-
-    if _old_style_vocab(vocab):
-        # List[Tuple[str, Vocab]] -> List[Tuple[str, Field]]
-        # -> dict[str, Field]
-        vocab = dict(vocab)
-        n_src_features = sum('src_feat_' in k for k in vocab)
-        n_tgt_features = sum('tgt_feat_' in k for k in vocab)
-        fields = get_fields(
-            data_type, n_src_features, n_tgt_features,
-            dynamic_dict=dynamic_dict)
-        for n, f in fields.items():
-            try:
-                f_iter = iter(f)
-            except TypeError:
-                f_iter = [(n, f)]
-            for sub_n, sub_f in f_iter:
-                if sub_n in vocab:
-                    sub_f.vocab = vocab[sub_n]
-        return fields
-
-    if _old_style_field_list(vocab):  # upgrade to multifield
-        # Dict[str, List[Tuple[str, Field]]]
-        # doesn't change structure - don't return early.
-        fields = vocab
-        for base_name, vals in fields.items():
-            if ((base_name == 'src' and (data_type == 'text' or data_type == 'keyphrase')) or
-                    base_name == 'tgt'):
-                # assert not isinstance(vals[0][1], TextMultiField)
-                # changed by @memray, to solve the problem of cannot find vocab while loading dataset
-                if isinstance(vals[0][1], TextMultiField):
-                    fields[base_name] = [(base_name, TextMultiField(
-                        vals[0][0], vals[0][1].base_field, vals[1:]))]
-                elif isinstance(vals[0][1], KeyphraseField):
-                    fields[base_name] = [(base_name, KeyphraseField(
-                        vals[0][0], vals[0][1].base_field))]
-
-    if _old_style_nesting(vocab):
-        # Dict[str, List[Tuple[str, Field]]] -> List[Tuple[str, Field]]
-        # -> dict[str, Field]
-        fields = dict(list(chain.from_iterable(vocab.values())))
-
-    return fields
-
-
-def _old_style_vocab(vocab):
-    """Detect old-style vocabs (``List[Tuple[str, torchtext.data.Vocab]]``).
-
-    Args:
-        vocab: some object loaded from a *.vocab.pt file
-
-    Returns:
-        Whether ``vocab`` is a list of pairs where the second object
-        is a :class:`torchtext.vocab.Vocab` object.
-
-    This exists because previously only the vocab objects from the fields
-    were saved directly, not the fields themselves, and the fields needed to
-    be reconstructed at training and translation time.
-    """
-
-    return isinstance(vocab, list) and \
-        any(isinstance(v[1], Vocab) for v in vocab)
 
 
 class IterOnDevice(object):
@@ -897,377 +741,3 @@ def _read_vocab_file(vocab_path, tag):
             else:
                 vocab = [line.strip().split()[0] for line in lines]
             return vocab, has_count
-
-
-def _pool(data, batch_size, batch_size_fn, batch_size_multiple,
-          sort_key, random_shuffler, pool_factor, dataset=None):
-    for p in torchtext.data.batch(
-            data, batch_size * pool_factor,
-            batch_size_fn=batch_size_fn):
-        # if it's keyphrase dataset, a preprocess to targets should act beforehand.
-        if dataset and isinstance(dataset, KeyphraseDataset):
-            p = keyphrase_dataset.process_multiple_tgts(p, dataset.tgt_type)
-        # @memray: split each big batch into final mini-batches
-        # batch_size_fn=max_tok_len() for train, counting real batch size (num_batch * max(#words in src/tgt))
-        # sort the data before splitting
-        p_batch = list(batch_iter(
-            sorted(p, key=sort_key),
-            batch_size,
-            batch_size_fn=batch_size_fn,
-            batch_size_multiple=batch_size_multiple))
-        # shuffle samples in a minibatch before returning
-        for b in random_shuffler(p_batch):
-            yield b
-
-
-class OrderedIterator(torchtext.data.Iterator):
-
-    def __init__(self,
-                 dataset,
-                 batch_size,
-                 pool_factor=1,
-                 batch_size_multiple=1,
-                 yield_raw_example=False,
-                 **kwargs):
-        super(OrderedIterator, self).__init__(dataset, batch_size, **kwargs)
-        self.batch_size_multiple = batch_size_multiple
-        self.yield_raw_example = yield_raw_example
-        self.dataset = dataset
-        self.pool_factor = pool_factor
-
-    def create_batches(self):
-        if self.train:
-            if self.yield_raw_example:
-                self.batches = batch_iter(
-                    self.data(),
-                    1,
-                    batch_size_fn=None,
-                    batch_size_multiple=1)
-            else:
-                self.batches = _pool(
-                    self.data(),
-                    self.batch_size,
-                    self.batch_size_fn,
-                    self.batch_size_multiple,
-                    self.sort_key,
-                    self.random_shuffler,
-                    self.pool_factor,
-                    self.dataset # @memray
-                )
-        else:
-            self.batches = []
-            for b in batch_iter(
-                    self.data(),
-                    self.batch_size,
-                    batch_size_fn=self.batch_size_fn,
-                    batch_size_multiple=self.batch_size_multiple):
-                # if it's keyphrase dataset, a preprocess to targets should act beforehand.
-                if isinstance(self.dataset, KeyphraseDataset) and self.dataset.data_format != 'jsonl':
-                    b = keyphrase_dataset.process_multiple_tgts(b, self.dataset.tgt_type)
-                # @memray: to keep the original order of test data, only sort inside a batch (is it necessary? why not just sort it before feeding the model?)
-                # self.batches.append(sorted(b, key=self.sort_key))
-                self.batches.append(b)
-
-    def __iter__(self):
-        """
-        Extended version of the definition in torchtext.data.Iterator.
-        Added yield_raw_example behaviour to yield a torchtext.data.Example
-        instead of a torchtext.data.Batch object.
-        """
-        while True:
-            self.init_epoch()
-            for idx, minibatch in enumerate(self.batches):
-                # fast-forward if loaded from state
-                if self._iterations_this_epoch > idx:
-                    continue
-                self.iterations += 1
-                self._iterations_this_epoch += 1
-                if self.sort_within_batch:
-                    # NOTE: `rnn.pack_padded_sequence` requires that a
-                    # minibatch be sorted by decreasing order, which
-                    #  requires reversing relative to typical sort keys
-                    if self.sort:
-                        minibatch.reverse()
-                    else:
-                        minibatch.sort(key=self.sort_key, reverse=True)
-                if self.yield_raw_example:
-                    yield minibatch[0]
-                else:
-                    yield torchtext.data.Batch(
-                        minibatch,
-                        self.dataset,
-                        self.device)
-            if not self.repeat:
-                return
-
-
-class MultipleDatasetIterator(object):
-    """
-    This takes a list of iterable objects (DatasetLazyIter) and their
-    respective weights, and yields a batch in the wanted proportions.
-    """
-    def __init__(self,
-                 train_shards,
-                 fields,
-                 device,
-                 opt):
-        self.index = -1
-        self.iterables = []
-        for shard in train_shards:
-            self.iterables.append(
-                build_dataset_iter(shard, fields, opt, multi=True))
-        self.init_iterators = True
-        self.weights = opt.data_weights
-        self.batch_size = opt.batch_size
-        self.batch_size_fn = max_tok_len \
-            if opt.batch_type == "tokens" else None
-        self.batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
-        self.device = device
-        # Temporarily load one shard to retrieve sort_key for data_type
-        temp_dataset = torch.load(self.iterables[0]._paths[0])
-        self.sort_key = temp_dataset.sort_key
-        self.random_shuffler = RandomShuffler()
-        self.pool_factor = opt.pool_factor
-        del temp_dataset
-
-    def _iter_datasets(self):
-        if self.init_iterators:
-            self.iterators = [iter(iterable) for iterable in self.iterables]
-            self.init_iterators = False
-        for weight in self.weights:
-            self.index = (self.index + 1) % len(self.iterators)
-            for i in range(weight):
-                yield self.iterators[self.index]
-
-    def _iter_examples(self):
-        for iterator in cycle(self._iter_datasets()):
-            yield next(iterator)
-
-    def __iter__(self):
-        while True:
-            for minibatch in _pool(
-                    self._iter_examples(),
-                    self.batch_size,
-                    self.batch_size_fn,
-                    self.batch_size_multiple,
-                    self.sort_key,
-                    self.random_shuffler,
-                    self.pool_factor):
-                minibatch = sorted(minibatch, key=self.sort_key, reverse=True)
-                yield torchtext.data.Batch(minibatch,
-                                           self.iterables[0].dataset,
-                                           self.device)
-
-
-class DatasetLazyIter(object):
-    """Yield data from sharded dataset files.
-
-    Args:
-        dataset_paths: a list containing the locations of dataset files.
-        fields (dict[str, Field]): fields dict for the
-            datasets.
-        batch_size (int): batch size.
-        batch_size_fn: custom batch process function.
-        device: See :class:`OrderedIterator` ``device``.
-        is_train (bool): train or valid?
-    """
-
-    def __init__(self, dataset_paths, fields, batch_size, batch_size_fn,
-                 batch_size_multiple, device, is_train, pool_factor,
-                 repeat=True, num_batches_multiple=1, yield_raw_example=False,
-                 fp16=False, shuffle_shards=False, seed=3456, tokenizer=None,
-                 opt=None):
-        self._paths = dataset_paths
-        self.fields = fields
-        self.batch_size = batch_size
-        self.batch_size_fn = batch_size_fn
-        self.batch_size_multiple = batch_size_multiple
-        self.device = device
-        self.is_train = is_train
-        self.repeat = repeat
-        self.num_batches_multiple = num_batches_multiple
-        self.yield_raw_example = yield_raw_example
-        self.pool_factor = pool_factor
-        self.fp16 = fp16
-        self.shuffle_shards = shuffle_shards
-        self.seed = seed
-        self.opt = opt
-        self.tokenizer = tokenizer
-
-        np.random.seed(seed)
-
-
-    def _iter_dataset(self, path):
-        logger.info('Loading dataset from %s' % path)
-        cur_dataset = torch.load(path)
-        logger.info('number of examples: %d' % len(cur_dataset))
-
-        # added by @memray, as Dataset is only instantiated here, having to use this plugin setter
-        if isinstance(cur_dataset, KeyphraseDataset):
-            cur_dataset.load_config(self.opt)
-        # override existing fields since in early versions src_ex_vocab might be missing
-        cur_dataset.fields = self.fields
-        cur_iter = OrderedIterator(
-            dataset=cur_dataset,
-            batch_size=self.batch_size,
-            pool_factor=self.pool_factor,
-            batch_size_multiple=self.batch_size_multiple,
-            batch_size_fn=self.batch_size_fn,
-            device=self.device,
-            train=self.is_train,
-            sort=False,
-            sort_within_batch=True,
-            repeat=False,
-            yield_raw_example=self.yield_raw_example
-        )
-        # split into batches and process each batch (pad and numericalize, by field.process)
-        for batch in cur_iter:
-            self.dataset = cur_iter.dataset
-            yield batch
-
-        # NOTE: This is causing some issues for consumer/producer,
-        # as we may still have some of those examples in some queue
-        # cur_dataset.examples = None
-        # gc.collect()
-        # del cur_dataset
-        # gc.collect()
-
-    def __iter__(self):
-        num_batches = 0
-        if self.shuffle_shards:
-            paths = copy.copy(self._paths)
-            np.random.shuffle(paths)
-        else:
-            paths = self._paths
-        if self.is_train and self.repeat:
-            # Cycle through the shards indefinitely.
-            paths = cycle(paths)
-        for path in paths:
-            for batch in self._iter_dataset(path):
-                yield batch
-                num_batches += 1
-        if self.is_train and not self.repeat and \
-           num_batches % self.num_batches_multiple != 0:
-            # When the dataset is not repeated, we might need to ensure that
-            # the number of returned batches is the multiple of a given value.
-            # This is important for multi GPU training to ensure that all
-            # workers have the same number of batches to process.
-            for path in paths:
-                for batch in self._iter_dataset(path):
-                    yield batch
-                    num_batches += 1
-                    if num_batches % self.num_batches_multiple == 0:
-                        return
-
-
-def max_tok_len(new, count, sofar):
-    """
-    In token batching scheme, the number of sequences is limited
-    such that the total number of src/tgt tokens (including padding)
-    in a batch <= batch_size
-    """
-    # Maintains the longest src and tgt length in the current batch
-    global max_src_in_batch, max_tgt_in_batch  # this is a hack
-    # Reset current longest length at a new batch (count=1)
-    if count == 1:
-        max_src_in_batch = 0
-        max_tgt_in_batch = 0
-    # Src: [<bos> w1 ... wN <eos>]
-    max_src_in_batch = max(max_src_in_batch, len(new.src[0]) + 2)
-    # Tgt: [w1 ... wM <eos>]
-    max_tgt_in_batch = max(max_tgt_in_batch, len(new.tgt[0]) + 1)
-
-    # change by @memray, return (count * (max_src_in_batch+max_tgt_in_batch)) to better gauge usage and avoid OOM
-    src_len = new.src.shape[0] if isinstance(new.src, torch.Tensor) else len(new.src[0]) + 2
-    tgt_len = new.tgt.shape[0] if isinstance(new.tgt, torch.Tensor) else len(new.tgt[0]) + 1
-    max_src_in_batch = max(max_src_in_batch, src_len)
-    max_tgt_in_batch = max(max_tgt_in_batch, tgt_len)
-
-    # src_elements = count * max_src_in_batch
-    # tgt_elements = count * max_tgt_in_batch
-    # return max(src_elements, tgt_elements)
-
-    return count * (max_src_in_batch + max_tgt_in_batch)
-
-
-def build_dataset_iter(corpus_type, fields, opt, is_train=True, multi=False, tokenizer=None):
-    """
-    This returns user-defined train/validate data iterator for the trainer
-    to iterate over. We implement simple ordered iterator strategy here,
-    but more sophisticated strategy like curriculum learning is ok too.
-    """
-    if opt.multi_dataset:
-        if corpus_type == 'train':
-            data_ids = opt.data_ids
-        else:
-            data_ids = opt.valid_data_ids
-        dataset_paths = []
-        for data_prefix in data_ids:
-            paths = []
-            paths.extend(list(sorted(glob.glob(data_prefix + '.' + corpus_type + '.[0-9]*.pt'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.[0-9]*.pt'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + '.' + corpus_type + '.[0-9]*.jsonl'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.[0-9]*.jsonl'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + '_[0-9]*.jsonl'))))
-            paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.jsonl'))))
-            paths.extend(list(sorted(glob.glob(data_prefix + corpus_type + '.json'))))
-            dataset_paths.extend(paths)
-    else:
-        dataset_paths = []
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + '.' + corpus_type + '.[0-9]*.pt'))))
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.[0-9]*.pt'))))
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + '.' + corpus_type + '.[0-9]*.jsonl'))))
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + '_[0-9]*.jsonl'))))
-        dataset_paths.extend(list(sorted(glob.glob(corpus_type + '_[0-9]*.jsonl'))))
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.jsonl'))))
-        dataset_paths.extend(list(sorted(glob.glob(opt.data + corpus_type + '.json'))))
-
-    if not dataset_paths:
-        if is_train:
-            raise ValueError('Training data %s not found' % opt.data)
-        else:
-            return None
-    if multi:
-        batch_size = 1
-        batch_fn = None
-        batch_size_multiple = 1
-    else:
-        batch_size = opt.batch_size if is_train else opt.valid_batch_size
-        batch_fn = max_tok_len \
-            if is_train and opt.batch_type == "tokens" else None
-        batch_size_multiple = 1 # changed by @memray, causing issues in backprop
-        # batch_size_multiple = 8 if opt.model_dtype == "fp16" else 1
-
-    device = "cuda" if opt.gpu_ranks else "cpu"
-
-    shuffle_shards = opt.shuffle_shards
-    seed = None
-    if corpus_type == "valid":
-        shuffle_shards = False
-    if opt.seed and opt.seed > 0:
-        seed = opt.seed
-
-    return DatasetLazyIter(
-        dataset_paths,
-        fields,
-        batch_size,
-        batch_fn,
-        batch_size_multiple,
-        device,
-        is_train,
-        opt.pool_factor,
-        repeat=not opt.single_pass,
-        num_batches_multiple=max(opt.accum_count) * opt.world_size,
-        yield_raw_example=multi,
-        fp16=opt.model_dtype == "fp16",
-        shuffle_shards=shuffle_shards,
-        seed=seed,
-        tokenizer=tokenizer,
-        opt=opt
-    )
-
-
-def build_dataset_iter_multiple(train_shards, fields, opt):
-    return MultipleDatasetIterator(
-        train_shards, fields, "cuda" if opt.gpu_ranks else "cpu", opt)

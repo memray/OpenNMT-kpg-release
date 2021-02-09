@@ -5,7 +5,6 @@ import argparse
 
 import configargparse
 
-from onmt.inputters.keyphrase_dataset import KP_CONCAT_TYPES
 from onmt.models.sru import CheckSRU
 from onmt.transforms import AVAILABLE_TRANSFORMS
 from onmt.constants import ModelTask
@@ -44,12 +43,6 @@ def _add_logging_opts(parser, is_train=True):
     if is_train:
         group.add('--report_every', '-report_every', type=int, default=50,
                   help="Print stats at this interval.")
-        group.add('--log_file', '-log_file', type=str, default="",
-              help="Output logs to a file under this path.")
-        group.add('--log_file_level', '-log_file_level', type=str,
-                  action=StoreLoggingLevelAction,
-                  choices=StoreLoggingLevelAction.CHOICES,
-                  default="0")
         group.add('--exp_host', '-exp_host', type=str, default="",
                   help="Send logs to this crayon server.")
         group.add('--exp', '-exp', type=str, default="",
@@ -125,6 +118,10 @@ def _add_dynamic_corpus_opts(parser, build_vocab_only=False):
         help=("Build vocab using " if build_vocab_only else "Stop after save ")
         + "this number of transformed samples/corpus. Can be [-1, 0, N>0]. "
         "Set to -1 to go full corpus, 0 to skip.")
+
+    # (deprecated) Data settings added by @memray for multiple news datasets and feature control
+    group.add('--shuffle_shards', '-shuffle_shards', action='store_true',
+              help="Shuffle the order of shards for each epoch.")
 
     if not build_vocab_only:
         group.add('-dump_fields', '--dump_fields', action='store_true',
@@ -202,6 +199,24 @@ def _add_dynamic_fields_opts(parser, build_vocab_only=False):
                   choices=["GloVe", "word2vec"],
                   help="Type of embeddings file.")
 
+    """ @memray Related to external resources """
+    group.add('--data_format', '-data_format', default='jsonl',
+              choices=['text', 'jsonl'],
+              help="""Format of input data, specifying loading data from plain text (OpenNMT default) 
+              or .jsonl""")
+    group.add('--fairseq_model', '-fairseq_model',
+              type=bool, default=False, help="If true, indicating the checkpoint is trained from FairSeq.")
+    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
+              type=bool, default=False)
+    # group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
+    #           type=str, default="")
+    group.add('--cache_dir', '-cache_dir', default="",
+              help="Path to HF cache.")
+    # group.add('--special_vocab_path', '-special_vocab_path', default="",
+    #           help="Path to HF special_vocab_path.")
+    # group.add('--bpe_merges', '-bpe_merges', default="",
+    #           help="Required for loading huggingface tokenizer.")
+
 
 def _add_dynamic_transform_opts(parser):
     """Options related to transforms.
@@ -273,6 +288,12 @@ def model_opts(parser):
               help="If -feat_merge_size is not set, feature "
                    "embedding sizes will be set to N^feat_vec_exponent "
                    "where N is the number of values the feature takes.")
+    # @memray moved from train group
+    group.add('--dropout', '-dropout', type=float, default=[0.3], nargs='+',
+              help="Dropout probability; applied in LSTM stacks.")
+    group.add('--attention_dropout', '-attention_dropout', type=float,
+              default=[0.1], nargs='+',
+              help="Attention Dropout probability.")
 
     # Model Task Options
     group = parser.add_argument_group("Model-Task")
@@ -474,30 +495,6 @@ def _add_train_general_opts(parser):
     group.add('--keep_checkpoint', '-keep_checkpoint', type=int, default=-1,
               help="Keep X checkpoints (negative: keep all)")
 
-    # Data settings added by @memray for multiple news datasets and feature control
-    group.add('--data_type', '-data_type', default="text",
-              help="Type of the source input. Options: [text|img|news].")
-    group.add('--multi_dataset', '-multi_dataset', action='store_true',
-              help="If true then load all data.train.*.pt and data.valid.*.pt under the path specified by data_ids.")
-    group.add('--shuffle_shards', '-shuffle_shards', action='store_true',
-              help="Shuffle the order of shards for each epoch.")
-
-    group.add('--vocab', '-vocab', default="",
-              help="Path to an existing vocabulary, shared by all datasets.")
-    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
-              type=bool, default=False)
-    group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
-              type=str, default="")
-    group.add('--cache_dir', '-cache_dir', default="",
-              help="Path to HF cache.")
-    group.add('--special_vocab_path', '-special_vocab_path', default="",
-              help="Path to HF special_vocab_path.")
-    group.add('--bpe_merges', '-bpe_merges', default="",
-              help="Required for loading huggingface tokenizer.")
-    group.add('--bpe_dropout', '-bpe_dropout',
-              type=float, default=0.0,
-              help="Dropout rate for BPE.")
-
     # GPU
     group.add('--gpuid', '-gpuid', default=[], nargs='*', type=int,
               help="Deprecated see world_size and gpu_ranks.")
@@ -618,11 +615,6 @@ def _add_train_general_opts(parser):
               help="If the norm of the gradient vector exceeds this, "
                    "renormalize it to have the norm equal to "
                    "max_grad_norm")
-    group.add('--dropout', '-dropout', type=float, default=[0.3], nargs='+',
-              help="Dropout probability; applied in LSTM stacks.")
-    group.add('--attention_dropout', '-attention_dropout', type=float,
-              default=[0.1], nargs='+',
-              help="Attention Dropout probability.")
     group.add('--dropout_steps', '-dropout_steps', type=int, nargs='+',
               default=[0], help="Steps at which dropout changes.")
     group.add('--truncated_decoder', '-truncated_decoder', type=int, default=0,
@@ -753,6 +745,13 @@ def _add_decoding_opts(parser):
               help='Maximum prediction length.')
     group.add('--max_sent_length', '-max_sent_length', action=DeprecateAction,
               help="Deprecated, use `-max_length` instead")
+    # configs for Keyphrase Decoding
+    group.add('--beam_terminate', '-beam_terminate', default='full',
+              choices=['topbeam', 'full'],
+              help="Termination condition on when beam search stops"
+                   "`topbeam` means the beam search stops once the topbeam is done (top score)"
+                   "`full` means all beams will be explored exhaustively until reaching max_length, default for one2one but would cause waste on one2seq kp generation"
+              )
 
     # Alpha and Beta values for Google Length + Coverage penalty
     # Described here: https://arxiv.org/pdf/1609.08144.pdf, Section 7
@@ -773,12 +772,6 @@ def _add_decoding_opts(parser):
     group.add('--beta', '-beta', type=float, default=-0.,
               help="Coverage penalty parameter")
 
-    # Option most relevant to keyphrase
-    group.add('--tgt_type', '-tgt_type', default='one2one',
-              choices=KP_CONCAT_TYPES,
-              help="""Format of targets for model to learn/output, 'multiple' is used during test phase.
-              Note that the names have been changed after the empirical paper, e.g. verbatim_append is changed to pres_abs. 
-              """)
 
 def translate_opts(parser):
     """ Translation / inference options """
@@ -788,14 +781,6 @@ def translate_opts(parser):
               help="Path to model .pt file(s). "
                    "Multiple models can be specified, "
                    "for ensemble decoding.")
-    group.add('--model_type', '-model_type', default='text',
-              choices=['text', 'keyphrase'],
-              help="Type of source model to use. Allows "
-                   "the system to incorporate non-text inputs. "
-                   "Options are [text|keyphrase].")
-    group.add('--model_dtype', '-model_dtype', default='fp32',
-              choices=['fp32', 'fp16'],
-              help='Data type of the model.')
     group.add('--fp32', '-fp32', action='store_true',
               help="Force the model to be in FP32 "
                    "because FP16 is very slow on GTX1080(ti).")
@@ -809,40 +794,11 @@ def translate_opts(parser):
                    "Necessary for models whose output layers can assign "
                    "zero probability.")
 
-    """ Related to external resources """
-    group.add('--src_seq_length_trunc', '-src_seq_length_trunc',
-              type=int, default=1024,
-              help="Truncate source sequence length.")
-    group.add('--tgt_seq_length_trunc', '-tgt_seq_length_trunc',
-              type=int, default=1024,
-              help="Truncate target sequence length.")
-    group.add('--fairseq_model', '-fairseq_model',
-              type=bool, default=False, help="If true, indicating the checkpoint is trained from FairSeq.")
-    group.add('--vocab', '-vocab', default="",
-              help="Path to an existing vocabulary, shared by all datasets.")
-    group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
-              type=bool, default=False)
-    group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
-              type=str, default="")
-    group.add('--cache_dir', '-cache_dir', default="",
-              help="Path to HF cache.")
-    group.add('--special_vocab_path', '-special_vocab_path', default="",
-              help="Path to HF special_vocab_path.")
-    group.add('--bpe_merges', '-bpe_merges', default="",
-              help="Required for loading huggingface tokenizer.")
-    group.add('--bpe_dropout', '-bpe_dropout',
-              type=float, default=0.0,
-              help="Dropout rate for BPE.")
-
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",
               help="Type of the source input. Options: [text].")
-    # Option most relevant to kp/news
-    group.add('--data_format', '-data_format', default='jsonl',
-              choices=['pt', 'jsonl'],
-              help="""Format of input data, specifying loading data from .pt (OpenNMT default) or .jsonl (@memray added)""")
 
-    group.add('--src', '-src', #required=True,
+    group.add('--src', '-src', # required=True,
               help="Source sequence to decode (one line per "
                    "sequence)")
     group.add('--tgt', '-tgt',

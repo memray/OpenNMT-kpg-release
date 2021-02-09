@@ -1,4 +1,5 @@
 """Module that contain shard utils for dynamic data."""
+import json
 import os
 from onmt.utils.logging import logger
 from onmt.constants import CorpusName
@@ -107,12 +108,13 @@ class DatasetAdapter(object):
 class ParallelCorpus(object):
     """A parallel corpus file pair that can be loaded to iterate."""
 
-    def __init__(self, name, src, tgt, align=None):
+    def __init__(self, name, src, tgt, align=None, dataset_type=None):
         """Initialize src & tgt side file path."""
         self.id = name
         self.src = src
         self.tgt = tgt
         self.align = align
+        self.dataset_type = dataset_type
 
     def load(self, offset=0, stride=1):
         """
@@ -126,12 +128,19 @@ class ParallelCorpus(object):
             logger.info(f"Loading {repr(self)}...")
             for i, (sline, tline, align) in enumerate(zip(fs, ft, fa)):
                 if (i % stride) == offset:
-                    sline = sline.decode('utf-8')
-                    tline = tline.decode('utf-8')
-                    example = {
-                        'src': sline,
-                        'tgt': tline
-                    }
+                    if self.dataset_type == 'keyphrase':
+                        sline = sline.decode('utf-8')
+                        example = json.loads(sline)
+                        # dps with empty src/tgt will be skipped
+                        example['src'] = 'none'
+                        example['tgt'] = 'none'
+                    else:
+                        sline = sline.decode('utf-8')
+                        tline = tline.decode('utf-8')
+                        example = {
+                            'src': sline,
+                            'tgt': tline
+                        }
                     if align is not None:
                         example['align'] = align.decode('utf-8')
                     yield example
@@ -151,14 +160,18 @@ def get_corpora(opts, is_train=False):
                     corpus_id,
                     corpus_dict["path_src"],
                     corpus_dict["path_tgt"],
-                    corpus_dict["path_align"])
+                    corpus_dict["path_align"],
+                    dataset_type = corpus_dict["type"]
+                )
     else:
         if CorpusName.VALID in opts.data.keys():
             corpora_dict[CorpusName.VALID] = ParallelCorpus(
                 CorpusName.VALID,
                 opts.data[CorpusName.VALID]["path_src"],
                 opts.data[CorpusName.VALID]["path_tgt"],
-                opts.data[CorpusName.VALID]["path_align"])
+                opts.data[CorpusName.VALID]["path_align"],
+                dataset_type = opts.data[CorpusName.VALID]["type"]
+            )
         else:
             return None
     return corpora_dict
@@ -230,7 +243,11 @@ class ParallelCorpusIterator(object):
     def _iter_corpus(self):
         corpus_stream = self.corpus.load(
             stride=self.stride, offset=self.offset)
-        tokenized_corpus = self._tokenize(corpus_stream)
+        # @memray, skip tokenization for keyphrase (json format)
+        if self.corpus.dataset_type != 'keyphrase':
+            tokenized_corpus = self._tokenize(corpus_stream)
+        else:
+            tokenized_corpus = corpus_stream
         transformed_corpus = self._transform(tokenized_corpus)
         indexed_corpus = self._add_index(transformed_corpus)
         yield from indexed_corpus

@@ -90,10 +90,6 @@ def build_loss_compute(model, tgt_field, opt, train=True):
                 loss_gen,
                 lambda_coverage=opt.lambda_coverage,
                 lambda_align=opt.lambda_align,
-                lambda_orth_reg=opt.lambda_orth_reg,
-                lambda_sem_cov=opt.lambda_sem_cov,
-                n_neg=opt.num_negsample,
-                semcov_ending_state=opt.use_ending_state
             )
         elif opt.model_task == ModelTask.LANGUAGE_MODEL:
             assert (
@@ -210,7 +206,7 @@ class LossComputeBase(nn.Module):
             trunc_size = batch.tgt.size(0) - trunc_start
         trunc_range = (trunc_start, trunc_start + trunc_size)
         shard_state = self._make_shard_state(batch, output, trunc_range, attns)
-        # @memray
+        # @memray semcov/orth
         shard_state['model'] = model
         if shard_size == 0:
             loss, stats = self._compute_loss(batch, **shard_state)
@@ -379,10 +375,12 @@ class CommonLossCompute(LossComputeBase):
                       align_head=None, ref_align=None,
                       src_states=None, dec_states=None, tgtenc_states=None,
                       model=None):
+        # output=[tgt_len, B, D], bottled_output=[tgt_len*B, D]
         bottled_output = self._bottle(output)
-
+        # [tgt_len*B, V]
         scores = self.generator(bottled_output)
-        gtruth = target.view(-1)
+        # [tgt_len*B]
+        gtruth = target.contiguous().view(-1)
 
         loss = self.criterion(scores, gtruth)
         if self.lambda_coverage != 0.0:

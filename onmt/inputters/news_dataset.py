@@ -971,31 +971,37 @@ def news_fields(**kwargs):
 
 
 def update_field_vocab(field, tokenizer):
-    setattr(field, 'lower', False)
-    setattr(field, 'pretrained_tokenizer', tokenizer)
-    setattr(field, 'bos_token', tokenizer.bos_token)
-    setattr(field, 'init_token', tokenizer.bos_token)
-    setattr(field, 'eos_token', tokenizer.eos_token)
-    setattr(field, 'pad_token', tokenizer.pad_token)
-    setattr(field, 'unk_token', tokenizer.unk_token)
+    new_field = copy.copy(field)
+    setattr(new_field, 'lower', False)
+    setattr(new_field, 'pretrained_tokenizer', tokenizer)
+    # setattr(new_field, 'tokenize', partial(tokenizer.tokenize, add_special_tokens=False)) # will be tokenized in transform
+    setattr(new_field, 'bos_token', tokenizer.bos_token)
+    setattr(new_field, 'init_token', tokenizer.bos_token)
+    setattr(new_field, 'eos_token', tokenizer.eos_token)
+    setattr(new_field, 'pad_token', tokenizer.pad_token)
+    setattr(new_field, 'unk_token', tokenizer.unk_token)
     if hasattr(tokenizer, 'sep_token'):
-        setattr(field, 'sep_token', tokenizer.sep_token)
-    if not hasattr(field, 'vocab_cls'):
-        setattr(field, 'vocab_cls', torchtext.vocab.Vocab(counter=Counter()))
-    setattr(field.vocab_cls, 'UNK', tokenizer.unk_token)
+        setattr(new_field, 'sep_token', tokenizer.sep_token)
+    if not hasattr(new_field, 'vocab_cls'):
+        setattr(new_field, 'vocab_cls', torchtext.vocab.Vocab(counter=Counter()))
+    setattr(new_field.vocab_cls, 'UNK', tokenizer.unk_token)
 
     # Update vocab given the external pretrained vocab
-    if not hasattr(field, 'vocab'):
-        setattr(field, 'vocab', torchtext.vocab.Vocab(counter=Counter()))
+    if not hasattr(new_field, 'vocab'):
+        setattr(new_field, 'vocab', torchtext.vocab.Vocab(counter=Counter()))
     stoi = tokenizer.get_vocab()
     itos = [s for s,_ in sorted(tokenizer.get_vocab().items(), key=lambda x:x[1])]
-    setattr(field.vocab, 'UNK', tokenizer.unk_token)
-    setattr(field.vocab, 'unk_index', tokenizer.unk_token_id)
-    setattr(field.vocab, 'stoi', stoi)
-    setattr(field.vocab, 'itos', itos)
-    setattr(field.vocab, 'freqs', Counter(itos))
+    setattr(new_field.vocab, 'UNK', tokenizer.unk_token)
+    setattr(new_field.vocab, 'unk_index', tokenizer.unk_token_id)
 
-    return field
+    # will be used for copy loss (copy_generator.py, collapse_copy_scores(), L29), for cases pad_index is not 0
+    setattr(new_field.vocab, 'PAD', tokenizer.pad_token)
+    setattr(new_field.vocab, 'pad_index', tokenizer.pad_token_id)
+    setattr(new_field.vocab, 'stoi', stoi)
+    setattr(new_field.vocab, 'itos', itos)
+    setattr(new_field.vocab, 'freqs', Counter(itos))
+
+    return new_field
 
 
 def load_pretrained_tokenizer(tokenizer_name, cache_dir, special_vocab_path=None,
@@ -1013,14 +1019,12 @@ def load_pretrained_tokenizer(tokenizer_name, cache_dir, special_vocab_path=None
         else:
             print('Special token vocab is not provided.')
     else:
-        # use slow tokenizer for now, since fast version doesn't tokenize special tokens correctly
-        sep_token = '<sep>'
-        # tokenizer = RobertaTokenizer(vocab_file=bpe_vocab, merges_file=bpe_merges)
+        # initialize a slow tokenizer and convert it to fast, so that special tokens can be properly segmented
         sep_token = '<sep>'
         kp_special_tokens = ['<present>', '<absent>', '<category>']
         tokenizer = RobertaTokenizer(vocab_file=bpe_vocab,
                                      merges_file=bpe_merges,
-                                     sep=sep_token,  # doesn't work
+                                     sep=sep_token,  # doesn't matter
                                      additional_special_tokens=kp_special_tokens)
         sep_token_id = tokenizer.convert_tokens_to_ids(sep_token)
         added_sep_token = AddedToken(sep_token, lstrip=False, rstrip=False)

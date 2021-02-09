@@ -21,7 +21,7 @@ __email__ = "rui.meng@pitt.edu"
 
 
 
-def compute_match_scores(tgt_seqs, pred_seqs, do_stem=True, type='exact'):
+def compute_match_scores(tgt_seqs, pred_seqs, do_lower=True, do_stem=True, type='exact'):
     '''
     If type='exact', returns a list of booleans indicating if a pred has a matching tgt
     If type='partial', returns a 2D matrix, each value v_ij is a float in range of [0,1]
@@ -45,6 +45,9 @@ def compute_match_scores(tgt_seqs, pred_seqs, do_stem=True, type='exact'):
     metric_dict = {'target_number': target_number, 'prediction_number': predicted_number, 'correct_number': match_score}
 
     # convert target index into string
+    if do_lower:
+        tgt_seqs = [[w.lower() for w in seq] for seq in tgt_seqs]
+        pred_seqs = [[w.lower() for w in seq] for seq in pred_seqs]
     if do_stem:
         tgt_seqs = [stem_word_list(seq) for seq in tgt_seqs]
         pred_seqs = [stem_word_list(seq) for seq in pred_seqs]
