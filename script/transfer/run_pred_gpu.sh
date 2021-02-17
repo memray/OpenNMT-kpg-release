@@ -20,7 +20,7 @@ datasets=(kp20k kp20k_valid2k openkp kptimes jptimes jptimes_valid2k duc stackex
 datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k duc stackex_valid2k)
 datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes jptimes_valid2k duc stackex stackex_valid2k)
 datasets=(kp20k openkp kptimes jptimes stackex)
-datasets=(stackex)
+datasets=(kp20k)
 
 
 for dataset in "${datasets[@]}"

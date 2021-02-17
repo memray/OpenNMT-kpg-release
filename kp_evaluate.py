@@ -303,50 +303,52 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
         return None
 
 
-def summarize_scores(ckpt_name, score_dict, exp_name=None, pred_name=None):
+def summarize_scores(score_dict, ckpt_name,
+                     exp_name=None, pred_name=None, dataset_name=None,
+                     eval_file_path=None, pred_file_path=None):
     avg_dict = {}
     avg_dict['checkpoint_name'] = ckpt_name
+    avg_dict['exp_name'] = exp_name
+    avg_dict['pred_name'] = pred_name
+    avg_dict['test_dataset'] = dataset_name
+    avg_dict['eval_file_path'] = eval_file_path
+    avg_dict['pred_file_path'] = pred_file_path
     if ckpt_name.find('_') > 0:
-        avg_dict['exp_name'] = exp_name
-        avg_dict['pred_name'] = pred_name
-        avg_dict['#train_step'] = ckpt_name.rsplit('_')[-1]
+        avg_dict['step'] = ckpt_name.rsplit('_')[-1]
     else:
-        avg_dict['exp_name'] = exp_name
-        avg_dict['pred_name'] = pred_name
-        avg_dict['#train_step'] = ''
+        avg_dict['step'] = ''
 
     # doc stat
     avg_dict['#doc'] = len(score_dict['present_tgt_num'])
     avg_dict['#pre_doc'] = len([x for x in score_dict['present_tgt_num'] if x > 0])
     avg_dict['#ab_doc'] = len([x for x in score_dict['absent_tgt_num'] if x > 0])
 
-    # tgt & pred stat
+    # tgt stat
     if 'present_tgt_num' in score_dict and 'absent_tgt_num' in score_dict:
-        avg_dict['#tgt'] = sum(score_dict['present_tgt_num']) + sum(score_dict['absent_tgt_num'])
-        avg_dict['#pre_tgt'] = sum(score_dict['present_tgt_num'])
-        avg_dict['#ab_tgt'] = sum(score_dict['absent_tgt_num'])
+        avg_dict['#tgt'] = np.average(score_dict['present_tgt_num']) + np.average(score_dict['absent_tgt_num'])
+        avg_dict['#pre_tgt'] = np.average(score_dict['present_tgt_num'])
+        avg_dict['#ab_tgt'] = np.average(score_dict['absent_tgt_num'])
     else:
         avg_dict['#tgt'] = 0
         avg_dict['#pre_tgt'] = 0
         avg_dict['#ab_tgt'] = 0
 
+    # pred stat
     if 'present_pred_num' in score_dict and 'absent_pred_num' in score_dict:
-        avg_dict['#pred'] = sum(score_dict['present_pred_num']) + sum(score_dict['absent_pred_num'])
-        avg_dict['#pre_pred'] = sum(score_dict['present_pred_num'])
-        avg_dict['#ab_pred'] = sum(score_dict['absent_pred_num'])
+        avg_dict['#pred'] = np.average(score_dict['present_pred_num']) + np.average(score_dict['absent_pred_num'])
+        avg_dict['#pre_pred'] = np.average(score_dict['present_pred_num'])
+        avg_dict['#ab_pred'] = np.average(score_dict['absent_pred_num'])
     else:
         avg_dict['#pred'] = 0
         avg_dict['#pre_pred'] = 0
         avg_dict['#ab_pred'] = 0
 
-    avg_dict['#unique_pred'] = sum(score_dict['unique_pred_num']) if 'unique_pred_num' in score_dict else 0
-    avg_dict['#dup_pred'] = sum(score_dict['dup_pred_num']) if 'dup_pred_num' in score_dict else 0
-    avg_dict['#beam'] = sum(score_dict['beam_num']) if 'beam_num' in score_dict else 0
-    avg_dict['#beamstep'] = sum(score_dict['beamstep_num']) if 'beamstep_num' in score_dict else 0
+    avg_dict['#uni_pred'] = np.average(score_dict['unique_pred_num']) if 'unique_pred_num' in score_dict else 0
+    avg_dict['#dup_pred'] = np.average(score_dict['dup_pred_num']) if 'dup_pred_num' in score_dict else 0
+    avg_dict['#beam'] = np.average(score_dict['beam_num']) if 'beam_num' in score_dict else 0
+    avg_dict['#beamstep'] = np.average(score_dict['beamstep_num']) if 'beamstep_num' in score_dict else 0
 
-    present_tgt_num = score_dict['present_tgt_num'] if 'present_tgt_num' in score_dict else 0
-    absent_tgt_num = score_dict['absent_tgt_num'] if 'absent_tgt_num' in score_dict else 0
-
+    # remove meta stats from score_dict
     if 'unique_pred_num' in score_dict: del score_dict['present_tgt_num']
     if 'absent_tgt_num' in score_dict: del score_dict['absent_tgt_num']
     if 'present_pred_num' in score_dict: del score_dict['present_pred_num']
@@ -356,6 +358,7 @@ def summarize_scores(ckpt_name, score_dict, exp_name=None, pred_name=None):
     if 'beam_num' in score_dict: del score_dict['beam_num']
     if 'beamstep_num' in score_dict: del score_dict['beamstep_num']
 
+    # average scores of each metric
     for score_name, score_list in score_dict.items():
         # number of correct phrases
         if score_name.find('correct') > 0:
@@ -390,8 +393,19 @@ def summarize_scores(ckpt_name, score_dict, exp_name=None, pred_name=None):
     return summary_df
 
 
-def gather_eval_results(eval_root_dir, report_csv_path=None):
+def gather_eval_results(eval_root_dir, report_csv_dir=None):
     dataset_scores_dict = {}
+    evals_to_skip = set()
+    if report_csv_dir:
+        # load previous reports
+        for report_csv_file in os.listdir(report_csv_dir):
+            data_decode_name = report_csv_file[:-4].strip() # truncate '.csv'
+            prev_df = pd.read_csv(os.path.join(report_csv_dir, report_csv_file))
+            prev_df = prev_df.loc[:, ~prev_df.columns.str.contains('^Unnamed')]
+
+            dataset_scores_dict[data_decode_name] = prev_df
+            for eval_path in prev_df.eval_file_path:
+                evals_to_skip.add(eval_path)
 
     total_file_num = len([file for subdir, dirs, files in os.walk(eval_root_dir)
                           for file in files if file.endswith('.json') or file.endswith('.eval')])
@@ -405,12 +419,17 @@ def gather_eval_results(eval_root_dir, report_csv_path=None):
             file_count += 1
             print("file_count/file_num=%d/%d" % (file_count, total_file_num))
 
+            eval_file_path = os.path.join(subdir, file)
+            pred_file_path = eval_file_path.replace('eval', 'pred') # might be a very bad way
+            if eval_file_path in evals_to_skip: continue
+
             if file.endswith('.eval'):
                 file_name = file[: file.find('.eval')]
                 ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
-                exp_name = re.search('exps/kp/(.*?)/outputs', subdir).group(1)
+                exp_dirname = re.search('exps/(.*?)/outputs', subdir).group(1)
+                exp_name = exp_dirname.split('/')[1]
                 pred_name = re.search('outputs/(.*?)/eval', subdir).group(1)
-                dataset_name = file_name[file.rfind('-')+1: ]
+                dataset_name = file_name[file.rfind('-') + 1: ]
                 decoding_type = 'exhaustive' # TODO
             else:
                 # previous version
@@ -429,29 +448,33 @@ def gather_eval_results(eval_root_dir, report_csv_path=None):
 
                 pred_name = re.search('-(beam.*?)/eval', subdir).group(1)
 
+            dataset_name = dataset_name[5:] if dataset_name.startswith('data_') else dataset_name
+            data_decode_name = dataset_name + '-' + decoding_type
             # key is dataset name, value is a dict whose key is metric name and value is a list of floats
-            score_dict = json.load(open(os.path.join(subdir, file), 'r'))
+            score_dict = json.load(open(eval_file_path, 'r'))
             # ignore scores where no tgts available and return the average
-            score_df = summarize_scores(ckpt_name, score_dict, exp_name, pred_name)
+            score_df = summarize_scores(score_dict,
+                                        ckpt_name, exp_name, pred_name, dataset_name,
+                                        eval_file_path, pred_file_path)
 
-            df_key = dataset_name + '_' + decoding_type
             # print(df_key)
-            if df_key in dataset_scores_dict:
-                dataset_scores_dict[df_key] = dataset_scores_dict[df_key].append(score_df)
+            if data_decode_name in dataset_scores_dict:
+                dataset_scores_dict[data_decode_name] = dataset_scores_dict[data_decode_name].append(score_df)
             else:
-                dataset_scores_dict[df_key] = score_df
+                dataset_scores_dict[data_decode_name] = score_df
 
-            # if file_count > 20:
-            #     break
-
+        #     if file_count > 20:
+        #         break
+        #
         # if file_count > 20:
         #     break
 
-    if report_csv_path:
-        for df_key, score_df in dataset_scores_dict.items():
-            print("Writing summary to: %s" % (report_csv_path % df_key))
-            score_df = score_df.sort_values(by=['exp_name', '#train_step'])
-            score_df.to_csv(report_csv_path % df_key)
+    if report_csv_dir:
+        for data_decode_name, score_df in dataset_scores_dict.items():
+            report_csv_path = os.path.join(report_csv_dir, data_decode_name + '.csv')
+            print("Writing summary to: %s" % (report_csv_path))
+            score_df = score_df.sort_values(by=['exp_name', 'step'])
+            score_df.to_csv(report_csv_path, index=False)
 
     return dataset_scores_dict
 
@@ -522,6 +545,6 @@ if __name__ == '__main__':
                 score_dicts[dataname] = score_dict
 
         gather_eval_results(eval_root_dir=os.path.join(opt.output_dir, 'eval'),
-                            report_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+                            report_csv_dir=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
 
         logger.info("Done!")

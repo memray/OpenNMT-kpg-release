@@ -100,8 +100,9 @@ if __name__ == "__main__":
 
     # do generate summarized report
     if 'report' in opt.tasks:
-        report_path = os.path.join(opt.exp_root_dir, '%s_summary_%s.csv' % (current_time, '%s'))
-        kp_evaluate.gather_eval_results(eval_root_dir=opt.exp_root_dir, report_csv_path=report_path)
+        report_dir = os.path.join(opt.exp_root_dir, 'report')
+        if not os.path.exists(report_dir): os.makedirs(report_dir)
+        kp_evaluate.gather_eval_results(eval_root_dir=opt.exp_root_dir, report_csv_dir=report_dir)
         logger.warning('Report accomplished, exit!')
         exit(0)
 
@@ -157,11 +158,11 @@ if __name__ == "__main__":
                 pred_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'pred')
                 eval_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'eval')
                 pred_file = '%s-data_%s.pred' % (ckpt_name, datasplit_name)
-                report_file = '%s-data_%s.report' % (ckpt_name, datasplit_name)
+                printout_file = '%s-data_%s.report' % (ckpt_name, datasplit_name)
                 eval_file = '%s-data_%s.eval' % (ckpt_name, datasplit_name)
 
                 pred_path = os.path.join(pred_dir, pred_file)
-                printout_path = os.path.join(pred_dir, report_file)
+                printout_path = os.path.join(pred_dir, printout_file)
                 eval_path = os.path.join(eval_dir, eval_file)
 
                 # create dirs

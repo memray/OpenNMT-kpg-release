@@ -254,7 +254,7 @@ if __name__ == "__main__":
 
                 # do generate summarized report
                 if 'report' in opt.tasks:
-                    kp_evaluate.gather_eval_results(eval_root_dir=eval_dir, report_csv_path=report_path)
+                    kp_evaluate.gather_eval_results(eval_root_dir=eval_dir, report_csv_dir=report_path)
 
         if job_done: # reset current_patience if no real job is done in the current iteration
             current_patience = opt.wait_patience

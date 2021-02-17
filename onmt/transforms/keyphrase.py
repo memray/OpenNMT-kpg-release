@@ -79,10 +79,10 @@ class KeyphraseTransform(Transform):
             if max_target_phrases > 0 and len(order) > max_target_phrases:
                 order = order[: max_target_phrases]
             tgt = [tgt_kps[idx] for idx in order]
+            tgt_str = self.sep_token.join(tgt)
         else:
             raise NotImplementedError('Unsupported target concatenation type ' + kp_concat_type)
 
-        tgt_str = self.sep_token.join(tgt)
         if lowercase:
             return src_str.lower(), tgt_str.lower()
         return src_str, tgt_str

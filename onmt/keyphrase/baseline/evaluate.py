@@ -52,6 +52,6 @@ if __name__ == '__main__':
                 logger.error("Skip evaluating as previous eval result exists")
 
         gather_eval_results(eval_root_dir=os.path.join(opt.output_dir),
-                            report_csv_path=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
+                            report_csv_dir=os.path.join(opt.output_dir, 'summary_%s.csv' % ('%s')))
 
         logger.info("Done!")

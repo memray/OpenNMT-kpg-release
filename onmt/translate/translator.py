@@ -1125,22 +1125,26 @@ class Translator(Inference):
         tgt = batch.tgt
         tgt_in = tgt[:-1] # trim EOS
 
-        # score target sequence (ground-truth), log_probs=[tgt_len-1, batch_size, vocab], attn=[tgt_len-1, batch_size, src_len]
-        log_probs, attn = self._decode_and_generate(
-            tgt_in,
-            memory_bank,
-            batch,
-            src_vocabs,
-            memory_lengths=src_lengths,
-            src_map=src_map,
-            encoder_output=encoder_output,
-            last_word=False
-        )
+        try:
+            # score target sequence (ground-truth), log_probs=[tgt_len-1, batch_size, vocab], attn=[tgt_len-1, batch_size, src_len]
+            log_probs, attn = self._decode_and_generate(
+                tgt_in,
+                memory_bank,
+                batch,
+                src_vocabs,
+                memory_lengths=src_lengths,
+                src_map=src_map,
+                encoder_output=encoder_output,
+                last_word=False
+            )
 
-        log_probs[:, :, self._tgt_pad_idx] = 0
-        gold = tgt[1:] # trim BOS
-        gold_scores = log_probs.gather(2, gold)
-        gold_scores = gold_scores.sum(dim=0).view(-1)
+            log_probs[:, :, self._tgt_pad_idx] = 0
+            gold = tgt[1:] # trim BOS
+            gold_scores = log_probs.gather(2, gold)
+            gold_scores = gold_scores.sum(dim=0).view(-1)
+        except Exception:
+            # occasionally it errors out (dim of log_probs.shape is 2, should be 3), may due to an invalid input
+            gold_scores = torch.Tensor([-np.Inf] * batch.batch_size)
 
         return gold_scores
 

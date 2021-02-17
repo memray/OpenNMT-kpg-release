@@ -4,8 +4,8 @@
 #SBATCH --account=hdaqing
 
 #SBATCH --partition=v100
-#SBATCH --partition=gtx1080
 #SBATCH --partition=titanx
+#SBATCH --partition=gtx1080
 
 #SBATCH --job-name={job_name}
 #SBATCH --output={slurm_output_dir}/{job_name}.out

@@ -1,0 +1,54 @@
+# Translation / inference options
+#model: models/keyphrase/kp20k/kp20k.one2one.birnn.test_step_40000.pt
+cache_dir: /zfs1/hdaqing/rum20/kp/data/kp/cache/
+
+model_type: keyphrase
+data_type: keyphrase
+data:
+    valid:
+        path_src: none
+        path_tgt: none
+        type: keyphrase
+        transforms: [keyphrase, roberta_tokenize_kpg]
+        weight: 1
+
+### Transform related opts:
+#### Keyphrase specific
+kp_concat_type: one2one
+beam_terminate: full
+#### Subword and vocab
+src_subword_model: roberta_tokenize
+src_vocab: /zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-kp/vocab.json
+share_vocab: True
+bpe_dropout: 0.0
+
+# Data options
+#model_dtype: fp16
+src_seq_length_trunc: 512
+tgt_seq_length_trunc: 128
+
+# Evaluation options
+report_time: 'true'
+
+# Options most relevant to summarization.
+#dynamic_dict: 'true'
+
+# Beam search
+#beam_size: 8
+min_length: 1
+#max_length: 32
+
+# Alpha and Beta values for Google Length + Coverage penalty
+stepwise_penalty: 'false'
+
+# Logging
+verbose: 'false'
+#log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
+log_file_level: 'DEBUG'
+n_best: 500
+
+# Efficiency
+#gpu: 0
+gpu: -1
+
+#beam_terminate: full/topbeam

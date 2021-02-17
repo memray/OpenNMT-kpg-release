@@ -8,7 +8,7 @@ source script/transfer/run_eval_o2o.sh
 sbatch script/transfer/kppred_v100.sh
 
 
-# train
+# TF-o2s
 sbatch script/transfer/train/kpgen-transformer-presabs-kp20k-nocopy.sh
 sbatch script/transfer/train/kpgen-transformer-presabs-kp20k-lower.sh
 
@@ -20,12 +20,24 @@ sbatch script/transfer/train/kpgen-transformer-presabs-openkp.sh
 sbatch script/transfer/train/kpgen-transformer-presabs-stackex.sh
 
 
-# BART
+# BART-o2s
 sbatch script/transfer/train/kpgen-bart-presabs-kp20k.sh
 sbatch script/transfer/train/kpgen-bart-presabs-kp20k-resume.sh
 sbatch script/transfer/train/kpgen-bart-presabs-openkp.sh
 sbatch script/transfer/train/kpgen-bart-presabs-openkp-resume.sh
+sbatch script/transfer/train/kpgen-bart-presabs-openkp-rerun.sh
+sbatch script/transfer/train/kpgen-bart-presabs-stackex-rerun.sh
 
-# BART-one2one
+
+
+# BART-o2o
 sbatch script/transfer/train/kpgen-bart-one2one-kp20k.sh
 sbatch script/transfer/train/kpgen-bart-one2one-openkp.sh
+sbatch script/transfer/train/kpgen-bart-one2one-kptimes.sh
+sbatch script/transfer/train/kpgen-bart-one2one-stackex.sh
+
+# TF-o2o
+sbatch script/transfer/train/kpgen-transformer-one2one-kp20k.sh
+sbatch script/transfer/train/kpgen-transformer-one2one-kptimes.sh
+sbatch script/transfer/train/kpgen-transformer-one2one-openkp.sh
+sbatch script/transfer/train/kpgen-transformer-one2one-stackex.sh
