@@ -9,7 +9,7 @@ echo $PROJECT_DIR
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 task_args="eval" # pred or eval
-batch_size=1
+batch_size=8
 # beam_size=200
 # max_length=6
 beam_size=128

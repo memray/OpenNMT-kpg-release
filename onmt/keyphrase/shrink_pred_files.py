@@ -11,21 +11,28 @@ __author__ = "Rui Meng"
 __email__ = "rui.meng@pitt.edu"
 
 if __name__ == '__main__':
-    root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/meng17-one2seq-fullbeam/'
+    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/'
+    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_o2o/'
+    # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/meng17-one2one-kp20k-v3/meng17-one2one-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/'
 
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/order_matters/transformer/meng17-one2seq-beam50-maxlen40/'
-    dataset_line_counts = {'kp20k': 19987,
+    dataset_line_counts = {
+                     'kp20k': 19987,
                      # 'kp20k_valid2k': 2000,
                      # 'inspec': 500,
                      # 'krapivin': 460,
                      # 'nus': 211,
                      # 'semeval': 100,
                      # 'duc': 308,
-                     # 'stackexchange': 16000,
+                     'kp20k_test': 19987,
+                     'openkp_test': 6614,
+                     'kptimes_test': 10000,
+                     'jptimes_test': 10000,
+                     'stackex_test': 16000,
                      }
 
     total_size_shrinked = 0
@@ -38,7 +45,7 @@ if __name__ == '__main__':
 
             if not filename.endswith('.pred'):
                 continue
-            dataset_name = filename[:-5]
+            dataset_name = filename[:-5].split('-')[-1][5:]
             if dataset_name not in dataset_line_counts:
                 # print(dataset_name + ' is not within shrinking list, skip! ')
                 continue
@@ -75,6 +82,7 @@ if __name__ == '__main__':
                     #     print('%s' % k)
 
                     pred_dict['attns'] = None
+                    pred_dict['copied_flags'] = None
                     pred_dict['ori_pred_sents'] = None
                     pred_dict['ori_pred_scores'] = None
                     pred_dict['ori_preds'] = None
@@ -82,10 +90,10 @@ if __name__ == '__main__':
                     tmp_pred_file.write(json.dumps(pred_dict)+'\n')
 
             # tmp_pred_file.close()
-            print('Dumped to: ' + pred_path + '.tmp')
+            print('\tDumped to: ' + pred_path + '.tmp')
             new_size = os.stat(tmp_pred_path).st_size // 1024 // 1024
             print('\t new file size = %d MB' % (new_size))
-            print('\t shrinked size = %d MB' % (ori_size-new_size))
+            print('\t reduced size = %d MB' % (ori_size-new_size))
 
             total_size_shrinked += (ori_size - new_size)
 
@@ -94,4 +102,3 @@ if __name__ == '__main__':
             os.rename(tmp_pred_path, pred_path)
 
     print('Total shrinked size = %d MB' % (total_size_shrinked))
-

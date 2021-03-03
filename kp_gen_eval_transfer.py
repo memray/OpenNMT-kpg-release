@@ -226,6 +226,7 @@ if __name__ == "__main__":
                             logger.info("*" * 50)
                             logger.info("Start translating [%s] for %s." % (datasplit_name, ckpt_name))
                             logger.info("\t exporting PRED result to %s." % (pred_path))
+                            logger.info("*" * 50)
                             _, _ = translator.translate(
                                 src=None,
                                 batch_size=opt.batch_size,
@@ -290,8 +291,10 @@ if __name__ == "__main__":
                 if 'eval' in opt.tasks:
                     try:
                         if do_eval_flag or opt.ignore_existing:
+                            logger.info("*" * 50)
                             logger.info("Start evaluating [%s] for %s" % (datasplit_name, ckpt_name))
                             logger.info("\t will export eval result to %s." % (eval_path))
+                            logger.info("*" * 50)
                             score_dict = kp_evaluate.keyphrase_eval(datasplit_name,
                                                                     src_path, tgt_path,
                                                                     pred_path=pred_path, logger=logger,

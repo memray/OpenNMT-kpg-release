@@ -24,7 +24,7 @@
 #module unload python/anaconda3.6-5.2.0
 
 # GPU usage: --max-tokens=2048,--update-freq=10, bsz~=95: 32k+MiB / 32480MiB, OOMed after 11k steps
-# GPU usage: --max-tokens=1536,--update-freq=16, bsz~=110: 32k+MiB
+# GPU usage: --max-tokens=1536,--update-freq=16, bsz=110~115: 32k+MiB
 cd /zfs1/hdaqing/rum20/kp/fairseq-kpg/fairseq_cli/
 export WANDB_NAME=bartFT_presabs_openkp_100kstep
 export TOKENIZERS_PARALLELISM=false

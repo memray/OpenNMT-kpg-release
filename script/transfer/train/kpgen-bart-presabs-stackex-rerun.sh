@@ -23,7 +23,7 @@
 #source activate py36
 #module unload python/anaconda3.6-5.2.0
 
-# GPU usage: bsz=~90: 31k+MiB / 32480MiB
+# GPU usage: --max-tokens=512, --update-freq=16, bsz=80~84: 31k+MiB / 32480MiB
 cd /zfs1/hdaqing/rum20/kp/fairseq-kpg/fairseq_cli/
 export WANDB_NAME=bartFT_presabs_stackex_100kstep
 export TOKENIZERS_PARALLELISM=false

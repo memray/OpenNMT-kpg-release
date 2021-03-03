@@ -18,12 +18,12 @@ step_base=5000
 # beam_size=200, max_length=6, even with BS=1, OOM on TitanX, usage > 13g
 # beam_size=128, max_length=8, BS=1, on TitanX, usage=10114MiB
 
-datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k duc stackex_valid2k)
-datasets=(kp20k kp20k_valid2k openkp kptimes jptimes jptimes_valid2k duc stackex stackex_valid2k)
-datasets=(kp20k openkp kptimes jptimes stackex)
+datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k duc stackex_valid2k)
+datasets=(kp20k kp20k_valid2k openkp kptimes jptimes duc stackex stackex_valid2k)
 datasets=(kp20k)
-datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes jptimes_valid2k duc stackex stackex_valid2k)
-datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k duc stackex_valid2k)
+datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k duc stackex_valid2k)
+datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes duc stackex stackex_valid2k)
+datasets=(kp20k kptimes jptimes stackex)
 
 for dataset in "${datasets[@]}"
 do

@@ -2,31 +2,25 @@
 PROJECT_DIR="/zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer"
 
 CURDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-TEMPLATE_PATH="$CURDIR/kpeval_gpu_template.sh"
+TEMPLATE_PATH="$CURDIR/kpeval_cpu_template.sh"
 
 echo $0
 echo $PROJECT_DIR
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
-task_args="pred" # pred or eval
-batch_size=1
+task_args="eval" # pred or eval
+batch_size=8
 beam_size=50
 max_length=40
-step_base=5000
+step_base=1
 
 # evaluate with all predictions
-datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k duc stackex_valid2k)
-datasets=(kp20k kp20k_valid2k openkp kptimes jptimes jptimes_valid2k duc stackex stackex_valid2k)
-datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k duc stackex_valid2k)
-datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes jptimes_valid2k duc stackex stackex_valid2k)
-datasets=(kp20k openkp kptimes jptimes stackex)
-datasets=(kp20k)
-
+datasets=(kp20k kp20k_valid2k kptimes kptimes_valid2k jptimes duc openkp openkp_valid2k stackex stackex_valid2k duc)
 
 for dataset in "${datasets[@]}"
 do
-    exp_root_dir="/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/"
-    EXP_NAME="$task_args-o2s-$dataset-bs$beam_size"
+    exp_root_dir="/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k/"
+    EXP_NAME="$task_args-o2sfs-$dataset-bs$beam_size"
     DUMP_SCRIPT_PATH="$CURDIR/$EXP_NAME.sh"
     replaces="s/{job_name}/$EXP_NAME/;";
     replaces="$replaces s|{task_args}|$task_args|g;";
