@@ -159,7 +159,8 @@ class TranslationBuilder(object):
             translation = Translation(
                 src[:, b] if src is not None else None,
                 src_raw, pred_sents, attn[b], pred_score[b],
-                gold_sent, gold_score[b], preds[b], align[b]
+                gold_sent, gold_score[b], preds[b], align[b],
+                index=inds[b].item()
             )
             translations.append(translation)
 
@@ -183,7 +184,7 @@ class Translation(object):
             each translation.
     """
 
-    __slots__ = ["src", "src_raw", "gold_sent", "gold_score", "word_aligns",
+    __slots__ = ["index", "src", "src_raw", "gold_sent", "gold_score", "word_aligns",
                  "attns", "copied_flags",
                  "unique_pred_num", "dup_pred_num", "beam_num", "beamstep_num",
                  "pred_sents", "pred_scores", "preds",
@@ -191,8 +192,10 @@ class Translation(object):
                  "topseq_pred_sents", "topseq_pred_scores", "topseq_preds",
                  "dup_pred_tuples"
                  ]
+
     def __init__(self, src, src_raw, pred_sents,
-                 attn, pred_scores, tgt_sent, gold_score, preds, word_aligns):
+                 attn, pred_scores, tgt_sent, gold_score, preds, word_aligns, index):
+        self.index = index # original index in the dataset
         self.src = src
         self.src_raw = src_raw
         if tgt_sent:

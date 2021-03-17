@@ -11,7 +11,7 @@ from onmt.models import build_model_saver
 from onmt.utils.logging import init_logger, logger
 from onmt.utils.parse import ArgumentParser
 
-from onmt.inputters.dynamic_iterator import build_dynamic_dataset_iter
+from onmt.inputters.dynamic_iterator import build_dynamic_dataset_iter, build_dynamic_dataset_iter_given_examples
 
 
 def configure_process(opt, device_id):
@@ -34,6 +34,13 @@ def _get_model_opts(opt, checkpoint=None):
     else:
         model_opt = opt
     return model_opt
+
+
+def _build_iter_given_examples(examples, opt, fields, transforms_cls, is_train=False):
+    """Build iterator used for validation."""
+    test_iter = build_dynamic_dataset_iter_given_examples(
+        examples, fields, transforms_cls, opt, is_train=is_train)
+    return test_iter
 
 
 def _build_valid_iter(opt, fields, transforms_cls):

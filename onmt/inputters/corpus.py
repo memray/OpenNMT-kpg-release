@@ -108,13 +108,14 @@ class DatasetAdapter(object):
 class ParallelCorpus(object):
     """A parallel corpus file pair that can be loaded to iterate."""
 
-    def __init__(self, name, src, tgt, align=None, dataset_type=None):
+    def __init__(self, name, src, tgt, align=None, dataset_type=None, examples=None):
         """Initialize src & tgt side file path."""
         self.id = name
         self.src = src
         self.tgt = tgt
         self.align = align
         self.dataset_type = dataset_type
+        self.examples = examples
 
     def load(self, offset=0, stride=1):
         """
@@ -132,8 +133,8 @@ class ParallelCorpus(object):
                         sline = sline.decode('utf-8')
                         example = json.loads(sline)
                         # dps with empty src/tgt will be skipped
-                        example['src'] = 'none'
-                        example['tgt'] = 'none'
+                        example['src'] = example['src'] if 'src' in example else ''
+                        example['tgt'] = example['tgt'] if 'tgt' in example else ''
                     else:
                         sline = sline.decode('utf-8')
                         tline = tline.decode('utf-8')
@@ -229,20 +230,29 @@ class ParallelCorpusIterator(object):
             example = item[0]
             line_number = i * self.stride + self.offset
             example['indices'] = line_number
-            if (len(example['src']) == 0 or len(example['tgt']) == 0 or
-                    ('align' in example and example['align'] == 0)):
-                # empty example: skip
-                empty_msg = f"Empty line exists in {self.cid}#{line_number}."
-                if self.skip_empty_level == 'error':
-                    raise IOError(empty_msg)
-                elif self.skip_empty_level == 'warning':
-                    logger.warning(empty_msg)
-                continue
+
+            # @memray skip keyphrase non-empty check
+            if not hasattr(self.corpus, 'dataset_type') or \
+                    (hasattr(self.corpus, 'dataset_type') and self.corpus.dataset_type != 'keyphrase'):
+                if (len(example['src']) == 0 or len(example['tgt']) == 0 or
+                        ('align' in example and example['align'] == 0)):
+                    # empty example: skip
+                    empty_msg = f"Empty line exists in {self.cid}#{line_number}."
+                    if self.skip_empty_level == 'error':
+                        raise IOError(empty_msg)
+                    elif self.skip_empty_level == 'warning':
+                        logger.warning(empty_msg)
+                    continue
             yield item
 
     def _iter_corpus(self):
-        corpus_stream = self.corpus.load(
-            stride=self.stride, offset=self.offset)
+        if self.corpus.examples is None:
+            corpus_stream = self.corpus.load(
+                stride=self.stride, offset=self.offset)
+        else:
+            # added by @memray, if examples are given, directly transform and return them
+            corpus_stream = self.corpus.examples
+
         # @memray, skip tokenization for keyphrase (json format)
         if self.corpus.dataset_type != 'keyphrase':
             tokenized_corpus = self._tokenize(corpus_stream)

@@ -3,7 +3,7 @@ import math
 import numpy as np
 import torch
 
-from onmt.inputters.keyphrase_dataset import kpdict_parse_fn, KP_DATASET_FIELDS, KP_CONCAT_TYPES, obtain_sorted_indices, \
+from onmt.inputters.keyphrase_dataset import KP_DATASET_FIELDS, KP_CONCAT_TYPES, obtain_sorted_indices, \
     parse_src_fn
 from onmt.transforms import register_transform
 from .transform import Transform
@@ -89,7 +89,9 @@ class KeyphraseTransform(Transform):
 
     def infer_dataset_type(self, example):
         dataset_type = None
-        if 'question' in example:
+        if 'dataset_type' in example:
+            dataset_type = example['dataset_type']
+        elif 'question' in example:
             dataset_type = 'qa'
         elif 'url' in example:
             dataset_type = 'webpage'
@@ -107,11 +109,63 @@ class KeyphraseTransform(Transform):
         Source text: concatenating title and body text.
         Target text: concatenating phrases according to the given phrase order.
         """
+        if 'src' in example and 'tgt' in example and example['src'] and example['tgt']:
+            # if both src and tgt are given, we directly return it, used in inference to ease the pipeline.
+            return example
+
         dataset_type = self.infer_dataset_type(example)
         src_str, tgt_str = self.kpdict_parse_fn(example, self.kp_concat_type,
-                                           dataset_type=dataset_type, max_target_phrases=self.max_target_phrases,
-                                           lowercase=self.lowercase)
+                                                dataset_type=dataset_type, max_target_phrases=self.max_target_phrases,
+                                                lowercase=self.lowercase)
         example['src'] = src_str
         example['tgt'] = tgt_str
+        example['src_str'] = src_str
+        example['tgt_str'] = tgt_str
+
+        return example
+
+
+@register_transform(name='add_control_prefix')
+class ControlPrefixTransform(Transform):
+
+    def __init__(self, opts):
+        super().__init__(opts)
+        self.src_control_prefix = opts.src_control_prefix
+        self.tgt_control_prefix = opts.tgt_control_prefix
+
+    @classmethod
+    def add_options(cls, parser):
+        """Available options relate to BART."""
+        group = parser.add_argument_group("Transform/keyphrase")
+        group.add("--src_control_prefix", "-src_control_prefix",
+                  type=str, default='', help="It will be appended to the source text to control the output.")
+        group.add("--tgt_control_prefix", "-tgt_control_prefix",
+                  type=str, default='', help="It will be appended to the target text to control the output.")
+
+    def apply(self, example, is_train=False, stats=None, **kwargs):
+        """
+        Source text: concatenating title and body text.
+        Target text: concatenating phrases according to the given phrase order.
+        """
+        # if control-prefix is given, prepend it
+        if 'src_control_prefix' in example:
+            src_control_prefix = example['src_control_prefix']
+        elif self.src_control_prefix:
+            src_control_prefix = self.src_control_prefix
+        else:
+            src_control_prefix = ''
+
+        if 'tgt_control_prefix' in example:
+            tgt_control_prefix = example['tgt_control_prefix']
+        elif self.tgt_control_prefix:
+            tgt_control_prefix = self.tgt_control_prefix
+        else:
+            tgt_control_prefix = ''
+
+        example['src'] = src_control_prefix + example['src']
+        example['tgt'] = tgt_control_prefix + example['tgt']
+
+        example['src_str'] = example['src']
+        example['tgt_str'] = example['tgt']
 
         return example

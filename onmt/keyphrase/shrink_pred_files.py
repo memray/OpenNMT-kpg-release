@@ -12,7 +12,8 @@ __email__ = "rui.meng@pitt.edu"
 
 if __name__ == '__main__':
     # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/'
-    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_o2o/'
+    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_o2o/'
+    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/'
@@ -21,7 +22,7 @@ if __name__ == '__main__':
 
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/order_matters/transformer/meng17-one2seq-beam50-maxlen40/'
     dataset_line_counts = {
-                     'kp20k': 19987,
+                     # 'kp20k': 19987,
                      # 'kp20k_valid2k': 2000,
                      # 'inspec': 500,
                      # 'krapivin': 460,
@@ -42,31 +43,46 @@ if __name__ == '__main__':
             # print('-=' * 50)
             # print(filename)
             # print('-=' * 50)
+            '''
+            Delete report
+            '''
+            if filename.endswith('.report'):
+                dataset_name = filename[:-7].split('-')[-1][5:]
+                if dataset_name in dataset_line_counts:
+                    pred_path = os.path.join(root, filename)
 
+                    print('Deleting .report: [%s] %s' % (dataset_name, pred_path))
+                    ori_size = os.stat(pred_path).st_size // 1024 // 1024
+                    print('\t file size = %d MB' % (ori_size))
+
+                    total_size_shrinked += ori_size
+                    os.remove(pred_path)
+            '''
+            Reduce .pred file size
+            '''
             if not filename.endswith('.pred'):
                 continue
+
             dataset_name = filename[:-5].split('-')[-1][5:]
-            if dataset_name not in dataset_line_counts:
-                # print(dataset_name + ' is not within shrinking list, skip! ')
-                continue
+            if dataset_name not in dataset_line_counts: continue
 
             pred_path = os.path.join(root, filename)
-            print('Shrinking file: [%s] %s' % (dataset_name, pred_path))
-            ori_size = os.stat(pred_path).st_size // 1024 // 1024
-            print('\t file size = %d MB' % (ori_size))
-
             # ensure the pred is complete
             with open(pred_path, 'r') as pred_file:
                 lines = [l if lid==0 else '' for lid, l in enumerate(pred_file)]
                 if len(lines) != dataset_line_counts[dataset_name]:
-                    print('Prediction ongoing, skip!')
+                    # print('Prediction ongoing, skip!')
                     continue
 
                 pred_dict = json.loads(lines[0])
                 # indicating it's already shrinked, skip
                 if pred_dict['attns'] == None and pred_dict['dup_pred_tuples'] == None:
-                    print('This pred file has been shrinked, skip!')
+                    # print('This pred file has been shrinked, skip!')
                     continue
+
+            print('Shrinking .pred: [%s] %s' % (dataset_name, pred_path))
+            ori_size = os.stat(pred_path).st_size // 1024 // 1024
+            print('\t file size = %d MB' % (ori_size))
 
             tmp_pred_path = pred_path + '.tmp'
             tmp_pred_file = open(tmp_pred_path, 'w')

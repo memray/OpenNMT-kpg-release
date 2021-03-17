@@ -138,7 +138,7 @@ def gather_scores(gathered_scores, results_names, results_dicts):
     return gathered_scores
 
 
-def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
+def print_predeval_result(i, src_text, tgt_seqs, present_tgt_flags,
                           pred_seqs, pred_scores, pred_idxs, copied_flags,
                           present_pred_flags, valid_pred_flags,
                           valid_and_present_flags, valid_and_absent_flags,
@@ -149,7 +149,7 @@ def print_predeval_result(i, src_dict, tgt_seqs, present_tgt_flags,
     '''
     # src, src_str, tgt, tgt_str_seqs, tgt_copy, pred_seq, oov
     print_out = '======================  %d =========================' % (i)
-    print_out += '\n[Source]: %s \n' % (src_dict["src"])
+    print_out += '\n[Source]: %s \n' % (src_text) if src_text is not None else ''
     # print_out += '[Abstract]: %s \n' % (src_dict["abstract"])
     # print_out += '[Source tokenized][%d]: %s \n' % (len(src_seq), ' '.join(src_seq))
     # print_out += 'Real Target [%d] \n\t\t%s \n' % (len(tgt_seqs), str(tgt_seqs))

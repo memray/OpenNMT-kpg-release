@@ -10,11 +10,15 @@ data:
         path_tgt: none
         path_align: none
         type: keyphrase
-        transforms: [keyphrase, roberta_tokenize_kpg]
+        transforms: [keyphrase, add_control_prefix, roberta_tokenize_kpg]
         weight: 1
 
 ### Transform related opts:
 #### Keyphrase specific
+src_control_prefix: '<present>10<header>5<category>5<seealso>2<infill>0<s>'
+tgt_control_prefix: ''
+
+
 kp_concat_type: pres_abs
 beam_terminate: full
 #### Subword and vocab

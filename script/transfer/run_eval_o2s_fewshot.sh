@@ -10,12 +10,12 @@ slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 task_args="eval" # pred or eval
 batch_size=8
-beam_size=50
+beam_size=1
 max_length=40
 step_base=1
 
 # evaluate with all predictions
-datasets=(kp20k kp20k_valid2k kptimes kptimes_valid2k jptimes duc openkp openkp_valid2k stackex stackex_valid2k duc)
+datasets=(kp20k kp20k_valid2k kptimes kptimes_valid2k jptimes duc openkp openkp_valid2k stackex stackex_valid2k)
 
 for dataset in "${datasets[@]}"
 do

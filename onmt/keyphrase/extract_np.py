@@ -25,70 +25,6 @@ stemmer = nltk.stem.porter.PorterStemmer()
 stopword_set = set(nltk.corpus.stopwords.words('english'))
 stopword_set.update(['\'s', 'doe', 'n\'t', 'and', 'also', 'whether'])
 
-
-def get_noun_chunks(text, trim_punct=True, remove_stopword=True):
-    spacy_doc = spacy_nlp(text, disable=["textcat"])
-    np_chunks = list(spacy_doc.noun_chunks)
-    np_str_list = []
-    for chunk in np_chunks:
-        np = []
-        for w in chunk:
-            w = w.text
-            if trim_punct:
-                w = w.strip(r"""!"#$%&'()*+,-/:;<=>?@[\]^_`{|}~""")
-            if remove_stopword:
-                if w.lower() in stopword_set:
-                    continue
-            np.append(w)
-        if len(np) > 0:
-            np_str_list.append(' '.join(np))
-
-    return np_str_list
-
-
-def get_all_np(text, stem=True, return_set=True):
-    # code to recursively combine nouns
-    # 'We' is actually a pronoun but included in your question
-    # hence the token.pos_ == "PRON" part in the last if statement
-    # suggest you extract PRON separately like the noun-chunks above
-
-    doc = spacy_nlp(text)
-    index = 0
-    nounIndices = []
-    for token in doc:
-        # print(token.text, token.pos_, token.dep_, token.head.text)
-        if token.pos_ == 'NOUN':
-            nounIndices.append(index)
-        index = index + 1
-
-    #     print(nounIndices)
-    np_str_list = []
-
-    #     for nc in doc.noun_chunks:
-    #         for np in [nc, doc[nc.root.left_edge.i:nc.root.right_edge.i+1]]:
-    #             print(np.text)
-    # #             np_str_list.append(np)
-    #             np_str_list.append(' '.join([stemmer.stem(w) for w in np.text.split()]))
-
-    for idxValue in nounIndices:
-        doc = spacy_nlp(text)
-        span = doc[doc[idxValue].left_edge.i: doc[idxValue].right_edge.i + 1]
-        span.merge()
-
-        for token in doc:
-            if token.dep_ == 'dobj' or token.dep_ == 'pobj' or token.pos_ == "PRON":
-                #                 print(' '.join([stemmer.stem(w) for w in token.text.split()]))
-                if stem:
-                    np_str_list.append(' '.join([stemmer.stem(w) for w in token.text.split()]))
-                else:
-                    np_str_list.append(token.text)
-
-    if return_set:
-        np_str_list = set(np_str_list)
-
-    return np_str_list
-
-
 def stem_word_list(word_list):
     return [stemmer.stem(w.strip()) for w in word_list]
 
@@ -183,6 +119,46 @@ def meng17_tokenize(text):
     return tokens
 
 
+def spacy_innate_noun_chunks(doc, remove_duplicate=True):
+    """
+    Modified based on spacy noun_chunks() from https://github.com/explosion/spaCy/blob/master/spacy/lang/en/syntax_iterators.py.
+    Detect base noun phrases from a dependency parse. Works on both Doc and Span.
+    """
+    labels = [
+        "oprd",
+        "nsubj",
+        "dobj",
+        "nsubjpass",
+        "pcomp",
+        "pobj",
+        "dative",
+        "appos",
+        "attr",
+        "ROOT",
+    ]
+    np_deps = [doc.vocab.strings.add(label) for label in labels]
+    conj = doc.vocab.strings.add("conj")
+    np_label = doc.vocab.strings.add("NP")
+    prev_end = -1
+    for i, word in enumerate(doc):
+        if word.pos not in (NOUN, PROPN, PRON):
+            continue
+        # Prevent nested chunks from being produced
+        if word.left_edge.i <= prev_end:
+            continue
+        if word.dep in np_deps:
+            prev_end = word.i
+            yield word.left_edge.i, word.i + 1, np_label
+        elif word.dep == conj:
+            head = word.head
+            while head.dep == conj and head.head.i < head.i:
+                head = head.head
+            # If the head is an NP, and we're coordinated to it, we're an NP
+            if head.dep in np_deps:
+                prev_end = word.i
+                yield word.left_edge.i, word.i + 1, np_label
+
+
 def all_nested_NPs(span):
     i = 0
     for i, word in enumerate(span):
@@ -202,7 +178,7 @@ def all_nested_NPs(span):
     return nested_nps
 
 
-def noun_chunks(doc, remove_duplicate=True):
+def spacy_noun_chunks_all_nested(doc, remove_duplicate=True):
     """
     Detect base noun phrases from a dependency parse. Works on both Doc and Span.
     """
@@ -248,24 +224,161 @@ def noun_chunks(doc, remove_duplicate=True):
     return noun_chunk_list
 
 
+def noun_chunks_by_pos_regex(doc, min_len, max_len):
+    '''
+    https://files.ifi.uzh.ch/cl/hess/classes/ecl1/termerCIE.html
+        (Adjective | Noun)* (Noun Preposition)? (Adjective | Noun)* Noun
+    https://www.aclweb.org/anthology/D09-1027.pdf
+        (JJ)*(NN|NNS|NNP)+
+    :param doc:
+    :param min_len:
+    :param max_len:
+    :return:
+    '''
+    cands = []
+
+    np_regex = r'((^ADJ|^NOUN|^PROPN)(ADP|-|ADJ|NOUN|PROPN)*?)?(NOUN|PROPN)+'
+
+    # a two-layer loop to get all n-grams
+    for i in range(0, len(doc) - 1):
+        for k in range(min_len, max_len + 1):
+            if i + k > len(doc): break
+            span = doc[i: i + k]
+            pos_seq = ['-' if t.text=='-' else t.pos_ for t in span]
+            pos_seq_str = ''.join(pos_seq)
+
+            cands.append((span, pos_seq_str))
+
+    cands = [span for span, pos in cands if re.fullmatch(np_regex, pos)]
+
+    return cands
+
+
+def spacy_noun_chunks_wrapper(text, trim_punct=True, remove_stopword=True):
+    spacy_doc = spacy_nlp(text, disable=["textcat"])
+    np_chunks = list(spacy_doc.noun_chunks)
+    np_str_list = []
+    for chunk in np_chunks:
+        np = []
+        for w in chunk:
+            w = w.text
+            if trim_punct:
+                w = w.strip(r"""!"#$%&'()*+,-/:;<=>?@[\]^_`{|}~""")
+            if remove_stopword:
+                if w.lower() in stopword_set:
+                    continue
+            np.append(w)
+        if len(np) > 0:
+            np_str_list.append(' '.join(np))
+
+    return np_str_list
+
+
+def get_all_np(text, stem=True, return_set=True):
+    # code to recursively combine nouns
+    # 'We' is actually a pronoun but included in your question
+    # hence the token.pos_ == "PRON" part in the last if statement
+    # suggest you extract PRON separately like the noun-chunks above
+
+    doc = spacy_nlp(text)
+    index = 0
+    nounIndices = []
+    for token in doc:
+        # print(token.text, token.pos_, token.dep_, token.head.text)
+        if token.pos_ == 'NOUN':
+            nounIndices.append(index)
+        index = index + 1
+
+    #     print(nounIndices)
+    np_str_list = []
+
+    #     for nc in doc.noun_chunks:
+    #         for np in [nc, doc[nc.root.left_edge.i:nc.root.right_edge.i+1]]:
+    #             print(np.text)
+    # #             np_str_list.append(np)
+    #             np_str_list.append(' '.join([stemmer.stem(w) for w in np.text.split()]))
+
+    for idxValue in nounIndices:
+        doc = spacy_nlp(text)
+        span = doc[doc[idxValue].left_edge.i: doc[idxValue].right_edge.i + 1]
+        span.merge()
+
+        for token in doc:
+            if token.dep_ == 'dobj' or token.dep_ == 'pobj' or token.pos_ == "PRON":
+                #                 print(' '.join([stemmer.stem(w) for w in token.text.split()]))
+                if stem:
+                    np_str_list.append(' '.join([stemmer.stem(w) for w in token.text.split()]))
+                else:
+                    np_str_list.append(token.text)
+
+    if return_set:
+        np_str_list = set(np_str_list)
+
+    return np_str_list
+
+
 def test_np():
-    text = 'A feedback vertex set of a graph G is a set S  of its vertices such that the subgraph induced by V(G)?S is a forest. The cardinality of a minimum feedback vertex set of G  is denoted by ?(G). A graph G is 2-degenerate  if each subgraph G? of G has a vertex v  such that dG?(v)?2. In this paper, we prove that ?(G)?2n/5 for any 2-degenerate n-vertex graph G and moreover, we show that this bound is tight. As a consequence, we derive a polynomial time algorithm, which for a given 2-degenerate n-vertex graph returns its feedback vertex set of cardinality at most 2n/5.'
+    text = 'An example support-vector machine. A feedback vertex set of a graph G is a set S  of its vertices such that the subgraph induced by V(G)?S is a forest. The cardinality of a minimum feedback vertex set of G  is denoted by ?(G). A graph G is 2-degenerate  if each subgraph G? of G has a vertex v  such that dG?(v)?2. In this paper, we prove that ?(G)?2n/5 for any 2-degenerate n-vertex graph G and moreover, we show that this bound is tight. As a consequence, we derive a polynomial time algorithm, which for a given 2-degenerate n-vertex graph returns its feedback vertex set of cardinality at most 2n/5. Some 40 members of the House joined the Federation for American Immigration Reform in announcing that the suit would be filed Thursday in U.S. District Court in Pittsburgh.'
+    text = 'virtually enhancing the perception of user actions . This paper proposes using virtual reality to enhance the perception of actions by distant users on a shared application. Here, distance may refer either to space ( e.g. in a remote synchronous collaboration) or time ( e.g. during playback of recorded actions). Our approach consists in immersing the application in a virtual inhabited 3D space and mimicking user actions by animating avatars. We illustrate this approach with two applications, the one for remote collaboration on a shared application and the other to playback recorded sequences of user actions. We suggest this could be a low cost enhancement for telepresence'
+    # text = 'An interesting point-of-view. My baby support vector machine. A coalition of members of Congress announced Wednesday that they plan to sue the Census Bureau in an effort to force the agency to delete illegal aliens from its count in 1990. Some 40 members of the House joined the Federation for American Immigration Reform in announcing that the suit would be filed Thursday in U.S. District Court in Pittsburgh, spokesmen said at a news conference here. The group contends that including the estimated 2 million or more illegal aliens in the national head count, which is used to distribute seats in the House of Representatives, will cause unfair shifts of seats from one state to another. Census officials say they are required to count everyone by the U.S. Constitution, which does not mention citizenship but only instructs that the House apportionment be based on the ``whole number of persons'' residing in the various states. That approach was upheld by a federal court in a similar suit, brought by the same immigration reform group, before the 1980 Census. Nonetheless, Dan Stein of the immigration reform federation contended that illegal aliens should not be allowed to be part of determining the political structure of the United States. Rep. Tom Ridge, R-Pa., said the Census Bureau should actually count everyone but that it should develop a method to determine how many people are illegally in the country, and them deduct that number from the figures used for reapportioning Congress. Rep. Jan Meyers, R-Kan., suggested including a question on the Census form asking whether respondents are U.S. citizerns. '
 
     print(text)
     spacy_doc = spacy_nlp(text, disable=["textcat"])
-    nps = list(noun_chunks(spacy_doc, remove_duplicate=True))
 
-    print(len(nps))
+    print('*' * 50)
+    print('noun_chunks_by_pos_regex'.upper())
+    nps = list(noun_chunks_by_pos_regex(spacy_doc, min_len=1, max_len=4))
+    print('#np =', len(nps))
+    for np_id, np in enumerate(nps):
+        print('[%d]' % np_id, np.text)
+
+    '''
+    print('*' * 50)
+    print('spacy_noun_chunks_all_nested'.upper())
+    nps = list(spacy_noun_chunks_all_nested(spacy_doc, remove_duplicate=True))
+    print('#np =', len(nps))
+    for np_id, np in enumerate(nps):
+        print('[%d]' % np_id, np.text)
+
+    print('*' * 50)
+    print('get_all_np'.upper())
+    nps = list(get_all_np(text, stem=False, return_set=True))
+    print('#np =', len(nps))
     for np in nps:
-        print(np.text)
+        print(np)
+
+    print('*' * 50)
+    print('spacy_noun_chunks - raw'.upper())
+    nps = list(spacy_noun_chunks_wrapper(text, trim_punct=False, remove_stopword=False))
+    print('#np =', len(nps))
+    for np_id, np in enumerate(nps):
+        print('[%d]' % np_id, np)
+
+    print('*' * 50)
+    print('spacy_noun_chunks - cleaned'.upper())
+    nps = list(spacy_noun_chunks_wrapper(text, trim_punct=True, remove_stopword=True))
+    print('#np =', len(nps))
+    for np_id, np in enumerate(nps):
+        print('[%d]' % np_id, np)
+    '''
+
+def spacy_tokenize(text):
+    spacy_doc = spacy_nlp(text, disable=["textcat"])
+    tokens = [token.text for token in spacy_doc]
+
+    return tokens
 
 
 def check_NP_recallM():
 
     datasets = ['duc', 'inspec', 'krapivin', 'nus', 'semeval', 'kp20k_valid2k', 'kp20k']
+    datasets = ['duc']
+
+    tokenize_fn = meng17_tokenize
+    tokenize_fn = spacy_tokenize
 
     for dataset in datasets:
-        input_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/json/%s/%s_test.json' % (dataset, dataset)
+        input_path = '/zfs1/hdaqing/rum20/kp/data/kp/json/%s/test.json' % (dataset)
         # input_path = '/Users/memray/project/kp/OpenNMT-kpg/data/keyphrase/json/%s/%s_test.json' % (dataset, dataset)
         # output_path = '/Users/memray/project/kp/OpenNMT-kpg/data/keyphrase/json/%s/%s_test_spacynp.json' % (dataset, dataset)
 
@@ -278,10 +391,11 @@ def check_NP_recallM():
 
         for l in tqdm.tqdm(input_json):
             doc = json.loads(l)
+            src_text = doc["title"] + ' . ' + doc["abstract"]
 
-            src_seq = meng17_tokenize(doc["title"] + ' . ' + doc["abstract"])
+            src_seq = tokenize_fn(src_text.lower())
             stemmed_src = stem_word_list(src_seq)
-            tgt_seqs = [meng17_tokenize(t) for t in doc["keywords"].lower().split(';')]
+            tgt_seqs = [tokenize_fn(t) for t in doc["keywords"].lower().split(';')]
             stemmed_tgt_seqs = [stem_word_list(p) for p in tgt_seqs]
 
             present_tgt_flags, _, _ = if_present_duplicate_phrases(stemmed_src, stemmed_tgt_seqs)
@@ -294,8 +408,9 @@ def check_NP_recallM():
 
             # np_set = get_all_np(' '.join(src_seq))
 
-            spacy_doc = spacy_nlp(' '.join(src_seq), disable=["textcat"])
-            spacy_nps = noun_chunks(spacy_doc, remove_duplicate=True)
+            spacy_doc = spacy_nlp(src_text.lower(), disable=["textcat"])
+            # spacy_nps = spacy_noun_chunks_all_nested(spacy_doc, remove_duplicate=True)
+            spacy_nps = noun_chunks_by_pos_regex(spacy_doc, min_len=1, max_len=5)
             nps = [[t.text.lower() for t in np] for np in spacy_nps]
             stemmed_nps = [' '.join(stem_word_list(p)) for p in nps]
             np_set = set(stemmed_nps)
@@ -318,18 +433,20 @@ def check_NP_recallM():
             doc.update(output_dict)
             # output_json.write(json.dumps(doc)+'\n')
 
-            # print('*' * 50)
-            # print(src_seq)
-            # print('len(tgt_seqs)= %d' % len(tgt_seqs))
-            # print(tgt_seqs)
-            # print('len(present_tgts)= %d' % len(present_tgts))
-            # print(present_tgts)
-            # print('len(np_set)= %d' % len(np_set))
-            # print(np_set)
-            # print('len(match_np)= %d' % len(match_np))
-            # print(match_np)
-            # print('recall=%.4f' % recall)
-            #
+            print('*' * 50)
+            print(src_text)
+            print('len(tgt_seqs)= %d' % len(tgt_seqs))
+            print(tgt_seqs)
+            print('len(present_tgts)= %d' % len(present_tgts))
+            print(present_tgts)
+            print('len(absent_tgts)= %d' % len(absent_tgts))
+            print(absent_tgts)
+            print('len(np_set)= %d' % len(np_set))
+            print(np_set)
+            print('len(match_np)= %d' % len(match_np))
+            print(match_np)
+            print('recall=%.4f' % recall)
+
             # break
 
         present_tgt_num_list = [n for n in present_tgt_num_list if n > 0]
@@ -338,10 +455,10 @@ def check_NP_recallM():
         num_data = len(recall_list)
         recall_list = [r for r in recall_list if r > -1.0]
         print('%s, #(dp)=%d, #(present_dp)=%d, '
-              'avgnum_present_pred=%.4f, avgnum_absent_pred=%.4f, '
+              'num_present_pred=%.4f, num_absent_pred=%.4f, '
               'avgnum_NP=%.4f, recall=%.4f' %
               (dataset, num_data, len(recall_list),
-               np.mean(present_tgt_num_list), np.mean(absent_tgt_num_list),
+               np.sum(present_tgt_num_list), np.sum(absent_tgt_num_list),
                np.mean(np_num_list), np.mean(recall_list)))
         # output_json.close()
 
@@ -447,5 +564,6 @@ def check_model_recallM():
                ))
 
 if __name__ == '__main__':
-    check_NP_recallM()
+    test_np()
+    # check_NP_recallM()
     # check_model_recallM()

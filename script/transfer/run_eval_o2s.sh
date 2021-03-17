@@ -10,7 +10,7 @@ slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 task_args="eval" # pred or eval
 batch_size=8
-beam_size=1
+beam_size=50
 max_length=40
 step_base=1
 

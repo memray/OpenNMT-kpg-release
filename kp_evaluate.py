@@ -1,16 +1,13 @@
 
 import argparse
 import json
+import os
 import re
 import time
 
 import tqdm
 import numpy as np
-from collections import Counter
-
 import pandas as pd
-
-import os
 
 from onmt.inputters.keyphrase_dataset import infer_dataset_type, KP_DATASET_FIELDS, parse_src_fn
 from onmt.keyphrase import utils
@@ -18,15 +15,13 @@ from onmt.keyphrase.eval import compute_match_scores, run_classic_metrics, run_a
 from onmt.keyphrase.utils import if_present_duplicate_phrases, validate_phrases, print_predeval_result, gather_scores
 from onmt.utils.logging import init_logger
 
+import spacy
+spacy_nlp = spacy.load('en_core_web_sm')
 
 def evaluate(dataset_name, src_list, tgt_list, pred_list,
              unk_token,
              logger=None, verbose=False,
-             report_path=None, eval_topbeam=False):
-    # progbar = Progbar(logger=logger, title='', target=len(pred_list), total_examples=len(pred_list))
-
-    apply_meng_tokenize = dataset_name in ['kp20k', 'inspec', 'krapivin', 'nus', 'semeval']
-
+             report_path=None):
     if report_path:
         report_file = open(report_path, 'w+')
     else:
@@ -45,29 +40,20 @@ def evaluate(dataset_name, src_list, tgt_list, pred_list,
         """
         1. Process each data example and predictions
         """
-        src_seq = src_dict["src"].split()
-        tgt_seqs = [t.split() for t in tgt_dict["tgt"]]
+        pred_seqs = pred_dict["pred_sents"]
+        pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
+        pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
+        copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
 
-        if eval_topbeam:
-            pred_seqs = pred_dict["topseq_pred_sents"]
-            pred_idxs = pred_dict["topseq_preds"] if "topseq_preds" in pred_dict else None
-            pred_scores = pred_dict["topseq_pred_scores"] if "topseq_pred_scores" in pred_dict else None
-            copied_flags = None
-        else:
-            pred_seqs = pred_dict["pred_sents"]
-            pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
-            pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
-            copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
-
-        # for scipaper datasets, we re-tokenize generated phrases
-        if apply_meng_tokenize:
-            _pred_seqs = [' '.join(pred_seq) for pred_seq in pred_seqs]
-            pred_seqs = [utils.meng17_tokenize(tgt_str) for tgt_str in _pred_seqs]
+        # @memray 20200316 change to spacy tokenization rather than simple splitting or Meng's tokenization
+        src_seq = [t.text for t in spacy_nlp(src_dict["src"], disable=["textcat"])]
+        tgt_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_dict["tgt"]]
+        pred_seqs = [[t.text for t in spacy_nlp(' '.join(p), disable=["textcat"])] for p in pred_seqs]
 
         # 1st filtering, ignore phrases having <unk> and puncs
         valid_pred_flags = validate_phrases(pred_seqs, unk_token)
         # 2nd filtering: filter out phrases that don't appear in text, and keep unique ones after stemming
-        present_pred_flags, _, duplicate_flags = if_present_duplicate_phrases(src_seq, pred_seqs)
+        present_pred_flags, _, duplicate_flags = if_present_duplicate_phrases(src_seq, pred_seqs, stemming=True, lowercase=True)
         # treat duplicates as invalid
         valid_pred_flags = valid_pred_flags * ~duplicate_flags if len(valid_pred_flags) > 0 else []
         valid_and_present_flags = valid_pred_flags * present_pred_flags if len(valid_pred_flags) > 0 else []
@@ -80,7 +66,7 @@ def evaluate(dataset_name, src_list, tgt_list, pred_list,
         # match_scores_mixed = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs, type='mixed')
 
         # split tgts by present/absent
-        present_tgt_flags, _, _ = if_present_duplicate_phrases(src_seq, tgt_seqs)
+        present_tgt_flags, _, _ = if_present_duplicate_phrases(src_seq, tgt_seqs, stemming=True, lowercase=True)
         present_tgts = [tgt for tgt, present in zip(tgt_seqs, present_tgt_flags) if present]
         absent_tgts = [tgt for tgt, present in zip(tgt_seqs, present_tgt_flags) if ~present]
 
@@ -179,7 +165,7 @@ def evaluate(dataset_name, src_list, tgt_list, pred_list,
         4. Print results if necessary
         """
         if verbose or report_file:
-            print_out = print_predeval_result(i, src_dict,
+            print_out = print_predeval_result(i, ' '.join(src_seq),
                                               tgt_seqs, present_tgt_flags,
                                               pred_seqs, pred_scores, pred_idxs, copied_flags,
                                               present_pred_flags, valid_pred_flags,
@@ -243,7 +229,7 @@ def baseline_pred_loader(pred_path, model_name):
 
 def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
                    unk_token='<unk>', verbose=False, logger=None,
-                   report_path=None, eval_topbeam=False, model_name='nn'):
+                   report_path=None, model_name='nn'):
     # change data loader to iterator, otherwise it consumes more than 64gb RAM
     # check line numbers first
     dataset_name = '_'.join(datasplit_name.split('_')[: -1])
@@ -276,15 +262,9 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
                 else:
                     tgt_kps = tgt_ex[keyword_field]
 
-                # TODO, using meng17 tokenization might not be proper for other domains, only apply for paper datasets
-                if dataset_name in ['kp20k', 'inspec', 'krapivin', 'nus', 'semeval']:
-                    src_tokens = utils.meng17_tokenize(src_str)
-                    tgt_kps_tokens = [utils.meng17_tokenize(tgt_str) for tgt_str in tgt_kps]
-                    src_ex['src'] = ' '.join(src_tokens)
-                    tgt_ex['tgt'] = [' '.join(tgt_tokens) for tgt_tokens in tgt_kps_tokens]
-                else:
-                    src_ex['src'] = src_str
-                    tgt_ex['tgt'] = tgt_kps
+                src_ex['src'] = src_str
+                tgt_ex['tgt'] = tgt_kps
+
         if model_name == 'nn':
             pred_data = [json.loads(l) for l in open(pred_path, "r")]
         else:
@@ -293,7 +273,7 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
         results_dict = evaluate(dataset_name, src_data, tgt_data, pred_data,
                                 unk_token=unk_token,
                                 logger=logger, verbose=verbose,
-                                report_path=report_path, eval_topbeam=eval_topbeam)
+                                report_path=report_path)
         total_time = time.time() - start_time
         logger.info("Total evaluation time (s): %f" % total_time)
 
@@ -492,8 +472,6 @@ def init_opt():
                         help=".")
     parser.add_argument('--verbose', '-v', action='store_true',
                         help=".")
-    parser.add_argument('--eval_topbeam', '-eval_topbeam', action='store_true', required=False, help='(only useful for one2seq models) Evaluate with all sequences or just take the top-score sequence.')
-
     parser.add_argument('-testsets', nargs='+', type=str, default=["inspec", "krapivin", "nus", "semeval", "duc"], help='Specify datasets to test on')
 
     opt = parser.parse_args()
@@ -534,8 +512,7 @@ if __name__ == '__main__':
                                               unk_token = '<unk>',
                                               verbose = opt.verbose,
                                               logger = logger,
-                                              report_path = report_path,
-                                              eval_topbeam=opt.eval_topbeam
+                                              report_path = report_path
                                             )
                 logger.info(kp_results_to_str(score_dict))
 

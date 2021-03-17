@@ -2,11 +2,13 @@
 """
 Python File Template 
 """
+import copy
+import json
 
-import os
-import string
-
+from onmt.constants import ModelTask
+from onmt.keyphrase.eval import eval_and_print
 from onmt.keyphrase.pke.utils import compute_document_frequency
+from onmt.utils.parse import ArgumentParser
 
 exec('from __future__ import unicode_literals')
 
@@ -21,28 +23,71 @@ module_path = os.path.abspath(os.path.join('../onmt'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
-from itertools import repeat
-
-from onmt.utils.logging import init_logger
-from onmt.utils.misc import split_corpus
 from onmt.translate.translator import build_translator
 
-import onmt.opts as opts
-from onmt.utils.parse import ArgumentParser
-from kp_gen_eval import _get_parser
+from kp_gen_eval_transfer import _get_parser
 import string
 import onmt.keyphrase.pke as pke
 
 from nltk.corpus import stopwords
 stoplist = stopwords.words('english')
-
+import spacy
+spacy_nlp = spacy.load('en_core_web_sm')
 
 __author__ = "Rui Meng"
 __email__ = "rui.meng@pitt.edu"
 
 
-def extract_deepkp(text_to_extract):
-    # Supervised Deep Keyphrase Model
+def extract_bartkp(ex_dict):
+    # Supervised Deep Keyphrase Model, using OpenNMT 2.x pipeline
+    parser = _get_parser()
+    config_path = '/zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/config/transfer_kp/infer/keyphrase-one2seq-controlled.yml'
+    opt = parser.parse_args('-config %s' % (config_path))
+
+    ckpt_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/bart_kppretrain_wiki_1e5/ckpts/checkpoint_step_100000.pt'
+    opt.__setattr__('models', [ckpt_path])
+    opt.__setattr__('fairseq_model', True)
+    opt.__setattr__('encoder_type', 'bart')
+    opt.__setattr__('decoder_type', 'bart')
+    opt.__setattr__('pretrained_tokenizer', True)
+    opt.__setattr__('copy_attn', False)
+
+    opt.__setattr__('valid_batch_size', 1)
+    opt.__setattr__('batch_size_multiple', 1)
+    opt.__setattr__('bucket_size', 128)
+    opt.__setattr__('pool_factor', 256)
+
+    opt.__setattr__('beam_size', 1)
+    opt.__setattr__('gpu', 0)
+
+    if isinstance(opt.data, str): setattr(opt, 'data', json.loads(opt.data.replace('\'', '"')))
+    setattr(opt, 'data_task', ModelTask.SEQ2SEQ)
+    ArgumentParser._get_all_transform(opt)
+
+    translator = build_translator(opt, report_score=False)
+
+    num_pres, num_header, num_cat, num_seealso, num_infill = 5, 5, 5, 2, 0
+
+    control_prefix = '<present>%d<header>%d<category>%d<seealso>%d<infill>%d<s>' \
+                     % (num_pres, num_header, num_cat, num_seealso, num_infill)
+
+    new_ex_dict = copy.copy(ex_dict)
+    new_ex_dict['src_control_prefix'] = control_prefix
+
+    scores, preds = translator.translate(
+        src=[new_ex_dict],
+        batch_size=opt.batch_size,
+        attn_debug=opt.attn_debug,
+        opt=opt
+    )
+
+    src_text = new_ex_dict['title'] + ' . ' + new_ex_dict['abstract']
+    printout = eval_and_print(src_text, tgt_kps=ex_dict['keywords'], pred_kps=preds[0], pred_scores=scores[0])
+    print(printout)
+
+
+def extract_deepkp_deprecated(text_to_extract):
+    # Supervised Deep Keyphrase Model, using OpenNMT 1.x pipeline
     parser = _get_parser()
     config_path = '../config/translate/config-rnn-keyphrase.yml'
     one2one_ckpt_path = '../models/keyphrase/meng17-one2one-kp20k-topmodels/kp20k-meng17-one2one-rnn-BS128-LR0.05-Layer1-Dim150-Emb100-Dropout0.0-Copytrue-Covfalse-Contboth-IF1_step_30000.pt'
@@ -139,25 +184,37 @@ def extract_pke(text, method, dataset_path=None, df_path=None, top_k=10):
 
 
 if __name__ == '__main__':
-    dataset_name = 'SF_Prod'
-    dataset_path = '../data/salesforce/%s/' % dataset_name
-    prod_dicts = []
-    for subdir, dirs, files in os.walk(dataset_path):
-        for file in files:
-            filepath = subdir + os.sep + file
-            text = open(filepath, 'r').readlines()
-            text = '\n'.join([l.strip() for l in text])
-            doc = {'name': file, 'path': filepath, 'text': text}
-            prod_dicts.append(doc)
+    dataset_name = 'stackex'
+    dataset_path = '/zfs1/hdaqing/rum20/kp/data/kp/json/%s/test.json' % dataset_name
 
-    print('Loaded #(PROD docs)=%d' % (len(prod_dicts)))
-    doc_id = random.randint(0, len(prod_dicts))
-    doc = prod_dicts[doc_id]
-    text_to_extract = doc['text']
+    with open(dataset_path, 'r') as f:
+        ex_dicts = [json.loads(l) for l in f.readlines()]
+        for ex in ex_dicts:
+            if dataset_name.startswith('openkp'):
+                ex['title'] = ''
+                ex['abstract'] = ex['text']
+                ex['keywords'] = ex['KeyPhrases']
+                ex['dataset_type'] = 'webpage'
+            elif dataset_name.startswith('stackex'):
+                ex['abstract'] = ex['question']
+                ex['keywords'] = ex['tags'].split(';')
+                ex['dataset_type'] = 'qa'
+            elif dataset_name.startswith('kp20k') or dataset_name.startswith('duc'):
+                ex['keywords'] = ex['keywords'].split(';') if isinstance(ex['keywords'], str) else ex['keywords']
+                ex['dataset_type'] = 'scipaper'
+            elif dataset_name.startswith('kptimes') or dataset_name.startswith('jptimes'):
+                ex['keywords'] = ex['keywords'].split(';') if isinstance(ex['keywords'], str) else ex['keywords']
+                ex['dataset_type'] = 'news'
+            else:
+                print('????')
+
+    print('Loaded #(docs)=%d' % (len(ex_dicts)))
+    doc_id = random.randint(0, len(ex_dicts))
+    doc_id = 4399
+    ex_dict = ex_dicts[doc_id]
     print(doc_id)
-    print(doc['name'])
-    print(text_to_extract)
 
-    extract_deepkp(text_to_extract)
-    extract_pke(text_to_extract, method='tfidf' , dataset_path=dataset_path,
-                df_path=os.path.abspath(dataset_path + '../%s.df.tsv.gz' % dataset_name))
+    extract_bartkp(ex_dict)
+    # extract_pke(text_to_extract, method='tfidf' , dataset_path=dataset_path,
+    #             df_path=os.path.abspath(dataset_path + '../%s.df.tsv.gz' % dataset_name))
+

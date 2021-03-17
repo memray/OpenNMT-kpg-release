@@ -21,7 +21,8 @@ from onmt.inputters import KeyphraseDataset
 from onmt.decoders import BARTDecoder
 from onmt.encoders import PretrainedEncoder, BARTEncoder
 from onmt.inputters.inputter import IterOnDevice
-from onmt.train_single import _build_valid_iter
+from onmt.keyphrase.eval import eval_and_print
+from onmt.train_single import _build_valid_iter, _build_iter_given_examples
 
 from onmt.translate.beam_search import BeamSearch, BeamSearchLM
 from onmt.translate.greedy_search import GreedySearch, GreedySearchLM
@@ -443,10 +444,10 @@ class Inference(object):
                 setattr(self.opt, 'lowercase', self.model_opt.lowercase)
 
             _, transforms_cls = prepare_fields_transforms(opt)
-            _data_iter = _build_valid_iter(opt, self.fields, transforms_cls)
+            _data_iter = _build_iter_given_examples(src, opt, self.fields, transforms_cls, is_train=False)
             data_iter = IterOnDevice(_data_iter, device_id=self._gpu)
-            data = None
-            # src_vocabs is used in collapse_copy_scores and Translator.py
+            data = src
+            # src_vocabs will be used in collapse_copy_scores and Translator.py
             src_vocabs = None
             has_tgt = True
         else:
@@ -516,7 +517,7 @@ class Inference(object):
                 for t in translations:
                     t.add_copied_flags(vocab_size)
 
-            for trans in translations:
+            for tid, trans in enumerate(translations):
                 all_scores += [trans.pred_scores[: self.n_best]]
                 pred_score_total += trans.pred_scores[0]
                 pred_words_total += len(trans.pred_sents[0])
@@ -555,7 +556,10 @@ class Inference(object):
                 if self.verbose:
                     sent_number = next(counter)
                     if self.data_type == "keyphrase":
-                        output = trans.log_kp(sent_number)
+                        # output = trans.log_kp(sent_number)
+                        src_text = data[trans.index]['src_str']
+                        tgt_list = data[trans.index]['tgt_str'].split('<sep>')
+                        output = eval_and_print(src_text, tgt_kps=tgt_list, pred_kps=n_best_preds, pred_scores=trans.pred_scores[: self.n_best])
                     else:
                         output = trans.log(sent_number)
 

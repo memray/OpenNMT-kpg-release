@@ -19,6 +19,12 @@ from onmt.utils.logging import init_logger
 
 import onmt.opts as opts
 
+train_test_mappings = {
+    'kp20k': ['kp20k', 'kp20k', 'inspec', 'krapivin', 'semeval', 'nus', 'duc'],
+    'openkp': ['openkp', 'duc'],
+    'kptimes': ['kptimes', 'jptimes', 'duc'],
+    'stackex': ['stackex', 'duc'],
+}
 
 def scan_new_checkpoints(ckpt_dir):
     ckpts = []
@@ -26,8 +32,8 @@ def scan_new_checkpoints(ckpt_dir):
         for file in files:
             if file.endswith('.pt'):
                 ckpt_name = file[: file.find('.pt')]
-                if ckpt_name == 'checkpoint_last':
-                    # skip the last ckpt of fairseq jobs
+                if not 'step' in ckpt_name:
+                    # skip the last ckpt of fairseq jobs such as 'checkpoint_last.pt' and 'checkpoint54.pt'
                     continue
                 ckpt_path = os.path.join(subdir, file)
                 exp_dir = os.path.dirname(subdir)
@@ -69,12 +75,14 @@ if __name__ == "__main__":
                              '1 means evaluate everything.')
     parser.add_argument('-test_interval', type=int, default=600, help='Minimum time interval the job should wait if a .pred file is not updated by another job (imply another job failed).')
     parser.add_argument('-testsets', nargs='+', type=str, default=['kp20k', 'openkp', 'stackex', 'kptimes', 'jptimes'], help='Specify datasets to test on')
-    parser.add_argument('-splits', nargs='+', type=str, default=['test', 'valid'], help='Specify datasets to test on')
+    parser.add_argument('--pred_trained_only', '-pred_trained_only', action='store_true', help='If true, it only runs inference of testsets that the job has been trained with.')
+    parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
+
+    parser.add_argument('-splits', nargs='+', type=str, default=['train', 'test', 'valid'], help='Specify datasets to test on')
     parser.add_argument('--onepass', '-onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop scanning new available ckpts.')
     parser.add_argument('--wait_patience', '-wait_patience', type=int, default=3, help='Terminates evaluation after scan this number of times.')
     parser.add_argument('--wait_time', '-wait_time', type=int, default=120, help='.')
     parser.add_argument('--sleep_time', '-sleep_time', type=int, default=600, help='.')
-    parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
 
     opt = parser.parse_args()
     if isinstance(opt.data, str):
@@ -116,6 +124,8 @@ if __name__ == "__main__":
             src_shard = split_corpus(opt.data_dir + '/%s/%s.json' % (testset, split), shard_size=-1)
             tgt_shard = split_corpus(opt.data_dir + '/%s/%s.json' % (testset, split), shard_size=-1)
             src_shard, tgt_shard = list(zip(src_shard, tgt_shard))[0]
+            src_shard = [json.loads(l) for l in src_shard]
+            tgt_shard = [json.loads(l) for l in tgt_shard]
             logger.info("Loaded data from %s-%s: #src=%d, #tgt=%d" % (testset, split, len(src_shard), len(tgt_shard)))
             testset_path_dict[testset+'_'+split] = (opt.data_dir + '/%s/%s.json' % (testset, split),
                                           opt.data_dir + '/%s/%s.json' % (testset, split),
@@ -153,23 +163,33 @@ if __name__ == "__main__":
 
             score_dicts = {}
             for datasplit_name, dataset in testset_path_dict.items():
+                # ignore current testdata-split if this data is not used in training
+                if opt.pred_trained_only:
+                    pass_flag = False
+                    cur_testname = datasplit_name[: datasplit_name.index('_')] if '_' in datasplit_name else datasplit_name
+                    for trainname, testnames in train_test_mappings.items():
+                        # training dataset name appears in exp_name
+                        if trainname in exp_name and cur_testname in testnames:
+                            pass_flag = True
+                    if not pass_flag:
+                        print('Skip predict/evaluate test=[%s] for ckpt=[%s] due to train/test mismatch.' % (datasplit_name, exp_name))
+                        continue
+
                 src_path, tgt_path, src_shard, tgt_shard = dataset
 
                 pred_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'pred')
                 eval_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'eval')
                 pred_file = '%s-data_%s.pred' % (ckpt_name, datasplit_name)
                 printout_file = '%s-data_%s.report' % (ckpt_name, datasplit_name)
-                eval_file = '%s-data_%s.eval' % (ckpt_name, datasplit_name)
+                eval_file = '%s-data_%s.spacyeval' % (ckpt_name, datasplit_name)
 
                 pred_path = os.path.join(pred_dir, pred_file)
                 printout_path = os.path.join(pred_dir, printout_file)
                 eval_path = os.path.join(eval_dir, eval_file)
 
                 # create dirs
-                if not os.path.exists(pred_dir):
-                    os.makedirs(pred_dir)
-                if not os.path.exists(eval_dir):
-                    os.makedirs(eval_dir)
+                if not os.path.exists(pred_dir): os.makedirs(pred_dir)
+                if not os.path.exists(eval_dir): os.makedirs(eval_dir)
 
                 # do translation
                 # skip translation for this dataset if previous pred exists
@@ -208,6 +228,11 @@ if __name__ == "__main__":
                     opt.data['valid']['path_align'] = None
                     try:
                         if do_trans_flag or opt.ignore_existing:
+                            logger.info("*" * 50)
+                            logger.info("Start translating [data=%s] for [exp=%s]-[ckpt=%s]." % (datasplit_name, exp_name, ckpt_name))
+                            logger.info("\t exporting PRED result to %s." % (pred_path))
+                            logger.info("*" * 50)
+
                             # if it's BART model, OpenNMT has to do something additional
                             if exp_name.strip().startswith('bart'):
                                 opt.__setattr__('fairseq_model', True)
@@ -223,12 +248,8 @@ if __name__ == "__main__":
                             codecs.open(pred_path, 'w+', 'utf-8').close()
                             # set output_file for each dataset (instead of outputting to opt.output)
                             translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                            logger.info("*" * 50)
-                            logger.info("Start translating [%s] for %s." % (datasplit_name, ckpt_name))
-                            logger.info("\t exporting PRED result to %s." % (pred_path))
-                            logger.info("*" * 50)
                             _, _ = translator.translate(
-                                src=None,
+                                src=src_shard,
                                 batch_size=opt.batch_size,
                                 attn_debug=opt.attn_debug,
                                 opt=opt

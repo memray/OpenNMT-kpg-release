@@ -2,9 +2,11 @@
 from itertools import cycle
 
 from torchtext.data import batch as torchtext_batch
+
+from onmt.constants import CorpusName
 from onmt.inputters import str2sortkey, max_tok_len, OrderedIterator
-from onmt.inputters.corpus import get_corpora, build_corpora_iters,\
-    DatasetAdapter
+from onmt.inputters.corpus import get_corpora, build_corpora_iters, \
+    DatasetAdapter, ParallelCorpus
 from onmt.transforms import make_transforms
 
 
@@ -199,3 +201,21 @@ def build_dynamic_dataset_iter(fields, transforms_cls, opts, is_train=True,
     return DynamicDatasetIter.from_opts(
         corpora, transforms, fields, opts, is_train,
         stride=stride, offset=offset)
+
+
+def build_dynamic_dataset_iter_given_examples(examples, fields, transforms_cls, opts, is_train = False):
+    """Build `DynamicDatasetIter` from fields & opts."""
+    transforms = make_transforms(opts, transforms_cls, fields)
+    corpora = {}
+
+    corpora[CorpusName.VALID] = ParallelCorpus(
+        CorpusName.VALID,
+        opts.data[CorpusName.VALID]["path_src"],
+        opts.data[CorpusName.VALID]["path_tgt"],
+        opts.data[CorpusName.VALID]["path_align"],
+        dataset_type=opts.data[CorpusName.VALID]["type"],
+        examples=examples
+    )
+
+    return DynamicDatasetIter.from_opts(
+        corpora, transforms, fields, opts, is_train)

@@ -3,6 +3,7 @@
 Load averaged results from csv, containing scores of all ckpts.
 For each exp group, return the best ckpt (ranked by valid performance).
 """
+import shutil
 
 import configargparse
 import os
@@ -18,16 +19,16 @@ dev_test_pairs = [
     ('kp20k_valid2k', 'kp20k'),
     ('openkp_valid2k', 'openkp'),
     ('kptimes_valid2k', 'kptimes'),
-    ('jptimes_valid2k', 'jptimes'),
-    ('stackex_valid2k', 'stackex'),
-
+    ('kptimes_valid2k', 'jptimes'),
     ('kptimes_valid2k', 'duc'),
+    ('stackex_valid2k', 'stackex'),
 ]
 
 def main():
     parser = configargparse.ArgumentParser()
     parser.add_argument('-report_dir', type=str, required=True, help='Directory to all report csv files.')
     parser.add_argument('-pred_name', type=str, required=True, help='Filter by pred_name, since there exists results by multiple decoding settings from the same ckpt.')
+    parser.add_argument('-export_dir', type=str, required=False, default=None, help='If set, the best pred/eval files will be copied to this place.')
     opt = parser.parse_args()
 
     kp_df = None
@@ -88,10 +89,25 @@ def main():
             if test_row is not None and len(test_row) > 0:
                 devbest_dev_rows = dev_row if devbest_dev_rows is None else pd.concat([devbest_dev_rows, dev_row])
                 devbest_test_rows = test_row if devbest_test_rows is None else pd.concat([devbest_test_rows, test_row])
+
+                # move the best dev pred/eval to the specified place
+                if opt.export_dir is not None:
+                    with pd.option_context('display.max_colwidth', 9999999):
+                        pred_file_path = test_row.pred_file_path.to_string(index=False)
+                        eval_file_path = test_row.eval_file_path.to_string(index=False)
+                        target_dir = os.path.join(opt.export_dir, 'dev_best', exp_name, '')
+                        exp_name = test_row.exp_name.to_string(index=False)
+                        pred_file_name = pred_file_path[pred_file_path.rfind('/') + 1: ]
+                        eval_file_name = eval_file_path[pred_file_path.rfind('/') + 1:]
+                        target_pred_file = '-'.join([exp_name, pred_file_name])
+                        target_eval_file = '-'.join([exp_name, eval_file_name])
+
+                    if not os.path.exists(target_dir): os.makedirs(target_dir)
+                    shutil.copyfile(pred_file_path, target_dir + target_pred_file)
+                    shutil.copyfile(eval_file_path, target_dir + target_eval_file)
             else:
                 print('Cannot find valid dev-best rows: exp=%s, data=%s, dev_df.size=%d, test_df.size=%d'
                       % (exp_name, str(dev_test_pair), len(dev_df), len(test_df)))
-
 
         print('Dev best - ' + dev_name)
         print(devbest_dev_rows.sort_values(by=anchor_metric_name, ascending=False).to_csv()) if devbest_dev_rows is not None else print('Empty')

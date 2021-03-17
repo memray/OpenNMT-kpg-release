@@ -291,6 +291,8 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
     :param absent_pos: must be one of [prepend, append and ignore], ignore means simply drop absent kps
     :return:
     """
+    # TODO: change to spacy tokenization
+    print('TODO: change to spacy tokenization!!!')
     num_tgt = len(tgt_seqs)
 
     if sort_by == 'random':

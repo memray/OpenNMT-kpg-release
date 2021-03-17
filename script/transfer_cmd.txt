@@ -3,9 +3,9 @@ source script/transfer/run_pred_o2o_gpu.sh
 source script/transfer/run_pred_o2s_gpu.sh
 source script/transfer/run_pred_o2s_gpu_fewshot.sh
 
-source script/transfer/run_eval.sh
-source script/transfer/run_eval_fewshot.sh
 source script/transfer/run_eval_o2o.sh
+source script/transfer/run_eval_o2s.sh
+source script/transfer/run_eval_o2s_fewshot.sh
 
 sbatch script/transfer/kppred_v100.sh
 
@@ -52,10 +52,17 @@ sbatch script/transfer/train/kpgen-transformer-one2one-stackex.sh
 # BART-o2s-fewshot
 sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-kp20k.sh
 sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-openkp.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-kptimes.sh
 sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-stackex.sh
+sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-kptimes.sh
 
+# BART-wikikp-o2s-fewshot
 sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-kp20k.sh
 sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-openkp.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-kptimes.sh
 sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-stackex.sh
+sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-kptimes.sh
+
+# BART-wikikp-DAFT-o2s-fewshot
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kp20k_10k.sh
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kptimes_10k.sh
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-openkp_10k.sh
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-stackex_10k.sh

@@ -16,6 +16,10 @@ from nltk.translate.bleu_score import sentence_bleu as bleu
 from nltk.stem.porter import *
 stemmer = PorterStemmer()
 
+import spacy
+spacy_nlp = spacy.load('en_core_web_sm')
+from onmt.keyphrase.utils import validate_phrases, if_present_duplicate_phrases
+
 __author__ = "Rui Meng"
 __email__ = "rui.meng@pitt.edu"
 
@@ -177,10 +181,16 @@ def run_classic_metrics(match_list, pred_list, tgt_list, score_names, topk_range
         else:
             micro_f1_hard = 0.0
 
-        for score_name, v in zip(score_names, [correct_num, micro_p, micro_r, micro_f1, micro_p_hard, micro_f1_hard]):
+        for score_name, v in zip(['correct', 'precision', 'recall', 'f_score', 'precision_hard', 'f_score_hard'], [correct_num, micro_p, micro_r, micro_f1, micro_p_hard, micro_f1_hard]):
             score_dict['{}@{}'.format(score_name, topk)] = v
 
-    return score_dict
+    # return only the specified scores
+    return_scores = {}
+    for topk in topk_range:
+        for score_name in score_names:
+            return_scores['{}@{}'.format(score_name, topk)] = score_dict['{}@{}'.format(score_name, topk)]
+
+    return return_scores
 
 
 def run_advanced_metrics(match_scores, pred_list, tgt_list):
@@ -430,3 +440,127 @@ def self_redundancy(_input):
     res = np.max(scores, 1)
     res = np.mean(res)
     return res
+
+
+def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>'):
+    src_seq = [t.text.lower() for t in spacy_nlp(src_text, disable=["textcat"])]
+    tgt_seqs = [[t.text.lower() for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_kps]
+    pred_seqs = [[t.text.lower() for t in spacy_nlp(p, disable=["textcat"])] for p in pred_kps]
+
+    topk_range = ['k', 10]
+    absent_topk_range = ['M']
+    metric_names = ['f_score']
+
+    # 1st filtering, ignore phrases having <unk> and puncs
+    valid_pred_flags = validate_phrases(pred_seqs, unk_token)
+    # 2nd filtering: filter out phrases that don't appear in text, and keep unique ones after stemming
+    present_pred_flags, _, duplicate_flags = if_present_duplicate_phrases(src_seq, pred_seqs)
+    # treat duplicates as invalid
+    valid_pred_flags = valid_pred_flags * ~duplicate_flags if len(valid_pred_flags) > 0 else []
+    valid_and_present_flags = valid_pred_flags * present_pred_flags if len(valid_pred_flags) > 0 else []
+    valid_and_absent_flags = valid_pred_flags * ~present_pred_flags if len(valid_pred_flags) > 0 else []
+
+    # compute match scores (exact, partial and mixed), for exact it's a list otherwise matrix
+    match_scores_exact = compute_match_scores(tgt_seqs=tgt_seqs, pred_seqs=pred_seqs,
+                                              do_lower=True, do_stem=True, type='exact')
+    # split tgts by present/absent
+    present_tgt_flags, _, _ = if_present_duplicate_phrases(src_seq, tgt_seqs)
+    present_tgts = [tgt for tgt, present in zip(tgt_seqs, present_tgt_flags) if present]
+    absent_tgts = [tgt for tgt, present in zip(tgt_seqs, present_tgt_flags) if ~present]
+
+    # filter out results of invalid preds
+    valid_preds = [seq for seq, valid in zip(pred_seqs, valid_pred_flags) if valid]
+    valid_present_pred_flags = present_pred_flags[valid_pred_flags]
+
+    valid_match_scores_exact = match_scores_exact[valid_pred_flags]
+
+    # split preds by present/absent and exact/partial/mixed
+    valid_present_preds = [pred for pred, present in zip(valid_preds, valid_present_pred_flags) if present]
+    valid_absent_preds = [pred for pred, present in zip(valid_preds, valid_present_pred_flags) if ~present]
+    present_exact_match_scores = valid_match_scores_exact[valid_present_pred_flags]
+    absent_exact_match_scores = valid_match_scores_exact[~valid_present_pred_flags]
+
+    all_exact_results = run_classic_metrics(valid_match_scores_exact, valid_preds, tgt_seqs, metric_names, topk_range)
+    present_exact_results = run_classic_metrics(present_exact_match_scores, valid_present_preds, present_tgts, metric_names, topk_range)
+    absent_exact_results = run_classic_metrics(absent_exact_match_scores, valid_absent_preds, absent_tgts, metric_names, absent_topk_range)
+
+    eval_results_names = ['all_exact', 'present_exact', 'absent_exact']
+    eval_results_list = [all_exact_results, present_exact_results, absent_exact_results]
+
+    print_out = print_predeval_result(src_text,
+                                      tgt_seqs, present_tgt_flags,
+                                      pred_seqs, pred_scores, present_pred_flags, valid_pred_flags,
+                                      valid_and_present_flags, valid_and_absent_flags, match_scores_exact,
+                                      eval_results_names, eval_results_list)
+    return print_out
+
+
+def print_predeval_result(src_text,
+                          tgt_seqs, present_tgt_flags,
+                          pred_seqs, pred_scores, present_pred_flags, valid_pred_flags,
+                          valid_and_present_flags, valid_and_absent_flags, match_scores_exact,
+                          results_names, results_list):
+    print_out = '=' * 50
+    print_out += '\n[Source]: %s \n' % (src_text)
+
+    print_out += '[GROUND-TRUTH] #(all)=%d, #(present)=%d, #(absent)=%d\n' % \
+                 (len(present_tgt_flags), sum(present_tgt_flags), len(present_tgt_flags)-sum(present_tgt_flags))
+    print_out += '\n'.join(
+        ['\t\t[%s]' % ' '.join(phrase) if is_present else '\t\t%s' % ' '.join(phrase) for phrase, is_present in
+         zip(tgt_seqs, present_tgt_flags)])
+
+    print_out += '\n[PREDICTION] #(all)=%d, #(valid)=%d, #(present)=%d, ' \
+                 '#(valid&present)=%d, #(valid&absent)=%d\n' % (
+        len(pred_seqs), sum(valid_pred_flags), sum(present_pred_flags),
+        sum(valid_and_present_flags), sum(valid_and_absent_flags))
+    print_out += ''
+    preds_out = ''
+    for p_id, (word, match, is_valid, is_present) in enumerate(
+        zip(pred_seqs, match_scores_exact, valid_pred_flags, present_pred_flags)):
+        score = pred_scores[p_id] if pred_scores else "Score N/A"
+
+        preds_out += '%s\n' % (' '.join(word))
+        if is_present:
+            print_phrase = '[%s]' % ' '.join(word)
+        else:
+            print_phrase = ' '.join(word)
+
+        if match == 1.0:
+            correct_str = '[correct!]'
+        else:
+            correct_str = ''
+
+        pred_str = '\t\t%s\t%s \t%s\n' % ('[%.4f]' % (-score) if pred_scores else "Score N/A",
+                                                print_phrase, correct_str)
+        if not is_valid:
+            pred_str = '\t%s' % pred_str
+
+        print_out += pred_str
+
+    print_out += "\n ======================================================= \n"
+
+    print_out += '[GROUND-TRUTH] #(all)=%d, #(present)=%d, #(absent)=%d\n' % \
+                 (len(present_tgt_flags), sum(present_tgt_flags), len(present_tgt_flags)-sum(present_tgt_flags))
+    print_out += '\n[PREDICTION] #(all)=%d, #(valid)=%d, #(present)=%d, ' \
+                 '#(valid&present)=%d, #(valid&absent)=%d\n' % (
+        len(pred_seqs), sum(valid_pred_flags), sum(present_pred_flags),
+        sum(valid_and_present_flags), sum(valid_and_absent_flags))
+
+    for name, results in zip(results_names, results_list):
+        # print @5@10@O@M for present_exact, print @50@M for absent_exact
+        if name in ['all_exact', 'present_exact', 'absent_exact']:
+            if name.startswith('all') or name.startswith('present'):
+                topk_list = ['10', 'k']
+            else:
+                topk_list = ['M']
+
+            for topk in topk_list:
+                print_out += "\n --- batch {} F1 @{}: \t".format(name, topk) \
+                             + "{:.4f}".format(results['f_score@{}'.format(topk)])
+        else:
+            # ignore partial for now
+            continue
+
+    print_out += "\n ======================================================="
+
+    return print_out
