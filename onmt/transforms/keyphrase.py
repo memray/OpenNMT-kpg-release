@@ -8,6 +8,8 @@ from onmt.inputters.keyphrase_dataset import KP_DATASET_FIELDS, KP_CONCAT_TYPES,
 from onmt.transforms import register_transform
 from .transform import Transform
 
+import spacy
+spacy_nlp = spacy.load('en_core_web_sm')
 
 @register_transform(name='keyphrase')
 class KeyphraseTransform(Transform):
@@ -63,8 +65,12 @@ class KeyphraseTransform(Transform):
         title_field, text_field, keyword_field, category_field = KP_DATASET_FIELDS[dataset_type]
 
         src_str = parse_src_fn(ex_dict, title_field, text_field)
+        # make sure each phrase is a separate text string, not a list nor concatenated multiple phrases
         if isinstance(ex_dict[keyword_field], str):
             tgt_kps = ex_dict[keyword_field].split(';')
+        elif isinstance(ex_dict[keyword_field], list) and len(ex_dict[keyword_field]) > 0 \
+            and isinstance(ex_dict[keyword_field][0], list):
+            tgt_kps = [' '.join(p) for p in ex_dict[keyword_field]]
         else:
             tgt_kps = ex_dict[keyword_field]
         if kp_concat_type == 'one2one':
@@ -72,9 +78,12 @@ class KeyphraseTransform(Transform):
             rand_idx = np.random.randint(len(tgt_kps))
             tgt_str = tgt_kps[rand_idx]
         elif kp_concat_type in KP_CONCAT_TYPES:
-            # generate one2seq training data points
-            order = obtain_sorted_indices(src_str.lower().split(),
-                                          [kp.lower().split() for kp in tgt_kps],
+            # generate one2seq training data points, use spacy tokenization
+            src_seq = [t.text.lower() for t in spacy_nlp(src_str, disable=["textcat"])]
+            tgt_seqs = [[t.text.lower() for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_kps]
+            # src_seq = src_str.lower().split()
+            # tgt_seqs = [kp.lower().split() for kp in tgt_kps]
+            order = obtain_sorted_indices(src_seq, tgt_seqs,
                                           sort_by=kp_concat_type)
             if max_target_phrases > 0 and len(order) > max_target_phrases:
                 order = order[: max_target_phrases]

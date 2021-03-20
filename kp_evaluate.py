@@ -18,7 +18,7 @@ from onmt.utils.logging import init_logger
 import spacy
 spacy_nlp = spacy.load('en_core_web_sm')
 
-def evaluate(dataset_name, src_list, tgt_list, pred_list,
+def evaluate(src_list, tgt_list, pred_list,
              unk_token,
              logger=None, verbose=False,
              report_path=None):
@@ -48,7 +48,10 @@ def evaluate(dataset_name, src_list, tgt_list, pred_list,
         # @memray 20200316 change to spacy tokenization rather than simple splitting or Meng's tokenization
         src_seq = [t.text for t in spacy_nlp(src_dict["src"], disable=["textcat"])]
         tgt_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_dict["tgt"]]
-        pred_seqs = [[t.text for t in spacy_nlp(' '.join(p), disable=["textcat"])] for p in pred_seqs]
+        if len(pred_seqs) > 0 and isinstance(pred_seqs[0], str):
+            pred_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in pred_seqs]
+        else:
+            pred_seqs = [[t.text for t in spacy_nlp(' '.join(p), disable=["textcat"])] for p in pred_seqs]
 
         # 1st filtering, ignore phrases having <unk> and puncs
         valid_pred_flags = validate_phrases(pred_seqs, unk_token)
@@ -264,13 +267,15 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
 
                 src_ex['src'] = src_str
                 tgt_ex['tgt'] = tgt_kps
+        else:
+            raise Exception('Currently only support json/jsonl data format: %s' % src_path)
 
         if model_name == 'nn':
             pred_data = [json.loads(l) for l in open(pred_path, "r")]
         else:
             pred_data = baseline_pred_loader(pred_path, model_name)
         start_time = time.time()
-        results_dict = evaluate(dataset_name, src_data, tgt_data, pred_data,
+        results_dict = evaluate(src_data, tgt_data, pred_data,
                                 unk_token=unk_token,
                                 logger=logger, verbose=verbose,
                                 report_path=report_path)

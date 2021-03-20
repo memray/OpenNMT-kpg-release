@@ -9,13 +9,12 @@ echo $PROJECT_DIR
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 partition="gtx1080" # titanx gtx1080 v100
-days="3"
+days="6"
 
 task_args="pred" # pred or eval
 batch_size=1
 beam_size=50
 max_length=40
-step_base=5000
 step_base=1
 
 # evaluate with all predictions
@@ -48,3 +47,4 @@ echo $EXP_NAME
 echo $DUMP_SCRIPT_PATH
 
 sbatch $DUMP_SCRIPT_PATH
+

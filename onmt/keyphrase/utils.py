@@ -172,7 +172,6 @@ def print_predeval_result(i, src_text, tgt_seqs, present_tgt_flags,
             valid_pred_flags, present_pred_flags)):
         score = pred_scores[p_id] if pred_scores else "Score N/A"
         pred_idx = pred_idxs[p_id] if pred_idxs else "Index N/A"
-        copied_flag = copied_flags[p_id] if copied_flags else "CopyFlag N/A"
 
         preds_out += '%s\n' % (' '.join(word))
         if is_present:
@@ -185,7 +184,7 @@ def print_predeval_result(i, src_text, tgt_seqs, present_tgt_flags,
         else:
             correct_str = ''
 
-        if any(copied_flag):
+        if copied_flags and any(copied_flags[p_id]):
             copy_str = '[copied!]'
         else:
             copy_str = ''

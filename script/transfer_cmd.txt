@@ -6,8 +6,10 @@ source script/transfer/run_pred_o2s_gpu_fewshot.sh
 source script/transfer/run_eval_o2o.sh
 source script/transfer/run_eval_o2s.sh
 source script/transfer/run_eval_o2s_fewshot.sh
-
 sbatch script/transfer/kppred_v100.sh
+
+sbatch script/transfer/run_eval_spacy.sh
+
 
 
 # TF-o2s
@@ -48,21 +50,41 @@ sbatch script/transfer/train/kpgen-transformer-one2one-stackex.sh
 
 
 
+# fewshot-10k
+#ckpt=20, #step_per_epoch=100, #epoch_per_ckpt=5, --save-interval-updates 500 --warmup-updates 1000 --total-num-update 10000
+### BART-FT
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-kp20k.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-openkp.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-openkp-resume.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-stackex.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-kptimes.sh
 
-# BART-o2s-fewshot
-sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-kp20k.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-openkp.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-stackex.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bart-presabs-kptimes.sh
+### BART-wikikp-FT
+sbatch script/transfer/train_fewshot/kpgen-bartwikikp-presabs-kp20k.sh
+sbatch script/transfer/train_fewshot/kpgen-bartwikikp-presabs-openkp.sh
+sbatch script/transfer/train_fewshot/kpgen-bartwikikp-presabs-openkp-resume.sh
+sbatch script/transfer/train_fewshot/kpgen-bartwikikp-presabs-stackex.sh
+sbatch script/transfer/train_fewshot/kpgen-bartwikikp-presabs-kptimes.sh
 
-# BART-wikikp-o2s-fewshot
-sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-kp20k.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-openkp.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-stackex.sh
-sbatch script/transfer/train_fewshot10k/kpgen-bartwikikp-presabs-kptimes.sh
-
-# BART-wikikp-DAFT-o2s-fewshot
+### BART-wikikp-DAFT
 sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kp20k_10k.sh
 sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kptimes_10k.sh
 sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-openkp_10k.sh
 sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-stackex_10k.sh
+
+
+# fewshot-1k
+#ckpt=20, #step_per_epoch=10, #epoch_per_ckpt=20, --save-interval-updates 200 --warmup-updates 400 --total-num-update 4000
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-kp20k-fewshot1k.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-openkp-fewshot1k.sh
+
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kp20k-fewshot1k.sh
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-openkp-fewshot1k.sh
+
+# fewshot-100
+#ckpt=20, #step_per_epoch=1, #epoch_per_ckpt=100, --save-interval-updates 100 --warmup-updates 200 --total-num-update 2000
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-kp20k_100.sh
+sbatch script/transfer/train_fewshot/kpgen-bart-presabs-openkp_100.sh
+
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-kp20k-fewshot100.sh
+sbatch script/transfer/train_wikikp_DAFT/kpgen-bartwikikp-DAFT-presabs-openkp-fewshot100.sh

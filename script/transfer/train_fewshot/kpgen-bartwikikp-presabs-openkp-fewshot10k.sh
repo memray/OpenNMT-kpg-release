@@ -12,7 +12,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32GB
-#SBATCH --time=1-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --time=1-12:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 # Load modules

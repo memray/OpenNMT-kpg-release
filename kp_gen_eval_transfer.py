@@ -20,10 +20,10 @@ from onmt.utils.logging import init_logger
 import onmt.opts as opts
 
 train_test_mappings = {
-    'kp20k': ['kp20k', 'kp20k', 'inspec', 'krapivin', 'semeval', 'nus', 'duc'],
-    'openkp': ['openkp', 'duc'],
-    'kptimes': ['kptimes', 'jptimes', 'duc'],
-    'stackex': ['stackex', 'duc'],
+    'kp20k': ['kp20k', 'kp20k_valid2k', 'inspec', 'krapivin', 'semeval', 'nus', 'duc'],
+    'openkp': ['openkp', 'openkp_valid2k', 'duc'],
+    'kptimes': ['kptimes', 'kptimes_valid2k', 'jptimes', 'duc'],
+    'stackex': ['stackex', 'stackex_valid2k', 'duc'],
 }
 
 def scan_new_checkpoints(ckpt_dir):
@@ -49,6 +49,24 @@ def scan_new_checkpoints(ckpt_dir):
 
     return ckpts
 
+def scan_predictions(exp_root_dir):
+    preds = []
+    for subdir, dirs, files in os.walk(exp_root_dir):
+        for file in files:
+            if file.endswith('.pred'):
+                pred_name = file[: -5]
+                step, data = pred_name.split('-')
+                step = int(step[step.rfind('step_') + 5:])
+                data = data[5:]
+                pred = {
+                    'ckpt_name': pred_name,
+                    'pred_path': os.path.join(subdir, file),
+                    'dataset': data,
+                    'step': step
+                }
+                preds.append(pred)
+
+    return preds
 
 def _get_parser():
     parser = ArgumentParser(description='run_kp_eval_transfer.py')
@@ -135,202 +153,206 @@ if __name__ == "__main__":
     pred_linecount_dict = {}
     eval_linecount_dict = {}
 
-    decoding_method = 'beamsearch-width_%d-maxlen_%d' % (opt.beam_size, opt.max_length)
     while True:
-        ckpts = scan_new_checkpoints(opt.exp_root_dir)
-        ckpts = sorted(ckpts, key=lambda x:x['step'])
-        random.shuffle(ckpts)
-        logger.info('Found %d checkpoints from %s!' % (len(ckpts), opt.exp_root_dir))
-
-        if opt.step_base is not None and opt.step_base > 1:
-            num_ckpts = len(ckpts)
-            ckpts = [ckpt for ckpt in ckpts if ckpt['step'] % opt.step_base == 0 and ckpt['step'] // opt.step_base > 0]
-            logger.info('After filtering non opt.step_base=%d ckpts, found %d/%d checkpoints!' %
-                        (opt.step_base, len(ckpts), num_ckpts))
-
         job_done = False # a flag indicating if any real pred/eval job is done
 
-        # iterate each ckpt and start predicting/evaluating
-        for ckpt_id, ckpt in enumerate(ckpts):
-            ckpt_path = ckpt['ckpt_path']
-            ckpt_name = ckpt['ckpt_name']
-            exp_dir = ckpt['exp_dir']
-            exp_name = ckpt['exp_name']
-            logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(ckpts), ckpt_path))
-            setattr(opt, 'models', [ckpt['ckpt_path']])
+        if 'pred' in opt.tasks:
+            ckpts = scan_new_checkpoints(opt.exp_root_dir)
+            ckpts = sorted(ckpts, key=lambda x:x['step'])
+            random.shuffle(ckpts)
+            logger.info('Found %d checkpoints from %s!' % (len(ckpts), opt.exp_root_dir))
 
-            translator = None
+            if opt.step_base is not None and opt.step_base > 1:
+                num_ckpts = len(ckpts)
+                ckpts = [ckpt for ckpt in ckpts if ckpt['step'] % opt.step_base == 0 and ckpt['step'] // opt.step_base > 0]
+                logger.info('After filtering non opt.step_base=%d ckpts, found %d/%d checkpoints!' %
+                            (opt.step_base, len(ckpts), num_ckpts))
 
-            score_dicts = {}
-            for datasplit_name, dataset in testset_path_dict.items():
-                # ignore current testdata-split if this data is not used in training
-                if opt.pred_trained_only:
-                    pass_flag = False
-                    cur_testname = datasplit_name[: datasplit_name.index('_')] if '_' in datasplit_name else datasplit_name
-                    for trainname, testnames in train_test_mappings.items():
-                        # training dataset name appears in exp_name
-                        if trainname in exp_name and cur_testname in testnames:
-                            pass_flag = True
-                    if not pass_flag:
-                        print('Skip predict/evaluate test=[%s] for ckpt=[%s] due to train/test mismatch.' % (datasplit_name, exp_name))
-                        continue
+            # iterate each ckpt and start predicting/evaluating
+            for ckpt_id, ckpt in enumerate(ckpts):
+                ckpt_path = ckpt['ckpt_path']
+                ckpt_name = ckpt['ckpt_name']
+                exp_dir = ckpt['exp_dir']
+                exp_name = ckpt['exp_name']
+                logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(ckpts), ckpt_path))
+                setattr(opt, 'models', [ckpt['ckpt_path']])
 
-                src_path, tgt_path, src_shard, tgt_shard = dataset
+                translator = None
 
-                pred_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'pred')
-                eval_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'eval')
-                pred_file = '%s-data_%s.pred' % (ckpt_name, datasplit_name)
-                printout_file = '%s-data_%s.report' % (ckpt_name, datasplit_name)
-                eval_file = '%s-data_%s.spacyeval' % (ckpt_name, datasplit_name)
+                for datasplit_name, dataset in testset_path_dict.items():
+                    # ignore current testdata-split if this data is not used in training
+                    if opt.pred_trained_only:
+                        pass_flag = False
+                        cur_testname = datasplit_name[: datasplit_name.index('_')] if '_' in datasplit_name else datasplit_name
+                        for trainname, testnames in train_test_mappings.items():
+                            # training dataset name appears in exp_name
+                            if trainname in exp_name and cur_testname in testnames:
+                                pass_flag = True
+                        if not pass_flag:
+                            print('Skip predict/evaluate test=[%s] for ckpt=[%s] due to train/test mismatch.' % (datasplit_name, exp_name))
+                            continue
 
-                pred_path = os.path.join(pred_dir, pred_file)
-                printout_path = os.path.join(pred_dir, printout_file)
-                eval_path = os.path.join(eval_dir, eval_file)
+                    src_path, tgt_path, src_shard, tgt_shard = dataset
 
-                # create dirs
-                if not os.path.exists(pred_dir): os.makedirs(pred_dir)
-                if not os.path.exists(eval_dir): os.makedirs(eval_dir)
+                    decoding_method = 'beamsearch-width_%d-maxlen_%d' % (opt.beam_size, opt.max_length)
+                    pred_dir = os.path.join(exp_dir, 'outputs', decoding_method, 'pred')
+                    if not os.path.exists(pred_dir): os.makedirs(pred_dir)
+                    pred_file = '%s-data_%s.pred' % (ckpt_name, datasplit_name)
+                    pred_path = os.path.join(pred_dir, pred_file)
 
-                # do translation
-                # skip translation for this dataset if previous pred exists
-                do_trans_flag = True
-                if os.path.exists(pred_path):
-                    elapsed_time = time.time() - os.stat(pred_path).st_mtime
-                    if pred_path in pred_linecount_dict and pred_linecount_dict[pred_path] == len(src_shard):
-                        # if it's already in pred_linecount_dict, means it's done and counted
-                        do_trans_flag = False
-                    elif elapsed_time < opt.test_interval:
-                        do_trans_flag = False
-                        logger.info("Skip translating because previous PRED file was generated only %d sec ago (<%d sec). PRED file: %s"
-                                    % (elapsed_time, opt.test_interval, pred_path))
-                    else:
-                        # count line numbers of long-done files to check if this is a done pred
-                        try:
-                            pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
-                            # count is same means it's done
-                            if pred_linecount_dict[pred_path] == len(src_shard):
-                                do_trans_flag = False
-                                logger.info("Skip translating because previous PRED is complete. PRED file: %s" % (pred_path))
-                            else:
-                                # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
-                                if elapsed_time < opt.test_interval:
+                    # do translation
+                    # skip translation for this dataset if previous pred exists
+                    do_trans_flag = True
+                    if os.path.exists(pred_path):
+                        elapsed_time = time.time() - os.stat(pred_path).st_mtime
+                        if pred_path in pred_linecount_dict and pred_linecount_dict[pred_path] == len(src_shard):
+                            # if it's already in pred_linecount_dict, means it's done and counted
+                            do_trans_flag = False
+                        elif elapsed_time < opt.test_interval:
+                            do_trans_flag = False
+                            logger.info("Skip translating because previous PRED file was generated only %d sec ago (<%d sec). PRED file: %s"
+                                        % (elapsed_time, opt.test_interval, pred_path))
+                        else:
+                            # count line numbers of long-done files to check if this is a done pred
+                            try:
+                                pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
+                                # count is same means it's done
+                                if pred_linecount_dict[pred_path] == len(src_shard):
                                     do_trans_flag = False
+                                    logger.info("Skip translating because previous PRED is complete. PRED file: %s" % (pred_path))
                                 else:
-                                    os.remove(pred_path)
-                                    logger.info('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
-                                                % (pred_linecount_dict[pred_path], int(elapsed_time), pred_path))
-                        except Exception as e:
-                            logger.exception('Error while validating or deleting PRED file: %s' % pred_path)
+                                    # if file is modified less than opt.test_interval min, it might be being processed by another job. Otherwise it's a bad result and delete it
+                                    if elapsed_time < opt.test_interval:
+                                        do_trans_flag = False
+                                    else:
+                                        os.remove(pred_path)
+                                        logger.info('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
+                                                    % (pred_linecount_dict[pred_path], int(elapsed_time), pred_path))
+                            except Exception as e:
+                                logger.exception('Error while validating or deleting PRED file: %s' % pred_path)
 
-                if 'pred' in opt.tasks:
-                    opt.data['valid']['path_src'] = src_path
-                    opt.data['valid']['path_tgt'] = src_path
-                    opt.data['valid']['path_align'] = None
-                    try:
-                        if do_trans_flag or opt.ignore_existing:
-                            logger.info("*" * 50)
-                            logger.info("Start translating [data=%s] for [exp=%s]-[ckpt=%s]." % (datasplit_name, exp_name, ckpt_name))
-                            logger.info("\t exporting PRED result to %s." % (pred_path))
-                            logger.info("*" * 50)
+                opt.data['valid']['path_src'] = src_path
+                opt.data['valid']['path_tgt'] = src_path
+                opt.data['valid']['path_align'] = None
 
-                            # if it's BART model, OpenNMT has to do something additional
-                            if exp_name.strip().startswith('bart'):
-                                opt.__setattr__('fairseq_model', True)
-                                opt.__setattr__('encoder_type', 'bart')
-                                opt.__setattr__('decoder_type', 'bart')
-                                opt.__setattr__('pretrained_tokenizer', True)
-                                opt.__setattr__('copy_attn', False)
-                            else:
-                                opt.__setattr__('fairseq_model', False)
-                            if translator is None:
-                                translator = build_translator(opt, report_score=opt.verbose, logger=logger)
-                            # create an empty file to indicate that the translator is working on it
-                            codecs.open(pred_path, 'w+', 'utf-8').close()
-                            # set output_file for each dataset (instead of outputting to opt.output)
-                            translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                            _, _ = translator.translate(
-                                src=src_shard,
-                                batch_size=opt.batch_size,
-                                attn_debug=opt.attn_debug,
-                                opt=opt
-                            )
-                            job_done = True
-                            logger.info("Complete translating [%s], PRED file: %s." % (datasplit_name, pred_path))
+                try:
+                    if do_trans_flag or opt.ignore_existing:
+                        logger.info("*" * 50)
+                        logger.info("Start translating [data=%s] for [exp=%s]-[ckpt=%s]." % (datasplit_name, exp_name, ckpt_name))
+                        logger.info("\t exporting PRED result to %s." % (pred_path))
+                        logger.info("*" * 50)
+
+                        # if it's BART model, OpenNMT has to do something additional
+                        if exp_name.strip().startswith('bart'):
+                            opt.__setattr__('fairseq_model', True)
+                            opt.__setattr__('encoder_type', 'bart')
+                            opt.__setattr__('decoder_type', 'bart')
+                            opt.__setattr__('pretrained_tokenizer', True)
+                            opt.__setattr__('copy_attn', False)
                         else:
-                            logger.info("Skip translating [%s] for %s, PRED file: %s." % (datasplit_name, ckpt_name, pred_path))
-                    except Exception as e:
-                        logger.exception('Error while translating [%s], PRED file: %s.' % (datasplit_name, pred_path))
+                            opt.__setattr__('fairseq_model', False)
+                        if translator is None:
+                            translator = build_translator(opt, report_score=opt.verbose, logger=logger)
+                        # create an empty file to indicate that the translator is working on it
+                        codecs.open(pred_path, 'w+', 'utf-8').close()
+                        # set output_file for each dataset (instead of outputting to opt.output)
+                        translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                        _, _ = translator.translate(
+                            src=src_shard,
+                            batch_size=opt.batch_size,
+                            attn_debug=opt.attn_debug,
+                            opt=opt
+                        )
+                        job_done = True
+                        logger.info("Complete translating [%s], PRED file: %s." % (datasplit_name, pred_path))
+                    else:
+                        logger.info("Skip translating [%s] for %s, PRED file: %s." % (datasplit_name, ckpt_name, pred_path))
+                except Exception as e:
+                    logger.exception('Error while translating [%s], PRED file: %s.' % (datasplit_name, pred_path))
 
-                # do evaluation
+        # do evaluation
+        if 'eval' in opt.tasks:
+            new_preds = scan_predictions(opt.exp_root_dir)
+            new_preds = sorted(new_preds, key=lambda x: x['step'])
+            random.shuffle(new_preds)
+            logger.info('Found %d predictions from %s!' % (len(new_preds), opt.exp_root_dir))
+
+            for pred_id, pred in enumerate(new_preds):
+                ckpt_name = pred['ckpt_name']
+                pred_path = pred['pred_path']
+                datasplit_name = pred['dataset']
+
+                if datasplit_name not in testset_path_dict: continue
+
+                logger.info("[%d/%d] Checking prediction: %s" % (pred_id, len(new_preds), pred_path))
+                # change to spacy eval, place it next to the .pred file
+                eval_path = pred_path[: -5] + '.spacyeval'
+                printout_path = pred_path[: -5] + '.report'
+
                 do_eval_flag = True
-                if not os.path.exists(pred_path):
-                    do_eval_flag = False
-                    # logger.info("Skip evaluating because no available pred file.")
-                else:
-                    try:
-                        if not pred_path in pred_linecount_dict:
-                            pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
-                        num_pred = pred_linecount_dict[pred_path]
-                        if num_pred != len(src_shard):
-                            do_eval_flag = False
-                            logger.info("Skip evaluating because current PRED file is not complete, #(line)=%d. PRED file: %s"
-                                        % (num_pred, pred_path))
-                            elapsed_time = time.time() - os.stat(pred_path).st_mtime
-                            if elapsed_time > opt.test_interval:
-                                os.remove(pred_path)
-                                logger.warn('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
-                                            % (num_pred, int(elapsed_time), pred_path))
-                        else:
-                            # if pred is good, check if re-eval is necessary
-                            if os.path.exists(eval_path):
-                                elapsed_time = time.time() - os.stat(eval_path).st_mtime
-                                if eval_path in eval_linecount_dict and eval_linecount_dict[eval_path] == len(src_shard):
-                                    do_eval_flag = False
-                                elif elapsed_time < opt.test_interval:
-                                    # if file is modified less than opt.test_interval min, it might be being processed by another job.
-                                    do_eval_flag = False
-                                    logger.info("Skip evaluating because previous EVAL file was generated only %d sec ago (<%d sec). EVAL file: %s"
-                                                % (elapsed_time, opt.test_interval, eval_file))
+                try:
+                    src_path, tgt_path, src_shard, tgt_shard = testset_path_dict[datasplit_name]
+                    if not pred_path in pred_linecount_dict:
+                        pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
+                    num_pred = pred_linecount_dict[pred_path]
+                    if num_pred != len(src_shard):
+                        do_eval_flag = False
+                        logger.info("Skip evaluating because current PRED file is not complete, #(line)=%d. PRED file: %s"
+                                    % (num_pred, pred_path))
+                        elapsed_time = time.time() - os.stat(pred_path).st_mtime
+                        if elapsed_time > opt.test_interval:
+                            os.remove(pred_path)
+                            logger.warn('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
+                                        % (num_pred, int(elapsed_time), pred_path))
+                    else:
+                        # if pred is good, check if re-eval is necessary
+                        if os.path.exists(eval_path):
+                            elapsed_time = time.time() - os.stat(eval_path).st_mtime
+                            if eval_path in eval_linecount_dict and eval_linecount_dict[eval_path] == len(src_shard):
+                                do_eval_flag = False
+                            elif elapsed_time < opt.test_interval:
+                                # if file is modified less than opt.test_interval min, it might be being processed by another job.
+                                do_eval_flag = False
+                                logger.info("Skip evaluating because previous EVAL file was generated only %d sec ago (<%d sec). EVAL file: %s"
+                                            % (elapsed_time, opt.test_interval, eval_path))
+                            else:
+                                score_dict = json.load(open(eval_path, 'r'))
+                                if 'present_exact_correct@5' in score_dict:
+                                    num_eval = len(score_dict['present_exact_correct@5'])
                                 else:
-                                    score_dict = json.load(open(eval_path, 'r'))
-                                    if 'present_exact_correct@5' in score_dict:
-                                        num_eval = len(score_dict['present_exact_correct@5'])
-                                    else:
-                                        num_eval = 0
-                                    eval_linecount_dict[eval_path] = num_eval
-                                    if num_eval == len(src_shard):
-                                        do_eval_flag = False
-                                        logger.info("Skip evaluating because existing eval file is complete.")
-                                    else:
-                                        # it's a bad result and delete it
-                                        os.remove(eval_path)
-                                        logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds. PRED file: %s'
-                                                    % (num_pred, num_eval, int(elapsed_time), eval_path))
-                    except Exception as e:
-                        logger.exception('Error while validating or deleting EVAL file: %s' % eval_path)
+                                    num_eval = 0
+                                eval_linecount_dict[eval_path] = num_eval
+                                if num_eval == len(src_shard):
+                                    do_eval_flag = False
+                                    logger.info("Skip evaluating because existing eval file is complete.")
+                                else:
+                                    # it's a bad result and delete it
+                                    os.remove(eval_path)
+                                    logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds. PRED file: %s'
+                                                % (num_pred, num_eval, int(elapsed_time), eval_path))
+                except Exception as e:
+                    logger.exception('Error while validating or deleting EVAL file: %s' % eval_path)
 
-                if 'eval' in opt.tasks:
-                    try:
-                        if do_eval_flag or opt.ignore_existing:
-                            logger.info("*" * 50)
-                            logger.info("Start evaluating [%s] for %s" % (datasplit_name, ckpt_name))
-                            logger.info("\t will export eval result to %s." % (eval_path))
-                            logger.info("*" * 50)
-                            score_dict = kp_evaluate.keyphrase_eval(datasplit_name,
-                                                                    src_path, tgt_path,
-                                                                    pred_path=pred_path, logger=logger,
-                                                                    verbose=opt.verbose,
-                                                                    report_path=printout_path
-                                                                    )
-                            if score_dict is not None:
-                                score_dicts[datasplit_name] = score_dict
-                                with open(eval_path, 'w') as output_json:
-                                    output_json.write(json.dumps(score_dict)+'\n')
-                            job_done = True
-                        else:
-                            logger.info("Skip evaluating [%s] for %s, EVAL file: %s." % (datasplit_name, ckpt_name, eval_path))
-                    except Exception as e:
-                        logger.exception('Error while evaluating')
+                try:
+                    if do_eval_flag or opt.ignore_existing:
+                        logger.info("*" * 50)
+                        logger.info("Start evaluating [%s] for %s" % (datasplit_name, ckpt_name))
+                        logger.info("\t will export eval result to %s." % (eval_path))
+                        logger.info("*" * 50)
+                        score_dict = kp_evaluate.keyphrase_eval(datasplit_name,
+                                                                src_path, tgt_path,
+                                                                pred_path=pred_path, logger=logger,
+                                                                verbose=opt.verbose,
+                                                                report_path=printout_path
+                                                                )
+                        if score_dict is not None:
+                            with open(eval_path, 'w') as output_json:
+                                output_json.write(json.dumps(score_dict)+'\n')
+                        job_done = True
+                    else:
+                        logger.info("Skip evaluating [%s] for %s, EVAL file: %s." % (datasplit_name, ckpt_name, eval_path))
+                except Exception as e:
+                    logger.exception('Error while evaluating')
 
         if job_done: # reset current_patience if no real job is done in the current iteration
             current_patience = opt.wait_patience

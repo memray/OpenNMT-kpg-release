@@ -2,7 +2,7 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=titanx
-#SBATCH --partition=gtx1080s
+#SBATCH --partition=gtx1080
 #SBATCH --partition=v100
 #SBATCH --account=hdaqing
 

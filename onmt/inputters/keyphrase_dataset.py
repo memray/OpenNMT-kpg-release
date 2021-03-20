@@ -283,16 +283,14 @@ class KeyphraseDataReader(DataReaderBase):
             yield {side: seq, "indices": i, 'id': id}
 
 
-def obtain_sorted_indices(src, tgt_seqs, sort_by):
+def obtain_sorted_indices(src_seq, tgt_seqs, sort_by):
     """
-    :param src: used for verbatim and alphabetical
+    :param src_seq: used for verbatim and alphabetical
     :param tgt_seqs:
     :param sort_by:
     :param absent_pos: must be one of [prepend, append and ignore], ignore means simply drop absent kps
     :return:
     """
-    # TODO: change to spacy tokenization
-    print('TODO: change to spacy tokenization!!!')
     num_tgt = len(tgt_seqs)
 
     if sort_by == 'random':
@@ -307,7 +305,7 @@ def obtain_sorted_indices(src, tgt_seqs, sort_by):
         sorted_id = [t[0] for t in sorted_tgts]
     elif sort_by == 'pres_abs' or sort_by == 'abs_pres':
         # obtain present flags as well their positions, lowercase should be done beforehand
-        present_tgt_flags, present_indices, _ = if_present_duplicate_phrases(src, tgt_seqs)
+        present_tgt_flags, present_indices, _ = if_present_duplicate_phrases(src_seq, tgt_seqs)
         # separate present/absent phrases
         present_tgt_idx = np.arange(num_tgt)[present_tgt_flags]
         absent_tgt_idx  = [t_id for t_id, present in zip(range(num_tgt), present_tgt_flags) if ~present]

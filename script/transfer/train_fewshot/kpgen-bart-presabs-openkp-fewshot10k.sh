@@ -2,7 +2,7 @@
 #SBATCH --cluster=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --partition=titanx
-#SBATCH --partition=gtx1080s
+#SBATCH --partition=gtx1080
 #SBATCH --partition=v100
 #SBATCH --account=hdaqing
 
@@ -12,7 +12,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32GB
-#SBATCH --time=1-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --time=1-12:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 # Load modules
