@@ -52,8 +52,8 @@ class DataOptsCheckerMixin(object):
                     corpus["path_tgt"] = path_src
                     corpora[cname] = corpus
                     path_tgt = path_src
-                cls._validate_file(path_src, info=f'{cname}/path_src')
-                cls._validate_file(path_tgt, info=f'{cname}/path_tgt')
+                # cls._validate_file(path_src, info=f'{cname}/path_src')
+                # cls._validate_file(path_tgt, info=f'{cname}/path_tgt')
             path_align = corpus.get('path_align', None)
             if path_align is None:
                 if hasattr(opt, 'lambda_align') and opt.lambda_align > 0.0:

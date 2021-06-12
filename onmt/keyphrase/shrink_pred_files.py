@@ -11,9 +11,11 @@ __author__ = "Rui Meng"
 __email__ = "rui.meng@pitt.edu"
 
 if __name__ == '__main__':
-    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/'
-    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_o2o/'
-    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/'
+    # root_path = ' /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/'
+    # root_path = '/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp/'
+    # root_path = '/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_o2o/'
+    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/'
+    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/'
@@ -22,12 +24,12 @@ if __name__ == '__main__':
 
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/order_matters/transformer/meng17-one2seq-beam50-maxlen40/'
     dataset_line_counts = {
-                     # 'kp20k': 19987,
+                     'kp20k': 19987,
                      # 'kp20k_valid2k': 2000,
-                     # 'inspec': 500,
-                     # 'krapivin': 460,
-                     # 'nus': 211,
-                     # 'semeval': 100,
+                     'inspec': 500,
+                     'krapivin': 460,
+                     'nus': 211,
+                     'semeval': 100,
                      # 'duc': 308,
                      'kp20k_test': 19987,
                      'openkp_test': 6614,
@@ -91,7 +93,8 @@ if __name__ == '__main__':
                 if 'attns' not in pred_dict:
                     continue
                 # indicating it's already shrinked, skip
-                if pred_dict['attns'] == None and pred_dict['dup_pred_tuples'] == None:
+                if pred_dict['src'] == None:
+                # if pred_dict['attns'] == None and pred_dict['dup_pred_tuples'] == None:
                     # print('This pred file has been shrinked, skip!')
                     continue
 
@@ -108,6 +111,9 @@ if __name__ == '__main__':
                     # for k,v in pred_dict.items():
                     #     print('%s' % k)
 
+                    pred_dict['src'] = None
+                    pred_dict['preds'] = None
+                    # pred_dict['pred_scores'] = None
                     pred_dict['attns'] = None
                     pred_dict['copied_flags'] = None
                     pred_dict['ori_pred_sents'] = None

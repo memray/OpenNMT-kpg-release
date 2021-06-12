@@ -93,7 +93,7 @@ def _add_reproducibility_opts(parser):
 def _add_dynamic_corpus_opts(parser, build_vocab_only=False):
     """Options related to training corpus, type: a list of dictionary."""
     group = parser.add_argument_group('Data')
-    group.add("-data", "--data", required=True,
+    group.add("-data", "--data", # required=True,
               help="List of datasets and their specifications. "
                    "See examples/*.yaml for further details.")
     group.add("-skip_empty_level", "--skip_empty_level", default="warning",
@@ -149,7 +149,7 @@ def _add_dynamic_fields_opts(parser, build_vocab_only=False):
     related options which won't be used in `bin/build_vocab.py`.
     """
     group = parser.add_argument_group("Vocab")
-    group.add("-src_vocab", "--src_vocab", required=True,
+    group.add("-src_vocab", "--src_vocab", # required=True,
               help=("Path to save" if build_vocab_only else "Path to")
               + " src (or shared) vocabulary file. "
               "Format: one <word> or <word>\t<count> per line.")

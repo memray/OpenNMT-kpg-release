@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 
 from onmt.inputters.keyphrase_dataset import infer_dataset_type, KP_DATASET_FIELDS, parse_src_fn
-from onmt.keyphrase import utils
 from onmt.keyphrase.eval import compute_match_scores, run_classic_metrics, run_advanced_metrics
 from onmt.keyphrase.utils import if_present_duplicate_phrases, validate_phrases, print_predeval_result, gather_scores
 from onmt.utils.logging import init_logger
@@ -21,7 +20,7 @@ spacy_nlp = spacy.load('en_core_web_sm')
 def evaluate(src_list, tgt_list, pred_list,
              unk_token,
              logger=None, verbose=False,
-             report_path=None):
+             report_path=None, tokenizer=None):
     if report_path:
         report_file = open(report_path, 'w+')
     else:
@@ -41,17 +40,32 @@ def evaluate(src_list, tgt_list, pred_list,
         1. Process each data example and predictions
         """
         pred_seqs = pred_dict["pred_sents"]
+        if len(pred_seqs) > 0 and isinstance(pred_seqs[0], str):
+            pred_seqs = [p.split() for p in pred_seqs]
         pred_idxs = pred_dict["preds"] if "preds" in pred_dict else None
         pred_scores = pred_dict["pred_scores"] if "pred_scores" in pred_dict else None
         copied_flags = pred_dict["copied_flags"] if "copied_flags" in pred_dict else None
 
-        # @memray 20200316 change to spacy tokenization rather than simple splitting or Meng's tokenization
-        src_seq = [t.text for t in spacy_nlp(src_dict["src"], disable=["textcat"])]
-        tgt_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_dict["tgt"]]
-        if len(pred_seqs) > 0 and isinstance(pred_seqs[0], str):
-            pred_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in pred_seqs]
+        # @memray 20200410 add split_nopunc tokenization, spacy runs very slow
+        if tokenizer == 'spacy':
+            src_seq = [t.text for t in spacy_nlp(src_dict["src"], disable=["textcat"])]
+            tgt_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_dict["tgt"]]
+            if len(pred_seqs) > 0 and isinstance(pred_seqs[0], str):
+                pred_seqs = [[t.text for t in spacy_nlp(p, disable=["textcat"])] for p in pred_seqs]
+            else:
+                pred_seqs = [[t.text for t in spacy_nlp(' '.join(p), disable=["textcat"])] for p in pred_seqs]
+            unk_token = 'unk'
+        elif tokenizer == 'split':
+            src_seq = src_dict["src"].split()
+            tgt_seqs = [t.split() for t in tgt_dict["tgt"]]
+            pred_seqs = pred_seqs
+        elif tokenizer == 'split_nopunc':
+            src_seq = [t for t in re.split(r'\W', src_dict["src"]) if len(t) > 0]
+            tgt_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in tgt_dict["tgt"]]
+            pred_seqs = [[t for t in re.split(r'\W', ' '.join(p)) if len(t) > 0] for p in pred_seqs]
+            unk_token = 'unk'
         else:
-            pred_seqs = [[t.text for t in spacy_nlp(' '.join(p), disable=["textcat"])] for p in pred_seqs]
+            raise Exception('Unset or unsupported tokenizer for evaluation: %s' % str(tokenizer))
 
         # 1st filtering, ignore phrases having <unk> and puncs
         valid_pred_flags = validate_phrases(pred_seqs, unk_token)
@@ -232,7 +246,8 @@ def baseline_pred_loader(pred_path, model_name):
 
 def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
                    unk_token='<unk>', verbose=False, logger=None,
-                   report_path=None, model_name='nn'):
+                   report_path=None, model_name='nn',
+                   tokenizer=None):
     # change data loader to iterator, otherwise it consumes more than 64gb RAM
     # check line numbers first
     dataset_name = '_'.join(datasplit_name.split('_')[: -1])
@@ -278,7 +293,8 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
         results_dict = evaluate(src_data, tgt_data, pred_data,
                                 unk_token=unk_token,
                                 logger=logger, verbose=verbose,
-                                report_path=report_path)
+                                report_path=report_path,
+                                tokenizer=tokenizer)
         total_time = time.time() - start_time
         logger.info("Total evaluation time (s): %f" % total_time)
 
@@ -290,7 +306,7 @@ def keyphrase_eval(datasplit_name, src_path, tgt_path, pred_path,
 
 def summarize_scores(score_dict, ckpt_name,
                      exp_name=None, pred_name=None, dataset_name=None,
-                     eval_file_path=None, pred_file_path=None):
+                     eval_file_path=None, pred_file_path=None, step=None):
     avg_dict = {}
     avg_dict['checkpoint_name'] = ckpt_name
     avg_dict['exp_name'] = exp_name
@@ -298,7 +314,9 @@ def summarize_scores(score_dict, ckpt_name,
     avg_dict['test_dataset'] = dataset_name
     avg_dict['eval_file_path'] = eval_file_path
     avg_dict['pred_file_path'] = pred_file_path
-    if ckpt_name.find('_') > 0:
+    if step is not None:
+        avg_dict['step'] = step
+    elif ckpt_name.find('_') > 0:
         avg_dict['step'] = ckpt_name.rsplit('_')[-1]
     else:
         avg_dict['step'] = ''
@@ -378,75 +396,76 @@ def summarize_scores(score_dict, ckpt_name,
     return summary_df
 
 
-def gather_eval_results(eval_root_dir, report_csv_dir=None):
+def gather_eval_results(eval_root_dir, report_csv_dir=None, tokenizer=None, empirical_result=False):
     dataset_scores_dict = {}
+    assert tokenizer is not None
     evals_to_skip = set()
     if report_csv_dir:
         # load previous reports
         for report_csv_file in os.listdir(report_csv_dir):
-            data_decode_name = report_csv_file[:-4].strip() # truncate '.csv'
+            if not report_csv_file.endswith('.%s.csv' % tokenizer): continue
+            dataset_name = report_csv_file.split('.')[0] # truncate 'tokenizer.csv'
             prev_df = pd.read_csv(os.path.join(report_csv_dir, report_csv_file))
             prev_df = prev_df.loc[:, ~prev_df.columns.str.contains('^Unnamed')]
 
-            dataset_scores_dict[data_decode_name] = prev_df
+            dataset_scores_dict[dataset_name] = prev_df
             for eval_path in prev_df.eval_file_path:
                 evals_to_skip.add(eval_path)
 
+    eval_suffix = '.%s.eval' % tokenizer
     total_file_num = len([file for subdir, dirs, files in os.walk(eval_root_dir)
-                          for file in files if file.endswith('.json') or file.endswith('.eval')])
+                          for file in files if file.endswith(eval_suffix)])
     file_count = 0
 
     for subdir, dirs, files in os.walk(eval_root_dir):
         for file in files:
-            # back-compatible with previous version, which uses .json extension name.
-            if not (file.endswith('.eval') or file.endswith('exhaustive.json') or file.endswith('selfterminating.json')):
-                continue
+            if not file.endswith(eval_suffix): continue
             file_count += 1
-            print("file_count/file_num=%d/%d" % (file_count, total_file_num))
+            if file_count % 10 == 0: print("file_count/file_num=%d/%d" % (file_count, total_file_num))
 
             eval_file_path = os.path.join(subdir, file)
-            pred_file_path = eval_file_path.replace('eval', 'pred') # might be a very bad way
+            pred_file_path = eval_file_path[: -len(eval_suffix)]+'.pred' # might be a very bad way
             if eval_file_path in evals_to_skip: continue
+            if not os.path.exists(pred_file_path):
+                # only count ones that both pred/eval exist, and remove some leftover files
+                if os.path.exists(eval_file_path): os.remove(eval_file_path)
+                report_file_path = eval_file_path[:-4]+'report'
+                if os.path.exists(report_file_path): os.remove(report_file_path)
+                continue
 
-            if file.endswith('.eval'):
-                file_name = file[: file.find('.eval')]
+            if empirical_result:
+                # legacy result
+                exp_step_name = subdir.strip('/')[subdir.strip('/').rfind('/') + 1:]
+                exp_name, step = exp_step_name.split('_step_')
+                dataset_name = file[: file.find(eval_suffix)]
+                ckpt_name = 'checkpoint_step_%s' % step
+                pred_name = 'meng17-one2seq-beam50-maxlen40'  # very hard-coded
+            else:
+                file_name = file[: file.find(eval_suffix)]
                 ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
                 exp_dirname = re.search('exps/(.*?)/outputs', subdir).group(1)
                 exp_name = exp_dirname.split('/')[1]
-                pred_name = re.search('outputs/(.*?)/eval', subdir).group(1)
+                pred_name = re.search('outputs/(.*?)/pred', subdir).group(1) # very hard-coded
                 dataset_name = file_name[file.rfind('-') + 1: ]
-                decoding_type = 'exhaustive' # TODO
-            else:
-                # previous version
-                file_name = file[: file.find('.json')]
-                split_idx = file.rfind('-')
-                decoding_type = file_name[split_idx + 1:]
-                file_name = file_name[: split_idx]
+                dataset_name = dataset_name[5:] if dataset_name.startswith('data_') else dataset_name
+                step = None
 
-                split_idx = file_name.rfind('-')
-                dataset_name = file_name[split_idx + 1:]
-                file_name = file_name[: split_idx]
-
-                split_idx = file_name.rfind('_step_')
-                ckpt_name = file_name[split_idx + 1:].strip('_')
-                exp_name = file_name[:split_idx]
-
-                pred_name = re.search('-(beam.*?)/eval', subdir).group(1)
-
-            dataset_name = dataset_name[5:] if dataset_name.startswith('data_') else dataset_name
-            data_decode_name = dataset_name + '-' + decoding_type
             # key is dataset name, value is a dict whose key is metric name and value is a list of floats
-            score_dict = json.load(open(eval_file_path, 'r'))
+            try:
+                score_dict = json.load(open(eval_file_path, 'r'))
+            except:
+                print('error while loading %s' % eval_file_path)
+                continue
             # ignore scores where no tgts available and return the average
             score_df = summarize_scores(score_dict,
                                         ckpt_name, exp_name, pred_name, dataset_name,
-                                        eval_file_path, pred_file_path)
+                                        eval_file_path, pred_file_path, step=step)
 
             # print(df_key)
-            if data_decode_name in dataset_scores_dict:
-                dataset_scores_dict[data_decode_name] = dataset_scores_dict[data_decode_name].append(score_df)
+            if dataset_name in dataset_scores_dict:
+                dataset_scores_dict[dataset_name] = dataset_scores_dict[dataset_name].append(score_df)
             else:
-                dataset_scores_dict[data_decode_name] = score_df
+                dataset_scores_dict[dataset_name] = score_df
 
         #     if file_count > 20:
         #         break
@@ -455,11 +474,12 @@ def gather_eval_results(eval_root_dir, report_csv_dir=None):
         #     break
 
     if report_csv_dir:
-        for data_decode_name, score_df in dataset_scores_dict.items():
-            report_csv_path = os.path.join(report_csv_dir, data_decode_name + '.csv')
+        for dataset_name, score_df in dataset_scores_dict.items():
+            report_csv_path = os.path.join(report_csv_dir, dataset_name + '.%s.csv' % tokenizer)
             print("Writing summary to: %s" % (report_csv_path))
             score_df = score_df.sort_values(by=['exp_name', 'step'])
             score_df.to_csv(report_csv_path, index=False)
+            # print(score_df.to_csv(index=False))
 
     return dataset_scores_dict
 
@@ -506,7 +526,7 @@ if __name__ == '__main__':
 
             logger = init_logger(opt.output_dir + "kp_evaluate.%s.eval.log" % dataname)
             report_path = os.path.join(opt.output_dir, 'pred', ckpt_name, '%s.report.txt' % dataname)
-            score_path = os.path.join(opt.output_dir, 'eval', ckpt_name + '-%s.json' % dataname)
+            score_path = os.path.join(opt.output_dir, 'eval', ckpt_name + '-%s.eval' % dataname)
 
             logger.info("Evaluating %s" % dataname)
 

@@ -65,14 +65,37 @@ class WeightedMixer(MixingStrategy):
     def __iter__(self):
         for ds_name in cycle(self._iter_datasets()):
             iterator = self._iterators[ds_name]
+            # @memray directly yield to support lazy load of many shards
             try:
                 item = next(iterator)
+                yield item
             except StopIteration:
                 self._reset_iter(ds_name)
                 iterator = self._iterators[ds_name]
                 item = next(iterator)
+                yield item
             finally:
                 yield item
+
+
+class SimpleInfiniteMixer(MixingStrategy):
+    def __init__(self, iterables, weights):
+        super().__init__(iterables, weights)
+        self._iterators = {
+            ds_name: iter(generator)
+            for ds_name, generator in self.iterables.items()
+        }
+
+    def _reset_iter(self, ds_name):
+        self._iterators[ds_name] = iter(self.iterables[ds_name])
+
+    def __iter__(self):
+        for ds_name in cycle(self.iterables.keys()):
+            try:
+                iterable = self.iterables[ds_name]
+                yield from iterable
+            except StopIteration:
+                self._reset_iter(ds_name)
 
 
 class DynamicDatasetIter(object):
@@ -156,7 +179,8 @@ class DynamicDatasetIter(object):
             for ds_name in datasets_iterables.keys()
         }
         if self.is_train:
-            self.mixer = WeightedMixer(datasets_iterables, datasets_weights)
+            # self.mixer = WeightedMixer(datasets_iterables, datasets_weights)
+            self.mixer = SimpleInfiniteMixer(datasets_iterables, datasets_weights)
         else:
             self.mixer = SequentialMixer(datasets_iterables, datasets_weights)
         self.init_iterators = True

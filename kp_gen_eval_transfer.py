@@ -54,17 +54,20 @@ def scan_predictions(exp_root_dir):
     for subdir, dirs, files in os.walk(exp_root_dir):
         for file in files:
             if file.endswith('.pred'):
-                pred_name = file[: -5]
-                step, data = pred_name.split('-')
-                step = int(step[step.rfind('step_') + 5:])
-                data = data[5:]
-                pred = {
-                    'ckpt_name': pred_name,
-                    'pred_path': os.path.join(subdir, file),
-                    'dataset': data,
-                    'step': step
-                }
-                preds.append(pred)
+                try:
+                    pred_name = file[: -5]
+                    step, data = pred_name.split('-')
+                    step = int(step[step.rfind('step_') + 5:])
+                    data = data[5:]
+                    pred = {
+                        'ckpt_name': pred_name,
+                        'pred_path': os.path.join(subdir, file),
+                        'dataset': data,
+                        'step': step
+                    }
+                    preds.append(pred)
+                except:
+                    print('invalid pred name %s' % file)
 
     return preds
 
@@ -95,10 +98,14 @@ if __name__ == "__main__":
     parser.add_argument('-testsets', nargs='+', type=str, default=['kp20k', 'openkp', 'stackex', 'kptimes', 'jptimes'], help='Specify datasets to test on')
     parser.add_argument('--pred_trained_only', '-pred_trained_only', action='store_true', help='If true, it only runs inference of testsets that the job has been trained with.')
     parser.add_argument('--ignore_existing', '-ignore_existing', action='store_true', help='If true, it ignores previous generated results.')
+    parser.add_argument('--empirical_result', '-empirical_result', action='store_true', help='For export empirical results to CSV.')
 
     parser.add_argument('-splits', nargs='+', type=str, default=['train', 'test', 'valid'], help='Specify datasets to test on')
+    parser.add_argument('-tokenizer', type=str, default='split_nopunc', choices=['spacy', 'split', 'split_nopunc'],
+                        help='Specify what tokenizer used in evaluation')
+
     parser.add_argument('--onepass', '-onepass', action='store_true', help='If true, it only scans and generates once, otherwise an infinite loop scanning new available ckpts.')
-    parser.add_argument('--wait_patience', '-wait_patience', type=int, default=3, help='Terminates evaluation after scan this number of times.')
+    parser.add_argument('--wait_patience', '-wait_patience', type=int, default=2, help='Terminates evaluation after scan this number of times.')
     parser.add_argument('--wait_time', '-wait_time', type=int, default=120, help='.')
     parser.add_argument('--sleep_time', '-sleep_time', type=int, default=600, help='.')
 
@@ -106,7 +113,7 @@ if __name__ == "__main__":
     if isinstance(opt.data, str):
         setattr(opt, 'data', json.loads(opt.data.replace('\'', '"')))
     setattr(opt, 'data_task', ModelTask.SEQ2SEQ)
-    ArgumentParser._get_all_transform(opt)
+    if opt.data: ArgumentParser._get_all_transform(opt)
 
     opt.__setattr__('valid_batch_size', opt.batch_size)
     opt.__setattr__('batch_size_multiple', 1)
@@ -128,7 +135,10 @@ if __name__ == "__main__":
     if 'report' in opt.tasks:
         report_dir = os.path.join(opt.exp_root_dir, 'report')
         if not os.path.exists(report_dir): os.makedirs(report_dir)
-        kp_evaluate.gather_eval_results(eval_root_dir=opt.exp_root_dir, report_csv_dir=report_dir)
+        kp_evaluate.gather_eval_results(eval_root_dir=opt.exp_root_dir,
+                                        report_csv_dir=report_dir,
+                                        tokenizer=opt.tokenizer,
+                                        empirical_result=opt.empirical_result)
         logger.warning('Report accomplished, exit!')
         exit(0)
 
@@ -150,10 +160,10 @@ if __name__ == "__main__":
                                           src_shard, tgt_shard)
 
     current_patience = opt.wait_patience
-    pred_linecount_dict = {}
-    eval_linecount_dict = {}
 
     while True:
+        pred_linecount_dict = {}
+        eval_linecount_dict = {}
         job_done = False # a flag indicating if any real pred/eval job is done
 
         if 'pred' in opt.tasks:
@@ -177,8 +187,6 @@ if __name__ == "__main__":
                 logger.info("[%d/%d] Checking checkpoint: %s" % (ckpt_id, len(ckpts), ckpt_path))
                 setattr(opt, 'models', [ckpt['ckpt_path']])
 
-                translator = None
-
                 for datasplit_name, dataset in testset_path_dict.items():
                     # ignore current testdata-split if this data is not used in training
                     if opt.pred_trained_only:
@@ -188,6 +196,7 @@ if __name__ == "__main__":
                             # training dataset name appears in exp_name
                             if trainname in exp_name and cur_testname in testnames:
                                 pass_flag = True
+                                break
                         if not pass_flag:
                             print('Skip predict/evaluate test=[%s] for ckpt=[%s] due to train/test mismatch.' % (datasplit_name, exp_name))
                             continue
@@ -200,7 +209,6 @@ if __name__ == "__main__":
                     pred_file = '%s-data_%s.pred' % (ckpt_name, datasplit_name)
                     pred_path = os.path.join(pred_dir, pred_file)
 
-                    # do translation
                     # skip translation for this dataset if previous pred exists
                     do_trans_flag = True
                     if os.path.exists(pred_path):
@@ -231,44 +239,46 @@ if __name__ == "__main__":
                             except Exception as e:
                                 logger.exception('Error while validating or deleting PRED file: %s' % pred_path)
 
-                opt.data['valid']['path_src'] = src_path
-                opt.data['valid']['path_tgt'] = src_path
-                opt.data['valid']['path_align'] = None
+                    opt.data['valid']['path_src'] = src_path
+                    opt.data['valid']['path_tgt'] = src_path
+                    opt.data['valid']['path_align'] = None
 
-                try:
-                    if do_trans_flag or opt.ignore_existing:
-                        logger.info("*" * 50)
-                        logger.info("Start translating [data=%s] for [exp=%s]-[ckpt=%s]." % (datasplit_name, exp_name, ckpt_name))
-                        logger.info("\t exporting PRED result to %s." % (pred_path))
-                        logger.info("*" * 50)
+                    # do translation
+                    try:
+                        if do_trans_flag or opt.ignore_existing:
+                            logger.info("*" * 50)
+                            logger.info("Start translating [data=%s] for [exp=%s]-[ckpt=%s]." % (datasplit_name, exp_name, ckpt_name))
+                            logger.info("\t exporting PRED result to %s." % (pred_path))
+                            logger.info("*" * 50)
 
-                        # if it's BART model, OpenNMT has to do something additional
-                        if exp_name.strip().startswith('bart'):
-                            opt.__setattr__('fairseq_model', True)
-                            opt.__setattr__('encoder_type', 'bart')
-                            opt.__setattr__('decoder_type', 'bart')
-                            opt.__setattr__('pretrained_tokenizer', True)
-                            opt.__setattr__('copy_attn', False)
-                        else:
-                            opt.__setattr__('fairseq_model', False)
-                        if translator is None:
+                            # if it's BART model, OpenNMT has to do something additional
+                            if 'bart' in exp_name.lower():
+                                opt.__setattr__('fairseq_model', True)
+                                opt.__setattr__('encoder_type', 'bart')
+                                opt.__setattr__('decoder_type', 'bart')
+                                opt.__setattr__('pretrained_tokenizer', True)
+                                opt.__setattr__('copy_attn', False)
+                                opt.__setattr__('model_dtype', 'fp16')
+                            else:
+                                opt.__setattr__('fairseq_model', False)
+
                             translator = build_translator(opt, report_score=opt.verbose, logger=logger)
-                        # create an empty file to indicate that the translator is working on it
-                        codecs.open(pred_path, 'w+', 'utf-8').close()
-                        # set output_file for each dataset (instead of outputting to opt.output)
-                        translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
-                        _, _ = translator.translate(
-                            src=src_shard,
-                            batch_size=opt.batch_size,
-                            attn_debug=opt.attn_debug,
-                            opt=opt
-                        )
-                        job_done = True
-                        logger.info("Complete translating [%s], PRED file: %s." % (datasplit_name, pred_path))
-                    else:
-                        logger.info("Skip translating [%s] for %s, PRED file: %s." % (datasplit_name, ckpt_name, pred_path))
-                except Exception as e:
-                    logger.exception('Error while translating [%s], PRED file: %s.' % (datasplit_name, pred_path))
+                            # create an empty file to indicate that the translator is working on it
+                            codecs.open(pred_path, 'w+', 'utf-8').close()
+                            # set output_file for each dataset (instead of outputting to opt.output)
+                            translator.out_file = codecs.open(pred_path, 'w+', 'utf-8')
+                            _, _ = translator.translate(
+                                src=src_shard,
+                                batch_size=opt.batch_size,
+                                attn_debug=opt.attn_debug,
+                                opt=opt
+                            )
+                            job_done = True
+                            logger.info("Complete translating [%s], PRED file: %s." % (datasplit_name, pred_path))
+                        else:
+                            logger.info("Skip translating [%s] for %s, PRED file: %s." % (datasplit_name, ckpt_name, pred_path))
+                    except Exception as e:
+                        logger.exception('Error while translating [%s], PRED file: %s.' % (datasplit_name, pred_path))
 
         # do evaluation
         if 'eval' in opt.tasks:
@@ -285,14 +295,13 @@ if __name__ == "__main__":
                 if datasplit_name not in testset_path_dict: continue
 
                 logger.info("[%d/%d] Checking prediction: %s" % (pred_id, len(new_preds), pred_path))
-                # change to spacy eval, place it next to the .pred file
-                eval_path = pred_path[: -5] + '.spacyeval'
-                printout_path = pred_path[: -5] + '.report'
+                eval_path = pred_path[: -5] + '.%s.eval' % opt.tokenizer
+                printout_path = pred_path[: -5] + '.%s.report' % opt.tokenizer
 
                 do_eval_flag = True
                 try:
                     src_path, tgt_path, src_shard, tgt_shard = testset_path_dict[datasplit_name]
-                    if not pred_path in pred_linecount_dict:
+                    if not pred_path in pred_linecount_dict: # may be out of date
                         pred_linecount_dict[pred_path] = len([1 for i in open(pred_path, 'r').readlines()])
                     num_pred = pred_linecount_dict[pred_path]
                     if num_pred != len(src_shard):
@@ -304,6 +313,7 @@ if __name__ == "__main__":
                             os.remove(pred_path)
                             logger.warn('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
                                         % (num_pred, int(elapsed_time), pred_path))
+                            del pred_linecount_dict[pred_path]
                     else:
                         # if pred is good, check if re-eval is necessary
                         if os.path.exists(eval_path):
@@ -316,20 +326,23 @@ if __name__ == "__main__":
                                 logger.info("Skip evaluating because previous EVAL file was generated only %d sec ago (<%d sec). EVAL file: %s"
                                             % (elapsed_time, opt.test_interval, eval_path))
                             else:
-                                score_dict = json.load(open(eval_path, 'r'))
-                                if 'present_exact_correct@5' in score_dict:
-                                    num_eval = len(score_dict['present_exact_correct@5'])
-                                else:
-                                    num_eval = 0
-                                eval_linecount_dict[eval_path] = num_eval
-                                if num_eval == len(src_shard):
-                                    do_eval_flag = False
-                                    logger.info("Skip evaluating because existing eval file is complete.")
-                                else:
-                                    # it's a bad result and delete it
+                                try:
+                                    score_dict = json.load(open(eval_path, 'r'))
+                                    if 'present_exact_correct@5' in score_dict:
+                                        num_eval = len(score_dict['present_exact_correct@5'])
+                                    else:
+                                        num_eval = 0
+                                    eval_linecount_dict[eval_path] = num_eval
+                                    if num_eval == len(src_shard):
+                                        do_eval_flag = False
+                                        logger.info("Skip evaluating because existing eval file is complete.")
+                                    else:
+                                        # it's a bad result and delete it
+                                        os.remove(eval_path)
+                                        logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds: %s' % (num_pred, num_eval, int(elapsed_time), eval_path))
+                                except:
                                     os.remove(eval_path)
-                                    logger.info('Removed a bad eval file, #(pred)=%d, #(eval)=%d, #(elapsed_time)=%ds. PRED file: %s'
-                                                % (num_pred, num_eval, int(elapsed_time), eval_path))
+                                    logger.info('Removed a bad eval file: %s' % (eval_path))
                 except Exception as e:
                     logger.exception('Error while validating or deleting EVAL file: %s' % eval_path)
 
@@ -339,11 +352,14 @@ if __name__ == "__main__":
                         logger.info("Start evaluating [%s] for %s" % (datasplit_name, ckpt_name))
                         logger.info("\t will export eval result to %s." % (eval_path))
                         logger.info("*" * 50)
+                        codecs.open(eval_path, 'w+', 'utf-8').close()
+
                         score_dict = kp_evaluate.keyphrase_eval(datasplit_name,
                                                                 src_path, tgt_path,
                                                                 pred_path=pred_path, logger=logger,
                                                                 verbose=opt.verbose,
-                                                                report_path=printout_path
+                                                                report_path=printout_path,
+                                                                tokenizer=opt.tokenizer
                                                                 )
                         if score_dict is not None:
                             with open(eval_path, 'w') as output_json:

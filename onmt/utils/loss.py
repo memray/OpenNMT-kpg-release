@@ -218,7 +218,7 @@ class LossComputeBase(nn.Module):
             batch_stats.update(stats)
         return None, batch_stats
 
-    def _stats(self, loss, scores, target):
+    def _stats(self, loss, scores, target, batch_size):
         """
         Args:
             loss (:obj:`FloatTensor`): the loss computed by the loss criterion.
@@ -232,7 +232,7 @@ class LossComputeBase(nn.Module):
         non_padding = target.ne(self.padding_idx)
         num_correct = pred.eq(target).masked_select(non_padding).sum().item()
         num_non_padding = non_padding.sum().item()
-        return onmt.utils.Statistics(loss.item(), num_non_padding, num_correct)
+        return onmt.utils.Statistics(loss.item(), num_non_padding, num_correct, batch_size)
 
     def _bottle(self, _v):
         return _v.view(-1, _v.size(2))
@@ -375,6 +375,7 @@ class CommonLossCompute(LossComputeBase):
                       align_head=None, ref_align=None,
                       src_states=None, dec_states=None, tgtenc_states=None,
                       model=None):
+        batch_size = batch.batch_size
         # output=[tgt_len, B, D], bottled_output=[tgt_len*B, D]
         bottled_output = self._bottle(output)
         # [tgt_len*B, V]
@@ -425,7 +426,7 @@ class CommonLossCompute(LossComputeBase):
             loss += semantic_coverage_loss
             # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
-        stats = self._stats(loss.clone(), scores, gtruth)
+        stats = self._stats(loss.clone(), scores, gtruth, batch_size)
 
         return loss, stats
 

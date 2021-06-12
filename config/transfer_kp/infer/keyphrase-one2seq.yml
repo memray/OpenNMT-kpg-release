@@ -16,6 +16,9 @@ data:
 ### Transform related opts:
 #### Keyphrase specific
 kp_concat_type: pres_abs
+use_given_inputs: false
+lowercase: false
+
 beam_terminate: full
 #### Subword and vocab
 src_subword_model: roberta_tokenize
@@ -48,8 +51,12 @@ verbose: 'false'
 log_file_level: 'DEBUG'
 n_best: 500
 
+# Decoding
+random_sampling_temp: 0.0
+
 # Efficiency
 #gpu: 0
 gpu: -1
 
+seed: 97
 #beam_terminate: full/topbeam

@@ -279,13 +279,19 @@ def load_roberta_kp_tokenizer(vocab_path, bpe_dropout):
     print('Loading pretrained vocabulary from %s' % (vocab_dir))
     # tokenizer = RobertaTokenizer(vocab_file=bpe_vocab, merges_file=bpe_merges)
     sep_token = '<sep>'
-    kp_special_tokens = ['<present>', '<absent>', '<category>']
+    kp_special_tokens = ['<present>', '<absent>',
+                         '<category>', '<infill>', '<seealso>', '<header>',
+                         '<|endoftext|>', '<sep>', '<mask>',
+                         '<mixed>', '<number>', '<phrase>']
+
     roberta_kp_tokenizer = RobertaTokenizer(vocab_file=bpe_vocab,
                                  merges_file=bpe_merges,
                                  sep=sep_token,  # doesn't work
                                  additional_special_tokens=kp_special_tokens)
+
     sep_token_id = roberta_kp_tokenizer.convert_tokens_to_ids(sep_token)
     added_sep_token = AddedToken(sep_token, lstrip=False, rstrip=False)
+
     roberta_kp_tokenizer.sep_token = sep_token
     roberta_kp_tokenizer._sep_token = added_sep_token
     roberta_kp_tokenizer.init_kwargs['sep_token'] = sep_token
@@ -296,15 +302,17 @@ def load_roberta_kp_tokenizer(vocab_path, bpe_dropout):
     roberta_kp_tokenizer.special_tokens_map_extended['sep_token'] = added_sep_token
 
     roberta_kp_tokenizer.unique_no_split_tokens = roberta_kp_tokenizer.all_special_tokens
-
     roberta_kp_tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base",
-                                                     __slow_tokenizer=roberta_kp_tokenizer, tokenizer_file=None,
+                                                     __slow_tokenizer=roberta_kp_tokenizer,
+                                                     tokenizer_file=None,
                                                      vocab_file=bpe_vocab,
                                                      merges_file=bpe_merges)
+
     print('Vocab size=%d, base vocab size=%d' % (len(roberta_kp_tokenizer), roberta_kp_tokenizer.vocab_size))
     if isinstance(roberta_kp_tokenizer, RobertaTokenizerFast) and float(bpe_dropout) > 0.0:
-        workaround_files = roberta_kp_tokenizer._tokenizer.model.save(vocab_dir, 'workaround')
-        roberta_kp_tokenizer._tokenizer.model = type(roberta_kp_tokenizer._tokenizer.model)(*workaround_files, dropout=float(bpe_dropout))
+        roberta_kp_tokenizer._tokenizer.model.dropout = float(bpe_dropout)
+        # workaround_files = roberta_kp_tokenizer._tokenizer.model.save(vocab_dir, 'workaround')
+        # roberta_kp_tokenizer._tokenizer.model = type(roberta_kp_tokenizer._tokenizer.model)(*workaround_files, dropout=float(bpe_dropout))
 
     return roberta_kp_tokenizer
 

@@ -4,32 +4,48 @@ PROJECT_DIR="/zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer"
 CURDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 TEMPLATE_PATH="$CURDIR/kpeval_gpu_template.sh"
 
-echo $0
-echo $PROJECT_DIR
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 partition="gtx1080" # titanx gtx1080 v100
-days="6"
+days="1"
+random=$RANDOM
 
-task_args="pred" # pred or eval
+task_args="pred eval" # pred or eval
 batch_size=1
 beam_size=50
 max_length=40
 step_base=1
 
 # evaluate with all predictions
-datasets=(kp20k_valid2k openkp openkp_valid2k kptimes_valid2k stackex stackex_valid2k duc)
 datasets=(kp20k openkp kptimes jptimes stackex)
 datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes duc stackex stackex_valid2k)
+#datasets=(kp20k kp20k_valid2k duc inspec krapivin nus semeval)
+
+dataset_list=""
 
 for dataset in "${datasets[@]}"
 do
     dataset_list+=" ${dataset}"
 done
 
-exp_root_dir="/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k/"
-EXP_NAME="$task_args-$partition-o2sfs-bs$beam_size"
-DUMP_SCRIPT_PATH="$CURDIR/$EXP_NAME.sh"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_bart_DA/"
+exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_o2s_fulldata_devbest"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot_devbest/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v3_devbest/"
+exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_DA_devbest/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot_devbest/"
+exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot_devbest"
+
+echo $0
+echo $PROJECT_DIR
+echo $dataset_list
+echo $exp_root_dir
+
+EXP_NAME="predeval-$partition-$random-devset-bs$beam_size"
+DUMP_SCRIPT_PATH="$CURDIR/tmp/$EXP_NAME.sh"
+rm -f $DUMP_SCRIPT_PATH
+
 replaces="s/{job_name}/$EXP_NAME/;";
 replaces="$replaces s|{partition}|$partition|g;";
 replaces="$replaces s|{days}|$days|g;";
@@ -45,6 +61,6 @@ cat ${TEMPLATE_PATH} | sed -e "$replaces" > ${DUMP_SCRIPT_PATH}
 
 echo $EXP_NAME
 echo $DUMP_SCRIPT_PATH
+echo "${slurm_output_dir}/$EXP_NAME.out"
 
 sbatch $DUMP_SCRIPT_PATH
-

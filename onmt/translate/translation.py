@@ -123,6 +123,9 @@ class TranslationBuilder(object):
         else:
             src_vocabs = None
 
+        # print('src.shape=%s' % str(src.shape), src.cpu().numpy().tolist())
+        # print('tgt.shape=%s'% str(tgt.shape), tgt.cpu().numpy().tolist())
+
         translations = []
         for b in range(batch_size):
             if self.use_dynamic_transform:
@@ -142,6 +145,11 @@ class TranslationBuilder(object):
                 preds[b][n],
                 align[b][n] if align[b] is not None else attn[b][n])
                 for n in range(min(self.n_best, len(preds[b])))]
+
+            # for pred, pred_sent in zip(preds[0], pred_sents):
+            #     print('[%d]' % pred.shape, preds[0][0].cpu().numpy().tolist())
+            #     print('[%d]' % len(pred_sent), pred_sent)
+
             gold_sent = None
             if tgt is not None:
                 if tgt.dim() == 2:

@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 """Train models with dynamic data."""
+import copy
+import os
 import sys
 import torch
+import numpy as np
 from functools import partial
 
 # import onmt.opts as opts
+from onmt.keyphrase import utils
 from onmt.utils.distributed import ErrorHandler, consumer, batch_producer
 from onmt.utils.misc import set_random_seed
 from onmt.modules.embeddings import prepare_pretrained_embeddings
@@ -68,7 +72,7 @@ def _init_train(opt):
             _msg = "configured transforms is different from checkpoint:"
             new_transf = opt._all_transform.difference(
                 checkpoint["opt"]._all_transform)
-            old_transf = checkpoint["opt"]._all_transform.difference(
+            old_transf = set(checkpoint["opt"]._all_transform).difference(
                 opt._all_transform)
             if len(new_transf) != 0:
                 _msg += f" +{new_transf}"
@@ -99,8 +103,39 @@ def train(opt):
     ArgumentParser.validate_model_opts(opt)
 
     set_random_seed(opt.seed, False)
-
     checkpoint, fields, transforms_cls = _init_train(opt)
+
+    new_data_dict = {}
+    # @memray: handle the case if opt.data is a folder
+    for corpus_id, corpus_dict in opt.data.items():
+        if os.path.isdir(corpus_dict["path_src"]):
+            src_file_paths = []
+            for root, dirs, files in os.walk(corpus_dict["path_src"]):
+                for file in files:
+                    if file.endswith('.json'):
+                        src_file_paths.append(os.path.join(root, file))
+            src_file_paths = sorted(src_file_paths)
+            if len(src_file_paths) == 0:
+                raise Exception("Error: no JSON files found in for %s in: %s" % (corpus_id, corpus_dict["path_src"]))
+            for src_file_path in src_file_paths:
+                new_corpus_dict = copy.copy(corpus_dict)
+                new_corpus_dict["path_src"] = src_file_path
+                new_corpus_dict["path_tgt"] = src_file_path
+                src_file = src_file_path[len(corpus_dict["path_src"]):]
+                if "label_data" in corpus_dict:
+                    new_corpus_dict["label_data"] = [os.path.join(label_folder, src_file) for label_folder in corpus_dict["label_data"]]
+                else:
+                    new_corpus_dict["label_data"] = None
+                new_data_dict[corpus_id + '-' + src_file.replace(os.path.sep, '-')] = new_corpus_dict
+        else:
+            new_data_dict[corpus_id] = corpus_dict
+
+    with utils.numpy_seed(opt.seed):
+        kv_pairs = list(new_data_dict.items())
+        np.random.shuffle(kv_pairs)
+        new_data_dict = {k:v for k,v in kv_pairs}
+    opt.data = new_data_dict
+
     train_process = partial(
         single_main,
         fields=fields,

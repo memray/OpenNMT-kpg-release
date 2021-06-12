@@ -1,3 +1,4 @@
+import contextlib
 import re
 import string
 from os.path import join, dirname
@@ -563,3 +564,19 @@ def plot_learning_curve_and_write_csv(scores, curve_names, checkpoint_names, tit
     plt.close()
     return plt
 '''
+
+@contextlib.contextmanager
+def numpy_seed(seed, *addl_seeds):
+    """Context manager which seeds the NumPy PRNG with the specified seed and
+    restores the state afterward"""
+    if seed is None:
+        yield
+        return
+    if len(addl_seeds) > 0:
+        seed = int(hash((seed, *addl_seeds)) % 1e6)
+    state = np.random.get_state()
+    np.random.seed(seed)
+    try:
+        yield
+    finally:
+        np.random.set_state(state)

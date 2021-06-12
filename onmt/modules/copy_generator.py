@@ -280,7 +280,7 @@ class CommonCopyGeneratorLossCompute(CommonLossCompute):
         target_data[correct_mask] += offset_align
 
         # Compute sum of perplexities for stats
-        stats = self._stats(loss.sum().clone(), scores_data, target_data)
+        stats = self._stats(loss.sum().clone(), scores_data, target_data, batch_size=batch.batch_size)
 
         # this part looks like it belongs in CopyGeneratorLoss
         if self.normalize_by_length:

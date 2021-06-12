@@ -1,0 +1,115 @@
+#train_from: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k/ckpts/checkpoint_step_70000.pt
+
+### Exp meta
+exp: transformer-PT-DA_MagTL-step100k
+exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k
+save_model: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k/ckpts/checkpoint
+log_file: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k/log.txt
+wandb_project: transfer_kp_mag
+
+### Data opts:
+data_type: keyphrase
+pretrained_tokenizer: true # using roberta_tokenize_kpg transform
+data_format: jsonl
+save_data: /zfs1/hdaqing/rum20/kp/data/kp/generated/dynamic.ex0
+overwrite: False
+cache_dir: /zfs1/hdaqing/rum20/kp/data/kp/cache/
+
+src_seq_length_trunc: 512
+tgt_seq_length_trunc: 64
+max_phrase_len: 16
+max_target_phrases: 16
+
+shuffle_shards: false
+label_sample_ratio: [0.2, 0.8]
+data:
+    corpus_1:
+        type: keyphrase
+        transforms: [keyphrase, kp_replace_target, roberta_tokenize_kpg]
+        path_src: /zfs1/hdaqing/rum20/kp/data/kp/oag_v1_cs_nokp/
+        label_data: ["/zfs1/hdaqing/rum20/kp/data/kp/oag_v1_cs_nokp_np/", "/zfs1/hdaqing/rum20/kp/data/kp/oag_v1_cs_nokp_wikiTL/"]
+
+### Transform related opts:
+#### Keyphrase specific
+kp_concat_type: pres_abs
+#### Subword and vocab
+src_subword_model: roberta_tokenize
+src_vocab: /zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-kp/vocab.json
+share_vocab: True
+bpe_dropout: 0.1
+#### Sampling
+switchout_temperature: 1.0
+tokendrop_temperature: 1.0
+tokenmask_temperature: 1.0
+#### Filter, default is 1024
+src_seq_length: -1
+tgt_seq_length: -1
+#### BART
+permute_sent_ratio: 0.0
+rotate_ratio: 0.0
+insert_ratio: 0.0
+random_ratio: 0.0
+mask_ratio: 0.0
+mask_length: subword
+poisson_lambda: 3.0
+replace_length: 1
+
+# Model opts:
+encoder_type: transformer
+decoder_type: transformer
+word_vec_size: 512
+rnn_size: 512
+layers: 6
+heads: 8
+dropout: 0.1
+
+share_embeddings: 'true'
+copy_attn: 'true'
+reuse_copy_attn: 'true'
+coverage_attn: 'true'
+context_gate: both
+input_feed: 1
+param_init_glorot: 'true'
+position_encoding: 'true'
+
+optim: adam
+learning_rate: 5e-5
+param_init: 0
+warmup_steps: 10000
+decay_method: linear
+label_smoothing: 0.1
+adam_beta2: 0.998
+
+# batch_size - token: num_example * max(#word in src/tgt) * accum_count
+# batch_size - sent: batch_size * accum_count
+batch_size: 3840
+accum_count: 1
+valid_batch_size: 64
+batch_type: tokens
+normalization: tokens
+max_grad_norm: 2.0
+max_generator_batches: 1000
+
+train_steps: 100000
+valid_steps: 10000
+save_checkpoint_steps: 5000
+report_every: 100
+seed: 3435
+
+log_file_level: DEBUG
+tensorboard: 'false'
+
+#tensorboard_log_dir: runs/kp20k.one2one.transformer/
+
+#wandb: 'true'
+wandb: 'false'
+wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
+
+
+world_size: 4
+gpu_ranks:
+- 0
+- 1
+- 2
+- 3
+#master_port: 10000

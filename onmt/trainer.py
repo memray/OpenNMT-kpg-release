@@ -255,8 +255,8 @@ class Trainer(object):
                 logger.info("GpuRank %d: index: %d", self.gpu_rank, i)
             if self.gpu_verbose_level > 0:
                 logger.info("GpuRank %d: reduce_counter: %d \
-                            n_minibatch %d"
-                            % (self.gpu_rank, i + 1, len(batches)))
+                            \t n_minibatch=%d,\t total_batch_size=%d"
+                            % (self.gpu_rank, i + 1, len(batches), sum([b.batch_size for b in batches])))
 
             if self.n_gpu > 1:
                 normalization = sum(onmt.utils.distributed
@@ -387,7 +387,6 @@ class Trainer(object):
                 report_stats.n_src_words += src_lengths.sum().item()
             # tgt.shape = [tgt_len, batch_size, 1]
             tgt_outer = batch.tgt
-
 
             bptt = False
             for j in range(0, target_size - 1, trunc_size):

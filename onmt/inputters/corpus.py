@@ -108,7 +108,7 @@ class DatasetAdapter(object):
 class ParallelCorpus(object):
     """A parallel corpus file pair that can be loaded to iterate."""
 
-    def __init__(self, name, src, tgt, align=None, dataset_type=None, examples=None):
+    def __init__(self, name, src, tgt, align=None, extra_label_paths=None, dataset_type=None, examples=None):
         """Initialize src & tgt side file path."""
         self.id = name
         self.src = src
@@ -116,6 +116,7 @@ class ParallelCorpus(object):
         self.align = align
         self.dataset_type = dataset_type
         self.examples = examples
+        self.extra_label_paths = extra_label_paths if extra_label_paths is not None else []
 
     def load(self, offset=0, stride=1):
         """
@@ -123,11 +124,16 @@ class ParallelCorpus(object):
         `offset` and `stride` allow to iterate only on every
         `stride` example, starting from `offset`.
         """
+        # extra_label_files = [exfile_open(extra_label_path, mode='rb') for extra_label_path in self.extra_label_paths]
+        logger.info(f"Loading {repr(self)}...")
+        extra_label_files = [[json.loads(l) for l in open(extra_label_path, mode='rb').readlines()] for extra_label_path in self.extra_label_paths]
         with exfile_open(self.src, mode='rb') as fs,\
                 exfile_open(self.tgt, mode='rb') as ft,\
                 exfile_open(self.align, mode='rb') as fa:
-            logger.info(f"Loading {repr(self)}...")
-            for i, (sline, tline, align) in enumerate(zip(fs, ft, fa)):
+            files = [fs, ft, fa] + extra_label_files
+            for i, lines in enumerate(zip(*files)):
+                sline, tline, align = lines[0], lines[1], lines[2]
+
                 if (i % stride) == offset:
                     if self.dataset_type == 'keyphrase':
                         sline = sline.decode('utf-8')
@@ -135,6 +141,15 @@ class ParallelCorpus(object):
                         # dps with empty src/tgt will be skipped
                         example['src'] = example['src'] if 'src' in example else ''
                         example['tgt'] = example['tgt'] if 'tgt' in example else ''
+
+                        # load extra labels
+                        if len(lines) > 2:
+                            label_exs = lines[3:]
+                            for labelset_id, label_ex in enumerate(label_exs):
+                                # concatenate if it's a list
+                                if len(label_ex['pred_sents']) > 0 and not isinstance(label_ex['pred_sents'][0], str):
+                                    label_ex['pred_sents'] = [' '.join(p) for p in label_ex['pred_sents']]
+                                example.update({'target%d' % labelset_id: label_ex['pred_sents']})
                     else:
                         sline = sline.decode('utf-8')
                         tline = tline.decode('utf-8')
@@ -156,14 +171,26 @@ def get_corpora(opts, is_train=False):
     corpora_dict = {}
     if is_train:
         for corpus_id, corpus_dict in opts.data.items():
-            if corpus_id != CorpusName.VALID:
-                corpora_dict[corpus_id] = ParallelCorpus(
-                    corpus_id,
-                    corpus_dict["path_src"],
-                    corpus_dict["path_tgt"],
-                    corpus_dict["path_align"],
-                    dataset_type = corpus_dict["type"]
-                )
+            if 'type' in corpus_dict and corpus_dict['type'] == 'keyphrase':
+                if corpus_id != CorpusName.VALID:
+                    corpora_dict[corpus_id] = ParallelCorpus(
+                        corpus_id,
+                        corpus_dict["path_src"],
+                        corpus_dict["path_tgt"],
+                        corpus_dict["path_align"],
+                        dataset_type = corpus_dict["type"],
+                        extra_label_paths = corpus_dict["label_data"] if "label_data" in corpus_dict else None
+                    )
+            else:
+                if corpus_id != CorpusName.VALID:
+                    corpora_dict[corpus_id] = ParallelCorpus(
+                        corpus_id,
+                        corpus_dict["path_src"],
+                        corpus_dict["path_tgt"],
+                        corpus_dict["path_align"],
+                        dataset_type = corpus_dict["type"],
+                        extra_label_paths = corpus_dict["label_data"] if "label_data" in corpus_dict else None
+                    )
     else:
         if CorpusName.VALID in opts.data.keys():
             corpora_dict[CorpusName.VALID] = ParallelCorpus(
@@ -195,7 +222,7 @@ class ParallelCorpusIterator(object):
         self.cid = corpus.id
         self.corpus = corpus
         self.transform = transform
-        self.infinitely = infinitely
+        self.infinitely = False # @memray, set to always False
         if skip_empty_level not in ['silent', 'warning', 'error']:
             raise ValueError(
                 f"Invalid argument skip_empty_level={skip_empty_level}")

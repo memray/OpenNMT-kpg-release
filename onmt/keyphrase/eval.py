@@ -443,9 +443,9 @@ def self_redundancy(_input):
 
 
 def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>'):
-    src_seq = [t.text.lower() for t in spacy_nlp(src_text, disable=["textcat"])]
-    tgt_seqs = [[t.text.lower() for t in spacy_nlp(p, disable=["textcat"])] for p in tgt_kps]
-    pred_seqs = [[t.text.lower() for t in spacy_nlp(p, disable=["textcat"])] for p in pred_kps]
+    src_seq = [t for t in re.split(r'\W', src_text) if len(t) > 0]
+    tgt_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in tgt_kps]
+    pred_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in pred_kps]
 
     topk_range = ['k', 10]
     absent_topk_range = ['M']

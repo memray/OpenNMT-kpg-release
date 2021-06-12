@@ -2,6 +2,7 @@
 """
 Python File Template 
 """
+import argparse
 import json
 import os
 
@@ -224,7 +225,7 @@ def spacy_noun_chunks_all_nested(doc, remove_duplicate=True):
     return noun_chunk_list
 
 
-def noun_chunks_by_pos_regex(doc, min_len, max_len):
+def noun_chunks_by_pos_regex(text, min_len, max_len):
     '''
     https://files.ifi.uzh.ch/cl/hess/classes/ecl1/termerCIE.html
         (Adjective | Noun)* (Noun Preposition)? (Adjective | Noun)* Noun
@@ -235,21 +236,24 @@ def noun_chunks_by_pos_regex(doc, min_len, max_len):
     :param max_len:
     :return:
     '''
-    cands = []
+    doc = spacy_nlp(text, disable=["textcat"])
 
     np_regex = r'((^ADJ|^NOUN|^PROPN)(ADP|-|ADJ|NOUN|PROPN)*?)?(NOUN|PROPN)+'
-
+    cands = []
     # a two-layer loop to get all n-grams
     for i in range(0, len(doc) - 1):
         for k in range(min_len, max_len + 1):
             if i + k > len(doc): break
             span = doc[i: i + k]
-            pos_seq = ['-' if t.text=='-' else t.pos_ for t in span]
-            pos_seq_str = ''.join(pos_seq)
+            pos = ['-' if t.text == '-' else t.pos_ for t in span]
+            pos_str = ''.join(pos)
 
-            cands.append((span, pos_seq_str))
+            cands.append((span, pos_str, pos))
 
-    cands = [span for span, pos in cands if re.fullmatch(np_regex, pos)]
+    #     for np_id, (np, pos_str, pos) in enumerate(cands):
+    #         print('[%d]' % np_id, np, str(pos), '[match]' if re.fullmatch(np_regex, pos_str) else '')
+
+    cands = [span.text for span, pos_str, pos in cands if re.fullmatch(np_regex, pos_str)]
 
     return cands
 
@@ -563,7 +567,44 @@ def check_model_recallM():
                len(absent_tgt_num_list), np.mean(absent_tgt_num_list), np.mean(absent_pred_num_list), np.mean(absent_recall_list) if len(absent_recall_list) > 0 else 0.0
                ))
 
+
+def extract_np_mag():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-input_path', required=True)
+    parser.add_argument('-output_dir', required=True)
+
+    opt = parser.parse_args()
+
+    input_filename = opt.input_path.split('/')[-1]
+    output_path = os.path.join(opt.output_dir, input_filename)
+    if not os.path.exists(opt.output_dir): os.mkdir(opt.output_dir)
+
+    print('Extracting NP for %s' % opt.input_path)
+
+    with open(opt.input_path, 'r') as input_jsonl, open(output_path, 'w') as output_jsonl:
+        for l_id, l in enumerate(input_jsonl):
+            if l_id % 1000 == 0: print('%d' % l_id)
+            ex = json.loads(l)
+            src_text = ex['title'] + ' . ' + ex['abstract']
+            nps = noun_chunks_by_pos_regex(src_text, min_len=2, max_len=6)
+
+#             print(src_text)
+#             for np_id, np in enumerate(nps):
+#                 print('[%d]' % np_id, np)
+
+            # remove duplicates and write to file
+            np_set = set()
+            unique_nps = []
+            for np in nps:
+                _np = np.strip().lower()
+                if _np not in np_set:
+                    unique_nps.append(np)
+                    np_set.add(_np)
+            output_ex = {'pred_sents': unique_nps}
+            output_jsonl.write(json.dumps(output_ex) + '\n')
+
 if __name__ == '__main__':
-    test_np()
+    extract_np_mag()
+    # test_np()
     # check_NP_recallM()
     # check_model_recallM()

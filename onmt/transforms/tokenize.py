@@ -260,15 +260,17 @@ class RoBERTaTransform(TokenizerTransform):
     def __init__(self, opts):
         """Initialize necessary options for subword_nmt."""
         super().__init__(opts)
-        self.bpe_dropout = opts.bpe_dropout
-        self.src_vocab = opts.src_vocab
-        self.tgt_vocab = opts.tgt_vocab
-        self.seq_length_trunc = {}
-        self.seq_length_trunc['src'] = opts.src_seq_length_trunc
-        self.seq_length_trunc['tgt'] = opts.tgt_seq_length_trunc
+        self.opts = opts
+        self._parse_opts()
 
     def _parse_opts(self):
         super()._parse_opts()
+        self.bpe_dropout = self.opts.bpe_dropout
+        self.src_vocab = self.opts.src_vocab
+        self.tgt_vocab = self.opts.tgt_vocab
+        self.seq_length_trunc = {}
+        self.seq_length_trunc['src'] = self.opts.src_seq_length_trunc
+        self.seq_length_trunc['tgt'] = self.opts.tgt_seq_length_trunc
         self.dropout = {'src': self.src_subword_alpha,
                         'tgt': self.tgt_subword_alpha}
 

@@ -5,6 +5,7 @@ import math
 import sys
 
 from onmt.utils.logging import logger
+from decimal import Decimal
 
 
 class Statistics(object):
@@ -16,9 +17,9 @@ class Statistics(object):
     * perplexity
     * elapsed time
     """
-
-    def __init__(self, loss=0, n_words=0, n_correct=0):
+    def __init__(self, loss=0, n_words=0, n_correct=0, n_examples=0):
         self.loss = loss
+        self.n_examples = n_examples
         self.n_words = n_words
         self.n_correct = n_correct
         self.n_src_words = 0
@@ -81,6 +82,7 @@ class Statistics(object):
         self.loss += stat.loss
         self.n_words += stat.n_words
         self.n_correct += stat.n_correct
+        self.n_examples += stat.n_examples
 
         if update_n_src_words:
             self.n_src_words += stat.n_src_words
@@ -109,6 +111,7 @@ class Statistics(object):
         report['%sxent' % prefix] = self.xent()
         report['%sloss' % prefix] = self.loss
         report['%slr' % prefix] = learning_rate
+        report['%sexamples' % prefix] = self.n_examples
         report['%ssrcpersec' % prefix] = self.n_src_words / (t + 1e-5)
         report['%sallpersec' % prefix] = self.n_words / (t + 1e-5)
 
@@ -128,12 +131,13 @@ class Statistics(object):
             step_fmt = "%s/%5d" % (step_fmt, num_steps)
         logger.info(
             ("Step %s; acc: %6.2f; ppl: %5.2f; xent: %4.2f; " +
-             "lr: %7.5f; %3.0f/%3.0f tok/s; %6.0f sec")
+             "lr: %7.5E; num_example: %d; %3.0f/%3.0f tok/s; %6.0f sec")
             % (step_fmt,
                self.accuracy(),
                self.ppl(),
                self.xent(),
-               learning_rate,
+               Decimal(learning_rate),
+               self.n_examples,
                self.n_src_words / (t + 1e-5),
                self.n_words / (t + 1e-5),
                time.time() - start))

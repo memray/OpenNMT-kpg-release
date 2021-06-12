@@ -7,6 +7,7 @@ import os
 import time
 import numpy as np
 from itertools import count, zip_longest
+from scipy import stats
 
 import torch
 import tqdm
@@ -476,6 +477,9 @@ class Inference(object):
         for batch_idx, batch in tqdm.tqdm(enumerate(data_iter), desc='Translating in batches'):
             _batch_size = batch.batch_size
             num_examples += _batch_size
+
+            # if batch_idx > 0:
+            #     break
 
             # @memray reshaping for dynamic preprocessing and keyphrase dataset
             if self.data_type == 'keyphrase':
@@ -954,6 +958,13 @@ class Translator(Inference):
                 decoder_in, memory_bank, memory_lengths=memory_lengths, step=step
             )
 
+        # print("dec_out=")
+        # print('max=', dec_out.cpu().numpy().max())
+        # print('min=', dec_out.cpu().numpy().min())
+        # print('mean=', dec_out.cpu().numpy().mean())
+        # if dec_attn:
+        #     print("dec_attn=", dec_attn['std'][0][0].cpu().numpy().tolist())
+
         # Generator forward.
         if not self.copy_attn:
             if dec_attn and "std" in dec_attn:
@@ -1016,6 +1027,17 @@ class Translator(Inference):
 
         # (1) Run the encoder on the src.
         src, enc_states, memory_bank, src_lengths, encoder_output = self._run_encoder(batch)
+
+        # print("src.shape=", src.shape)
+        # print("encoder_output.encoder_out=")
+        # print('max=', encoder_output['encoder_out'][0].data.cpu().numpy().max())
+        # print('min=', encoder_output['encoder_out'][0].data.cpu().numpy().min())
+        # print('mean=', encoder_output['encoder_out'][0].data.cpu().numpy().mean())
+        # print("encoder_output.encoder_embedding=")
+        # print('max=', encoder_output['encoder_embedding'][0].data.cpu().numpy().max())
+        # print('min=', encoder_output['encoder_embedding'][0].data.cpu().numpy().min())
+        # print('mean=', encoder_output['encoder_embedding'][0].data.cpu().numpy().mean())
+
         self.model.decoder.init_state(src, memory_bank, enc_states)
 
         gold_score = self._gold_score(
@@ -1028,6 +1050,7 @@ class Translator(Inference):
             batch_size,
             src,
         )
+        # print('gold_score=', gold_score.data.cpu().numpy().mean())
 
         # (2) prep decode_strategy. Possibly repeat src objects.
         src_map = batch.src_map if use_src_map else None
@@ -1051,7 +1074,9 @@ class Translator(Inference):
 
         # (3) Begin decoding step by step:
         for step in range(decode_strategy.max_length):
-            # print(step)
+            # print('=' * 50)
+            # print('step=%d' % step)
+
             if isinstance(self.model.decoder, BARTDecoder):
                 # keep all predicted tokens, length is used for position embedding, (pred_len, batch_size * beam_size, 1)
                 decoder_input = decode_strategy.alive_seq.permute(1, 0).unsqueeze(2)
@@ -1072,6 +1097,11 @@ class Translator(Inference):
                 encoder_output=encoder_output,
                 incremental_state=incremental_state,
             )
+
+            # print("log_probs=")
+            # print('max=', log_probs.cpu().numpy().max())
+            # print('min=', log_probs.cpu().numpy().min())
+            # print('mean=', log_probs.cpu().numpy().mean())
 
             decode_strategy.advance(log_probs, attn)
             any_finished = decode_strategy.is_finished.any()
@@ -1101,6 +1131,7 @@ class Translator(Inference):
                 if isinstance(self.model.decoder, BARTDecoder):
                     self.model.decoder.model.reorder_incremental_state_scripting(incremental_state, select_indices)
                     encoder_output = self.model.encoder.model.reorder_encoder_out(encoder_output, select_indices)
+                    # print('step=', step)
                     # print('#select_indices=%d' % len(select_indices))
                     # print(select_indices)
                     # print('#finished=%d' % (torch.sum(decode_strategy.is_finished.int()).item()))
@@ -1110,7 +1141,8 @@ class Translator(Inference):
                     self.model.decoder.map_state(
                         lambda state, dim: state.index_select(dim, select_indices)
                     )
-
+            # print('decode_strategy.alive_seq:', decode_strategy.alive_seq.cpu().numpy().tolist())
+            # print('decode_strategy.topk_scores:', decode_strategy.topk_scores.cpu().numpy().tolist())
 
         return self.report_results(
             gold_score,
