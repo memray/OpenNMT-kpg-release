@@ -8,6 +8,7 @@ bash script/transfer/mag/train/transformer-kp20k-PT_step200k-FT_full_step20k-lr1
 bash script/transfer/mag/train/transformer-kp20k-PTDA_kp20k_20k-FT_full-step20k-lr1e5-warmup2k.sh
 bash script/transfer/mag/train/transformer-kp20k-PT_step200k-FT_full_step100k_lr5e5_warmup10k.sh
 
+
 CRC-gpu-n27 nohup transformer-wiki 121189
 
 
@@ -24,10 +25,10 @@ wandb doesn't work with multigpu case, may be due to the Huggingface Tokenizer i
 
 # transfer, pred & eval
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+source script/transfer/run_pred_o2s_gpu_fewshot_scavenger.sh
 source script/transfer/run_pred_o2s_gpu_fewshot.sh
 source script/transfer/run_pred_o2s_gpu_fewshot_dev.sh
 source script/transfer/mag/train/nohup_train_transformer-kp20k-PTDA_100k-FT_full-step100k-lr5e5.sh
-source script/transfer/run_pred_o2s_gpu_fewshot_scavenger.sh
 
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
 CUDA_VISIBLE_DEVICES=0 nohup /ihome/hdaqing/rum20/anaconda3/envs/kp/bin/python3.7 kp_gen_eval_transfer.py -config config/transfer_kp/infer/keyphrase-one2seq.yml -tasks pred eval -data_dir /zfs1/hdaqing/rum20/kp/data/kp/json/ -exp_root_dir /zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_DA/ -testsets  kp20k_valid2k openkp_valid2k kptimes_valid2k stackex_valid2k -splits test -batch_size 1 -beam_size 50 -max_length 40 -beam_terminate full --step_base 1 --data_format jsonl --pred_trained_only -gpu 0  > slurm_output/pred-kp_transformer_fewshot.nohup.out &

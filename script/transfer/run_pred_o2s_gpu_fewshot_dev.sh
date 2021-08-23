@@ -31,9 +31,9 @@ exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v2/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_bart_DA/"
 exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v3/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/"
 exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot_v2/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/"
 
 echo $0
 echo $PROJECT_DIR

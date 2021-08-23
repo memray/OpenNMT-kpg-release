@@ -442,13 +442,13 @@ def self_redundancy(_input):
     return res
 
 
-def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>'):
+def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>', return_eval=False):
     src_seq = [t for t in re.split(r'\W', src_text) if len(t) > 0]
     tgt_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in tgt_kps]
     pred_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in pred_kps]
 
     topk_range = ['k', 10]
-    absent_topk_range = ['M']
+    absent_topk_range = [50, 'M']
     metric_names = ['f_score']
 
     # 1st filtering, ignore phrases having <unk> and puncs
@@ -492,7 +492,16 @@ def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>'):
                                       pred_seqs, pred_scores, present_pred_flags, valid_pred_flags,
                                       valid_and_present_flags, valid_and_absent_flags, match_scores_exact,
                                       eval_results_names, eval_results_list)
-    return print_out
+
+    if return_eval:
+        eval_results_dict = {
+            'all_exact': all_exact_results,
+            'present_exact': present_exact_results,
+            'absent_exact': absent_exact_results
+        }
+        return print_out, eval_results_dict
+    else:
+        return print_out
 
 
 def print_predeval_result(src_text,
@@ -550,9 +559,9 @@ def print_predeval_result(src_text,
         # print @5@10@O@M for present_exact, print @50@M for absent_exact
         if name in ['all_exact', 'present_exact', 'absent_exact']:
             if name.startswith('all') or name.startswith('present'):
-                topk_list = ['10', 'k']
+                topk_list = ['k', '10']
             else:
-                topk_list = ['M']
+                topk_list = ['50', 'M']
 
             for topk in topk_list:
                 print_out += "\n --- batch {} F1 @{}: \t".format(name, topk) \
