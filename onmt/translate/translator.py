@@ -7,7 +7,6 @@ import os
 import time
 import numpy as np
 from itertools import count, zip_longest
-from scipy import stats
 
 import torch
 import tqdm
@@ -884,17 +883,15 @@ class Translator(Inference):
             src_lengths = batch.src_length
 
         if isinstance(self.model.encoder, BARTEncoder):
-            enc_states, memory_bank, encoder_output = self.model.encoder(src, src_lengths)
+            enc_states, memory_bank, src_lengths, encoder_output = self.model.encoder(src, src_lengths)
         elif isinstance(self.model.encoder, PretrainedEncoder):
             # for Transformer Decoder, only memory_bank is useful
             enc_states, memory_bank, ext_logits = self.model.encoder(src, batch.src_mask)
-            encoder_output = None
         else:
             # enc_state is used for initializing OpenNMT decoders
-            enc_states, memory_bank, src_lengths = self.model.encoder(
+            enc_states, memory_bank, src_lengths, encoder_output = self.model.encoder(
                 src, src_lengths
             )
-            encoder_output = None
 
         if src_lengths is None:
             assert not isinstance(
@@ -1227,7 +1224,7 @@ class Translator(Inference):
             topseq_pred_scores = []
             for sent_i in range(len(tran.pred_sents)):
                 pred_sent = tran.pred_sents[sent_i]
-                sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == inputters.keyphrase_dataset.SEP_token]
+                sep_indices = [i for i in range(len(pred_sent)) if pred_sent[i] == DefaultTokens.SEP]
                 sep_indices = [-1] + sep_indices + [len(pred_sent)]
 
                 for kp_i in range(len(sep_indices)-1):

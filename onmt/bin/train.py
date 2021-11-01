@@ -7,7 +7,7 @@ import torch
 import numpy as np
 from functools import partial
 
-# import onmt.opts as opts
+from shutil import copy2
 from onmt.keyphrase import utils
 from onmt.utils.distributed import ErrorHandler, consumer, batch_producer
 from onmt.utils.misc import set_random_seed
@@ -106,6 +106,12 @@ def train(opt):
     checkpoint, fields, transforms_cls = _init_train(opt)
 
     new_data_dict = {}
+    # @memray: copy config file to exp folder
+    if hasattr(opt, 'config') and hasattr(opt, 'exp_dir'):
+        if not os.path.exists(opt.exp_dir):
+            os.mkdir(opt.exp_dir)
+        filename = opt.config[opt.config.rfind(os.sep) + 1:] if os.sep in opt.config else opt.config
+        copy2(opt.config, opt.exp_dir + os.sep + filename)
     # @memray: handle the case if opt.data is a folder
     for corpus_id, corpus_dict in opt.data.items():
         if os.path.isdir(corpus_dict["path_src"]):

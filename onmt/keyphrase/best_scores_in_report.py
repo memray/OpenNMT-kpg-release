@@ -35,6 +35,7 @@ def main():
     parser.add_argument('-pred_name', type=str, required=False, help='Filter by pred_name, since there exists results by multiple decoding settings from the same ckpt.')
     parser.add_argument('-export_dir', type=str, required=False, default=None, help='If set, the best pred/eval files will be copied to this place.')
     parser.add_argument('-report_selfbest', action='store_true', help='')
+    parser.add_argument('-report_lastckpt', action='store_true', help='')
     opt = parser.parse_args()
 
     kp_df = None
@@ -83,9 +84,12 @@ def main():
             exp_df = kp_df.loc[kp_df.exp_name == exp_name]
             dev_df = exp_df.loc[exp_df.test_dataset == dev_name]
             test_df = exp_df.loc[exp_df.test_dataset == test_name]
-
-            dev_df = dev_df.sort_values(by=anchor_metric_name, ascending=False)
-            test_df = test_df.sort_values(by=anchor_metric_name, ascending=False)
+            if opt.report_lastckpt:
+                dev_df = dev_df.sort_values(by='step', ascending=False)
+                test_df = test_df.sort_values(by='step', ascending=False)
+            else:
+                dev_df = dev_df.sort_values(by=anchor_metric_name, ascending=False)
+                test_df = test_df.sort_values(by=anchor_metric_name, ascending=False)
 
             if len(dev_df) == 0: continue
             dev_row = dev_df.iloc[0].to_frame().transpose()

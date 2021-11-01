@@ -61,7 +61,6 @@ max_generator_batches: 200
 accum_count: 4
 max_grad_norm: 2.0
 
-
 # batch_size is actually: num_example * max(#word in src/tgt)
 batch_size: 4096
 valid_batch_size: 64

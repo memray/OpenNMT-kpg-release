@@ -122,7 +122,7 @@ class BARTEncoder(EncoderBase):
         # return last_hidden_state and memory_bank in shape of [src_len, batch_size, hid_dim] and length as is
         last_hidden_state = encoder_output['encoder_out'][0]
 
-        return last_hidden_state, last_hidden_state, encoder_output
+        return last_hidden_state, last_hidden_state, src_lengths, encoder_output
 
 
 def forward_embedding(self, src_tokens, src_labels, token_embedding: Optional[torch.Tensor] = None):

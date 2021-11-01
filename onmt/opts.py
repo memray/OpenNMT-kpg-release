@@ -1,25 +1,13 @@
 """ Implementation of all available options """
 from __future__ import print_function
 
-import argparse
+from onmt.utils.misc import str2bool
 
 import configargparse
 
 from onmt.models.sru import CheckSRU
 from onmt.transforms import AVAILABLE_TRANSFORMS
 from onmt.constants import ModelTask
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-       return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
 
 def config_opts(parser):
     group = parser.add_argument_group("Configuration")
@@ -205,9 +193,9 @@ def _add_dynamic_fields_opts(parser, build_vocab_only=False):
               help="""Format of input data, specifying loading data from plain text (OpenNMT default) 
               or .jsonl""")
     group.add('--fairseq_model', '-fairseq_model',
-              type=bool, default=False, help="If true, indicating the checkpoint is trained from FairSeq.")
+              type=str2bool, default=False, help="If true, indicating the checkpoint is trained from FairSeq.")
     group.add('--pretrained_tokenizer', '-pretrained_tokenizer',
-              type=bool, default=False)
+              type=str2bool, default=False)
     # group.add('--pretrained_tokenizer_name', '-pretrained_tokenizer_name',
     #           type=str, default="")
     group.add('--cache_dir', '-cache_dir', default="",
@@ -456,25 +444,28 @@ def model_opts(parser):
               help="For FP16 training, the opt_level to use."
                    "See https://nvidia.github.io/apex/amp.html#opt-levels.")
     # keyphrase
-    group.add('--orth_reg', '-orth_reg', action="store_true",
+    group.add('--orth_reg', '-orth_reg', type=str2bool, default=False,
               help='Train with orth_reg.')
     group.add('--lambda_orth_reg', '-lambda_orth_reg', type=float, default=0.0,
               help='Train with Orthogonal Regularization (3.5.1).')
-    group.add('--sem_cov', '-sem_cov', action="store_true",
+    group.add('--sem_cov', '-sem_cov', type=str2bool, default=False,
               help='Train with semantic coverage.')
     group.add('--lambda_sem_cov', '-lambda_sem_cov', type=float, default=0.0,
               help='Train with Target Encoding (3.5.2).')
     group.add('--num_negsample', '-num_negsample', type=int, default=32,
               help='Number of negative samples for semantic coverage.')
     group.add('--use_ending_state', '-use_ending_state', action="store_true",
-              help='Use the ending state of target encoder instead of each <SEP> state for semantic coverage.')
-    group.add('--tgt_enc', '-tgt_enc',
+              help='Use the ending state of target encoder instead of each <SEP> state for semantic coverage.'
+                   'The former is more reasonable since there is not pooling for all <SEP> states.')
+    group.add('--target_encoder_type', '-target_encoder_type',
               type=str, default=None,
               choices=['rnn', 'dot', 'general', 'mlp', 'none'],
               help="Train with Target Encoding."
                    "rnn means a GRU encoder")
-    group.add('--detach_tgt_enc', '-detach_tgt_enc', action="store_true",
+    group.add('--detach_target_encoder', '-detach_target_encoder', action="store_true",
               help='Whether to detach the target encoder and train with additional loss only, or train with decoder together.')
+    group.add('--target_encoder_layers', '-target_encoder_layers', type=int, default=3,
+              help='Only relevant to Transformer, specifying how many layers of transformer will be used as target encoder.')
 
 
 def _add_train_general_opts(parser):

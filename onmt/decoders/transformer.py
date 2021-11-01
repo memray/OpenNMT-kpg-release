@@ -257,6 +257,8 @@ class TransformerDecoderBase(DecoderBase):
             opt.full_context_alignment,
             opt.alignment_layer,
             alignment_heads=opt.alignment_heads,
+            target_encoder_layers=opt.target_encoder_layers,
+            detach_target_encoder=opt.detach_target_encoder,
         )
 
     def init_state(self, src, memory_bank, enc_hidden):
@@ -345,6 +347,8 @@ class TransformerDecoder(TransformerDecoderBase):
         full_context_alignment,
         alignment_layer,
         alignment_heads,
+        target_encoder_layers=0,
+        detach_target_encoder=False,
     ):
         super(TransformerDecoder, self).__init__(
             d_model, copy_attn, embeddings, alignment_layer
@@ -367,6 +371,32 @@ class TransformerDecoder(TransformerDecoderBase):
                 for i in range(num_layers)
             ]
         )
+
+        self.detach_target_encoder = detach_target_encoder
+        if target_encoder_layers > 0:
+            self.target_encoder_layers = nn.ModuleList(
+                [
+                    TransformerDecoderLayer(
+                        d_model,
+                        heads,
+                        d_ff,
+                        dropout,
+                        attention_dropout,
+                        self_attn_type=self_attn_type,
+                        max_relative_positions=max_relative_positions,
+                        aan_useffn=aan_useffn,
+                        full_context_alignment=full_context_alignment,
+                        alignment_heads=alignment_heads,
+                    )
+                    for i in range(target_encoder_layers)
+                ]
+            )
+            self.input_proj_layer = nn.Linear(d_model * 2, d_model)
+            self.bilinear_layer = nn.Bilinear(in1_features=d_model, in2_features=d_model, out_features=1)
+        else:
+            self.target_encoder_layers = None
+            self.input_proj_layer = None
+            self.bilinear_layer = None
 
     def detach_state(self):
         self.state["src"] = self.state["src"].detach()
@@ -395,34 +425,85 @@ class TransformerDecoder(TransformerDecoderBase):
         with_align = kwargs.pop("with_align", False)
         attn_aligns = []
 
-        for i, layer in enumerate(self.transformer_layers):
-            layer_cache = (
-                self.state["cache"]["layer_{}".format(i)]
-                if step is not None
-                else None
-            )
-            output, attn, attn_align = layer(
-                output,
-                src_memory_bank,
-                src_pad_mask,
-                tgt_pad_mask,
-                layer_cache=layer_cache,
-                step=step,
-                with_align=with_align,
-            )
-            if attn_align is not None:
-                attn_aligns.append(attn_align)
+        if self.target_encoder_layers is not None:
+            for i, layer in enumerate(self.target_encoder_layers):
+                layer_cache = (
+                    self.state["cache"]["te_layer_{}".format(i)]
+                    if step is not None
+                    else None
+                )
+                te_output = output
+                te_output, _, _ = layer(
+                    te_output,
+                    src_memory_bank,
+                    src_pad_mask,
+                    tgt_pad_mask,
+                    layer_cache=layer_cache,
+                    step=step,
+                    with_align=False,
+                )
 
-        output = self.layer_norm(output)
-        dec_outs = output.transpose(0, 1).contiguous()
-        attn = attn.transpose(0, 1).contiguous()
+            te_output = self.layer_norm(te_output)
+            if self.detach_target_encoder:
+                te_output.detach()
 
-        attns = {"std": attn}
+            output = torch.cat([output, te_output], 2) # [B, T, 2*H]
+            output = self.input_proj_layer(output) # [B, T, H]
+
+            for i, layer in enumerate(self.transformer_layers):
+                layer_cache = (
+                    self.state["cache"]["layer_{}".format(i)]
+                    if step is not None
+                    else None
+                )
+                output, attn, attn_align = layer(
+                    output,
+                    src_memory_bank,
+                    src_pad_mask,
+                    tgt_pad_mask,
+                    layer_cache=layer_cache,
+                    step=step,
+                    with_align=with_align,
+                )
+                if attn_align is not None:
+                    attn_aligns.append(attn_align)
+        else:
+            for i, layer in enumerate(self.transformer_layers):
+                layer_cache = (
+                    self.state["cache"]["layer_{}".format(i)]
+                    if step is not None
+                    else None
+                )
+                output, attn, attn_align = layer(
+                    output,
+                    src_memory_bank,
+                    src_pad_mask,
+                    tgt_pad_mask,
+                    layer_cache=layer_cache,
+                    step=step,
+                    with_align=with_align,
+                )
+                if attn_align is not None:
+                    attn_aligns.append(attn_align)
+
+        output = self.layer_norm(output) # (B, T, H)
+        dec_outs = output.transpose(0, 1).contiguous() # (T, B, H)
+        attn = attn.transpose(0, 1).contiguous() # (T, B, S)
+
+        attns = {"std": attn} # (T, B, S)
         if self._copy:
-            attns["copy"] = attn
+            attns["copy"] = attn # (T, B, S)
         if with_align:
             attns["align"] = attn_aligns[self.alignment_layer]  # `(B, Q, K)`
             # attns["align"] = torch.stack(attn_aligns, 0).mean(0)  # All avg
+
+        # @memray: return rnn hidden states for computing orth_reg and sem_cov
+        attns["enc_states"] = src_memory_bank[:, 0, :] # [B, H], take the 1st token as the embedding of source text
+        attns["dec_states"] = output # [B, T, H]
+        if self.target_encoder_layers is not None:
+            if "tgtenc_states" not in attns:
+                attns["tgtenc_states"] = []
+            attns["tgtenc_states"] = te_output # [B, T, H]
 
         # TODO change the way attns is returned dict => list or tuple (onnx)
         return dec_outs, attns
@@ -443,6 +524,17 @@ class TransformerDecoder(TransformerDecoderBase):
                 layer_cache["self_values"] = None
             self.state["cache"]["layer_{}".format(i)] = layer_cache
 
+        if self.target_encoder_layers is not None:
+            for i, layer in enumerate(self.target_encoder_layers):
+                layer_cache = {"memory_keys": None, "memory_values": None}
+                if isinstance(layer.self_attn, AverageAttention):
+                    layer_cache["prev_g"] = torch.zeros(
+                        (batch_size, 1, depth), device=memory_bank.device
+                    )
+                else:
+                    layer_cache["self_keys"] = None
+                    layer_cache["self_values"] = None
+                self.state["cache"]["te_layer_{}".format(i)] = layer_cache
 
 class TransformerLMDecoderLayer(TransformerDecoderLayerBase):
     """Transformer Decoder only layer block in GPT style.

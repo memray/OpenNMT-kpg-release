@@ -7,6 +7,7 @@ class DefaultTokens(object):
     EOS = '</s>'
     UNK = '<unk>'
     MASK = '<mask>'
+    SEP = '<sep>'
     VOCAB_PAD = 'averyunlikelytoken'
     SENT_FULL_STOPS = [".", "?", "!"]
     PHRASE_TABLE_SEPARATOR = '|||'

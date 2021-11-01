@@ -1,3 +1,50 @@
+# one2seq-diverse
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer
+source script/empirical_study/diverse/run_pred_o2s_dev.sh
+
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer
+
+sbatch script/empirical_study/diverse/rnn/rnn-presabs-kp20k-E2D2.sh
+sbatch script/empirical_study/diverse/rnn/rnn-presabs-kp20k-E2D1.sh
+sbatch script/empirical_study/diverse/rnn/rnn-presabs-kp20k-E1D2.sh
+
+sbatch script/empirical_study/diverse/rnn/rnn-one2one-kp20k.sh
+sbatch script/empirical_study/diverse/rnn/rnn-presabs-kp20k.sh
+
+sbatch script/empirical_study/diverse/rnn/one2seq-rnn-presabs-kp20k-OR005-SC05.sh
+sbatch script/empirical_study/diverse/rnn/one2seq-rnn-presabs-kp20k-OR005-SC005.sh
+sbatch script/empirical_study/diverse/rnn/one2seq-rnn-presabs-kp20k-OR001-SC001.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR00-SC00.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR00-SC01.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR00-SC05.sh
+
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR01-SC00.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR01-SC01.sh
+
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR05-SC00.sh
+sbatch script/empirical_study/diverse/rnn/one2seq-rnn-presabs-kp20k-OR05-SC005.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR05-SC05.sh
+sbatch script/empirical_study/diverse/rnn/one2seq-rnn-presabs-kp20k-OR10-SC005.sh
+sbatch script/empirical_study/diverse/one2seq-rnn-presabs-kp20k-OR10-SC10.sh
+
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR00-SC01.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR01-SC00.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR001-SC001.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR005-SC005.sh
+
+sbatch script/empirical_study/diverse/transformer/transformer-one2one-kp20k.sh
+sbatch script/empirical_study/diverse/transformer/transformer-presabs-kp20k.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-E6D6.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-E6D9.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-E9D6.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR01-SC01.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR00-SC05.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR05-SC00.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR05-SC05.sh
+sbatch script/empirical_study/diverse/transformer/one2seq-transformer-presabs-kp20k-OR10-SC10.sh
+
+
 # one2one
 source script/srun_one2one/run_predeval_v2_pred_cpu.sh
 source script/srun_one2one/run_predeval_v2_pred_gpu.sh

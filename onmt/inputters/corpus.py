@@ -1,4 +1,5 @@
 """Module that contain shard utils for dynamic data."""
+import itertools
 import json
 import os
 from onmt.utils.logging import logger
@@ -126,7 +127,10 @@ class ParallelCorpus(object):
         """
         # extra_label_files = [exfile_open(extra_label_path, mode='rb') for extra_label_path in self.extra_label_paths]
         logger.info(f"Loading {repr(self)}...")
-        extra_label_files = [[json.loads(l) for l in open(extra_label_path, mode='rb').readlines()] for extra_label_path in self.extra_label_paths]
+        # if the path starts with __, e.g. ___random_span, it will be processed later
+        extra_label_files = [[json.loads(l) for l in open(extra_label_path, mode='rb').readlines()]
+                             if not extra_label_path.startswith('__') else itertools.repeat(extra_label_path)
+                             for extra_label_path in self.extra_label_paths]
         with exfile_open(self.src, mode='rb') as fs,\
                 exfile_open(self.tgt, mode='rb') as ft,\
                 exfile_open(self.align, mode='rb') as fa:
@@ -146,10 +150,13 @@ class ParallelCorpus(object):
                         if len(lines) > 2:
                             label_exs = lines[3:]
                             for labelset_id, label_ex in enumerate(label_exs):
-                                # concatenate if it's a list
-                                if len(label_ex['pred_sents']) > 0 and not isinstance(label_ex['pred_sents'][0], str):
-                                    label_ex['pred_sents'] = [' '.join(p) for p in label_ex['pred_sents']]
-                                example.update({'target%d' % labelset_id: label_ex['pred_sents']})
+                                if isinstance(label_ex, str):
+                                    example.update({'target%d' % labelset_id: label_ex})
+                                else:
+                                    # concatenate if it's a list
+                                    if len(label_ex['pred_sents']) > 0 and not isinstance(label_ex['pred_sents'][0], str):
+                                        label_ex['pred_sents'] = [' '.join(p) for p in label_ex['pred_sents']]
+                                    example.update({'target%d' % labelset_id: label_ex['pred_sents']})
                     else:
                         sline = sline.decode('utf-8')
                         tline = tline.decode('utf-8')

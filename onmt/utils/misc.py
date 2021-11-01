@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import argparse
 
 import torch
 import random
@@ -7,6 +8,15 @@ import numpy as np
 from itertools import islice, repeat
 import os
 
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in (True, 'true', 't', 'yes', 'y', '1', 1):
+        return True
+    elif v.lower() in (False, 'false', 'f', 'no', 'n', '0', 0):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def check_path(path, exist_ok=False, log=print):
     """Check if `path` exists, makedirs if not else warning/IOError."""

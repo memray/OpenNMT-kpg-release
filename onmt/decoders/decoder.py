@@ -153,12 +153,14 @@ class RNNDecoderBase(DecoderBase):
         # Build the Target Encoder. Feed its output to the decoder as auxiliary input
         self.target_encoder_type = target_encoder_type
         self.target_encoder = None
-        if target_encoder_type == 'rnn':
+        if target_encoder_type == "rnn":
             self.target_encoder = self._build_rnn("GRU",
                                        input_size=self.embeddings.embedding_size,
                                        hidden_size=hidden_size,
                                        num_layers=1,
                                        dropout=dropout)
+        elif target_encoder_type != None and target_encoder_type != "none":
+            raise NotImplementedError("target_encoder_type other than RNN is not implemented.")
         self.detach_target_encoder = detach_target_encoder
         self.bilinear_layer = nn.Bilinear(in1_features=hidden_size, in2_features=hidden_size, out_features=1)
 
@@ -180,8 +182,8 @@ class RNNDecoderBase(DecoderBase):
             embeddings,
             opt.reuse_copy_attn,
             opt.copy_attn_type,
-            opt.tgt_enc,
-            opt.detach_tgt_enc,
+            opt.target_encoder_type,
+            opt.detach_target_encoder,
         )
 
     def init_state(self, src, memory_bank, encoder_final):
@@ -318,7 +320,6 @@ class StdRNNDecoder(RNNDecoderBase):
 
         assert self.copy_attn is None  # TODO, no support yet.
         assert not self._coverage  # TODO, no support yet.
-        assert self.target_encoder is None  # TODO, no support yet.
 
         attns = {}
         emb = self.embeddings(tgt)
@@ -344,10 +345,6 @@ class StdRNNDecoder(RNNDecoderBase):
                 memory_lengths=memory_lengths
             )
             attns["std"] = p_attn
-
-        # @memray: return rnn hidden states for computing orth_reg and sem_cov
-        # TODO not tested, presumably only works for GRU
-        attns["dec_states"] = dec_state
 
         # Calculate the context gate.
         if self.context_gate is not None:
@@ -420,7 +417,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["coverage"] = []
         # @memray, for Orthogonal regularization and Semantic Coverage, may consume lots of memory
         attns["dec_states"] = []
-        attns["src_states"] = self.state['src_hidden'].squeeze(0) if 'src_hidden' in self.state else []
+        attns["enc_states"] = self.state['src_hidden'].squeeze(0) if 'src_hidden' in self.state else []
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
@@ -485,6 +482,9 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                     attns["tgtenc_states"] = []
                 attns["tgtenc_states"] += [tgt_enc_output]
 
+        attns["dec_states"] = torch.stack(attns["dec_states"]).transpose(0, 1) # [B, T, H]
+        if self.target_encoder is not None:
+            attns["tgtenc_states"] = torch.stack(attns["tgtenc_states"]).transpose(0, 1) # [B, T, H]
         return dec_state, dec_outs, attns
 
     def _build_rnn(self, rnn_type, input_size,

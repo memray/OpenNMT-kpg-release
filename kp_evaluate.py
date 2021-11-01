@@ -443,8 +443,9 @@ def gather_eval_results(eval_root_dir, report_csv_dir=None, tokenizer=None, empi
             else:
                 file_name = file[: file.find(eval_suffix)]
                 ckpt_name = file_name[: file.rfind('-')] if file.find('-') > 0 else file_name
-                exp_dirname = re.search('exps/(.*?)/outputs', subdir).group(1)
-                exp_name = exp_dirname.split('/')[1]
+                # exp_dirname = re.search('.*/(.*?)/outputs', subdir).group(1)
+                # exp_name = exp_dirname.split('/')[1]
+                exp_name = re.search('.*/(.*?)/outputs', subdir).group(1)
                 pred_name = re.search('outputs/(.*?)/pred', subdir).group(1) # very hard-coded
                 dataset_name = file_name[file.rfind('-') + 1: ]
                 dataset_name = dataset_name[5:] if dataset_name.startswith('data_') else dataset_name

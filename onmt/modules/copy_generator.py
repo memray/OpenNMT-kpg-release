@@ -188,20 +188,24 @@ class CopyGeneratorLoss(nn.Module):
 class CommonCopyGeneratorLossCompute(CommonLossCompute):
     """Common Copy Generator Loss Computation."""
     def __init__(self, criterion, generator, tgt_vocab, normalize_by_length,
-                 lambda_coverage=0.0, tgt_shift_index=1,
+                 lambda_coverage=0.0, lambda_align=0.0, tgt_shift_index=1,
                  lambda_orth_reg=0.0, lambda_sem_cov=0.0,
-                 n_neg=32, semcov_ending_state=False):
+                 n_neg=32, semcov_ending_state=False,
+                 sep_idx=None, eos_idx=None,
+                 **kwargs):
         super(CommonCopyGeneratorLossCompute, self).__init__(
-            criterion, generator,
-            lambda_coverage=lambda_coverage,
-            tgt_shift_index=tgt_shift_index,
-            lambda_orth_reg = lambda_orth_reg,
-            lambda_sem_cov = lambda_sem_cov,
-            n_neg=n_neg,
-            semcov_ending_state = semcov_ending_state
+            criterion, generator, lambda_coverage, lambda_align, tgt_shift_index, **kwargs
         )
+        self.sep_idx = sep_idx
+        self.eos_idx = eos_idx
         self.tgt_vocab = tgt_vocab
         self.normalize_by_length = normalize_by_length
+        self.lambda_coverage = lambda_coverage
+        self.tgt_shift_index = tgt_shift_index
+        self.lambda_orth_reg = lambda_orth_reg
+        self.lambda_sem_cov = lambda_sem_cov
+        self.n_neg = n_neg
+        self.semcov_ending_state = semcov_ending_state
 
     def _compute_loss(self, batch, output, target, copy_attn, align,
                       std_attn=None, coverage_attn=None,
@@ -214,21 +218,21 @@ class CommonCopyGeneratorLossCompute(CommonLossCompute):
 
         Args:
             batch: the current batch.
-            output: the predict output from the model, shape=[tgt_len-1, B, hidden_dim].
-            target: the validate target to compare output with, shape=[tgt_len-1, B, src_len].
-            copy_attn: the copy attention value, shape=[tgt_len-1, B, src_len].
-            align: the align info, shape=[tgt_len-1, B].
+            output: the predict output from the model, shape=[T-1, B, H].
+            target: the validate target to compare output with, shape=[T-1, B, S].
+            copy_attn: the copy attention value, shape=[T-1, B, S].
+            align: the align info, shape=[T-1, B].
         """
         target_indices = target # before flattening
 
-        target = target.contiguous().view(-1) # [tgt_len-1, B] -> (tgt_len-1)*B
-        align = align.view(-1) # (tgt_len-1)*B
+        target = target.contiguous().view(-1) # [T-1, B] -> (T-1)*B
+        align = align.view(-1) # (T-1)*B
 
-        scores = self.generator( # [(tgt_len-1)*B, vocab_size+tmp_vocab_size]
+        scores = self.generator( # [(T-1)*B, V+tmp_vocab_size]
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
 
-        loss = self.criterion(scores, align, target) # (tgt_len-1)*B
+        loss = self.criterion(scores, align, target) # (T-1)*B
         # print("loss=%.5f" % loss.mean().item())
 
         if self.lambda_coverage != 0.0:
@@ -238,26 +242,24 @@ class CommonCopyGeneratorLossCompute(CommonLossCompute):
 
         # compute orthogonal penalty loss
         if self.lambda_orth_reg > 0.0:
-            target_sep_idx = batch.sep_indices
             assert dec_states is not None
-            assert target_sep_idx is not None
             # decoder hidden state: output of decoder
-            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, dec_states, target_sep_idx)
+            orthogonal_penalty = self._compute_orthogonal_regularization_loss(target_indices, dec_states, self.sep_idx)
             loss += orthogonal_penalty
             # print("Orth_reg=%.5f" % orthogonal_penalty)
 
         # compute semantic coverage loss for target encoder
         if self.lambda_sem_cov > 0.0:
-            target_sep_idx = batch.sep_indices
             assert model is not None
             assert src_states is not None
             assert tgtenc_states is not None
-            assert target_sep_idx is not None
             semantic_coverage_loss = self._compute_semantic_coverage_loss(model,
-                                                                          src_states, dec_states, tgtenc_states,
-                                                                          target_indices, target_sep_idx,
-                                                                          n_neg=self.n_neg,
-                                                                          semcov_ending_state=self.semcov_ending_state)
+                                                                          src_states, tgtenc_states,
+                                                                          target_indices,
+                                                                          num_negative=self.n_neg,
+                                                                          semcov_ending_state=self.semcov_ending_state,
+                                                                          sep_idx=self.sep_idx, eos_idx=self.eos_idx,
+                                                                          )
             loss += semantic_coverage_loss
             # print("Sem_cov=%.5f\n" % semantic_coverage_loss)
 
@@ -317,6 +319,7 @@ class CopyGeneratorLossCompute(CommonCopyGeneratorLossCompute):
                                                        tgt_vocab,
                                                        normalize_by_length,
                                                        # lambda_coverage=0.0, # @memray
+                                                       # lambda_align=0.0,
                                                        tgt_shift_index=1,
                                                        **kwargs)
 

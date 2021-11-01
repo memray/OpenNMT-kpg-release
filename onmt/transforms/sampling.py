@@ -154,7 +154,6 @@ class TokenDropTransform(HammingDistanceSamplingTransform):
 @register_transform(name='tokenmask')
 class TokenMaskTransform(HammingDistanceSamplingTransform):
     """Random mask tokens from src sentence."""
-
     MASK_TOK = DefaultTokens.MASK
 
     def __init__(self, opts):

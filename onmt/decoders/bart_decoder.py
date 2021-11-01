@@ -92,9 +92,7 @@ class BARTDecoder(DecoderBase):
     def map_state(self, fn):
         pass
 
-    def forward(self, tgt, memory_bank=None,
-                step=None,
-                memory_lengths=None,
+    def forward(self, tgt,
                 encoder_output=None,
                 incremental_state=None,
                 **kwargs):

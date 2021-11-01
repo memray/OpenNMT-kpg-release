@@ -21,7 +21,7 @@ from onmt.inputters.iterator import batch_iter
 from onmt.inputters.text_dataset import text_fields, TextMultiField
 from onmt.inputters.news_dataset import update_field_vocab
 from onmt.inputters import keyphrase_dataset
-from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField, extra_special_tokens
+from onmt.inputters.keyphrase_dataset import keyphrase_fields, KeyphraseDataset, KeyphraseField
 from onmt.utils.logging import logger
 # backwards compatibility
 from onmt.inputters.text_dataset import _feature_tokenize  # noqa: F401
@@ -202,6 +202,13 @@ def get_fields(
     fields_getters = {"text": text_fields, "keyphrase": text_fields}
     task_spec_tokens = get_task_spec_tokens(data_task, pad, bos, eos)
 
+    # @memray
+    if src_data_type == 'keyphrase':
+        task_spec_tokens = {
+            "src": {"pad": pad, "bos": bos, "eos": eos},
+            "tgt": {"pad": pad, "bos": bos, "eos": eos},
+        }
+
     src_field_kwargs = {
         "n_feats": n_src_feats,
         "include_lengths": True,
@@ -219,7 +226,6 @@ def get_fields(
         "pad": task_spec_tokens["tgt"]["pad"],
         "bos": task_spec_tokens["tgt"]["bos"],
         "eos": task_spec_tokens["tgt"]["eos"],
-        "sep": keyphrase_dataset.SEP_token,
         "truncate": tgt_truncate,
         "base_name": "tgt",
     }
@@ -708,7 +714,7 @@ def _merge_field_vocabs(src_field, tgt_field, vocab_size, min_freq,
                 tgt_field.init_token, tgt_field.eos_token]
     # @memray, add extra specials
     all_specials = list(OrderedDict.fromkeys(
-        tok for tok in init_specials + specials + extra_special_tokens
+        tok for tok in init_specials + specials
         if tok is not None))
     merged = sum(
         [src_field.vocab.freqs, tgt_field.vocab.freqs], Counter()

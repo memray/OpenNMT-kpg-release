@@ -54,7 +54,7 @@ def build_dynamic_fields(opts, src_specials=None, tgt_specials=None):
     # load a Fairseq-trained model, such as BART
     if opts.data_type == 'keyphrase':
         tokenizer = None
-        if opts.pretrained_tokenizer:
+        if hasattr(opts, 'pretrained_tokenizer') and opts.pretrained_tokenizer:
             tokenizer = load_roberta_kp_tokenizer(opts.src_vocab, opts.bpe_dropout)
             setattr(opts, 'vocab_size', len(tokenizer))
         fields = reload_keyphrase_fields(fields, opts, tokenizer=tokenizer)

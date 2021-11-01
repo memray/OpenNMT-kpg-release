@@ -15,7 +15,9 @@ if __name__ == '__main__':
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_o2o/'
     # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/'
-    root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k'
+    # root_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k'
+    # root_path = '/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v2'
+    root_path = '/zfs1/hdaqing/rum20/kp/transfer_exps/bart_DAFT-v1-DA1e6_FT1e5'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v3/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-v2/meng17-one2seq-fullbeam/'
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2seq/meng17-one2seq-kp20k-topmodels/meng17-one2seq-fullbeam/meng17-one2seq-beam50-maxlen40/'
@@ -23,6 +25,8 @@ if __name__ == '__main__':
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/keyphrase/meng17-one2one/'
 
     # root_path = '/zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/output/order_matters/transformer/meng17-one2seq-beam50-maxlen40/'
+
+    print(root_path)
     dataset_line_counts = {
                      'kp20k': 19987,
                      # 'kp20k_valid2k': 2000,
@@ -36,6 +40,11 @@ if __name__ == '__main__':
                      'kptimes_test': 10000,
                      'jptimes_test': 10000,
                      'stackex_test': 16000,
+
+                     'kp20k_valid2k_test': 2000,
+                     'openkp_valid2k_test': 2000,
+                     'kptimes_valid2k_test': 2000,
+                     'stackex_valid2k_test': 2000,
                      }
 
     total_size_shrinked = 0

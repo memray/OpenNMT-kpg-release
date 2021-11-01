@@ -113,7 +113,10 @@ if __name__ == "__main__":
     if isinstance(opt.data, str):
         setattr(opt, 'data', json.loads(opt.data.replace('\'', '"')))
     setattr(opt, 'data_task', ModelTask.SEQ2SEQ)
-    if opt.data: ArgumentParser._get_all_transform(opt)
+    if opt.data:
+        ArgumentParser._get_all_transform(opt)
+        ArgumentParser._validate_transforms_opts(opt)
+        ArgumentParser._validate_fields_opts(opt)
 
     opt.__setattr__('valid_batch_size', opt.batch_size)
     opt.__setattr__('batch_size_multiple', 1)
@@ -252,7 +255,7 @@ if __name__ == "__main__":
                             logger.info("*" * 50)
 
                             # if it's BART model, OpenNMT has to do something additional
-                            if 'bart' in exp_name.lower():
+                            if 'bart' in exp_name.lower() and not exp_name.lower().startswith('transformer'):
                                 opt.__setattr__('fairseq_model', True)
                                 opt.__setattr__('encoder_type', 'bart')
                                 opt.__setattr__('decoder_type', 'bart')

@@ -7,7 +7,6 @@ multi-bleu.perl
 *.sublime-*
 .DS_Store
 data/
-models/
 runs/
 output/
 

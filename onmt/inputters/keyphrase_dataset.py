@@ -9,7 +9,7 @@ import numpy as np
 from torchtext.data import Field, RawField
 from tqdm import tqdm
 
-from onmt.keyphrase.utils import if_present_duplicate_phrases, SEP_token, DIGIT_token
+from onmt.keyphrase.utils import if_present_duplicate_phrases
 from onmt.inputters.datareader_base import DataReaderBase
 
 from itertools import chain, starmap
@@ -22,7 +22,6 @@ from torchtext.data import Example
 from onmt.inputters.dataset_base import _join_dicts, _dynamic_dict
 
 np.random.seed(2333)
-extra_special_tokens = [SEP_token, DIGIT_token]
 
 KP_DATASET_FIELDS = {'scipaper': ('title', 'abstract', 'keywords', None),
                      'qa': ('title', 'question', 'tags', 'categories'),
