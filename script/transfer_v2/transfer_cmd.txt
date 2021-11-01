@@ -1,0 +1,30 @@
+## Generate pseudo keyphrases from wiki-pretrained checkpoints
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+bash script/transfer_v2_paper/tf/tf_tlgenerate_pseudokp.sh
+
+## Pred and Eval
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+source script/transfer/run_pred_o2s_gpu_fewshot_dev.sh
+source script/transfer/run_pred_o2s_gpu_fewshot_scavenger.sh
+source script/transfer/run_pred_o2s_gpu_fewshot.sh
+
+## PT
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+source script/transfer_v2/bart/nohup-bart-wiki-lr1e5-step200k.sh
+
+
+## scale-up with MAG
+### BART
+
+#### DA
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+bash script/transfer_v2_paper/mag/bart/nohup-bart-DA_MagTL100k-lr1e5-step20k.sh
+bash script/transfer_v2_paper/mag/bart/nohup-bart-DA_MagTL3m-lr1e5-step200k.sh
+bash script/transfer_v2_paper/mag/bart/nohup-bart-DA_MagTL13m-lr1e5-step200k.sh
+
+#### FT
+bash script/transfer/mag/bart/nohup-bart-DA_MagTL13m-FT_full-lr1e5-step100k.sh
+
+### Transformer
+
+

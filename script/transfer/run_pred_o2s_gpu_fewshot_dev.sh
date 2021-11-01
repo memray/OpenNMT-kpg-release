@@ -26,14 +26,22 @@ do
     dataset_list+=" ${dataset}"
 done
 
-exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_DA/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v2/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_bart_DA/"
-exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v3/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/"
-exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot_v2/"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/"
+#exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_DA/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v2/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_bart_DA/"
+#exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_fewshot-v3/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/"
+#exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_fewshot_v2/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/tf_mag/"
+#exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/bart_mag_fewshot"
+
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDAFT/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DA/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAFT/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompare/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompareFT/"
 
 echo $0
 echo $PROJECT_DIR

@@ -1,12 +1,13 @@
-train_from: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k/ckpts/checkpoint_step_100000.pt
-### Reset all states in the optimizer:
+train_from: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step300k-lr1e5-tlnp82/ckpts/checkpoint_step_300000.pt
+#train_from: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/transformer-PT-DA_MagTL-step100k/ckpts/checkpoint_step_100000.pt
+### Reset all states in the optimizer if load from a pretrained ckpt
 reset_optim: all
 
 ### Exp meta
-exp: transformer-kp20k-PT_step200k-DA_mag_step100k-FT_fewshot10k_step4k_lr1e5
-exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/transformer-kp20k-PT_step200k-DA_mag_step100k-FT_fewshot10k_step4k_lr1e5
-save_model: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/transformer-kp20k-PT_step200k-DA_mag_step100k-FT_fewshot10k_step4k_lr1e5/ckpts/checkpoint
-log_file: /zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot/transformer-kp20k-PT_step200k-DA_mag_step100k-FT_fewshot10k_step4k_lr1e5/log.txt
+exp: transformer-kp20k-PT_step200k-MagDA_step300k-FT_fewshot1k_step4k_lr1e5
+exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps/tf_mag/transformer-kp20k-PT_step200k-MagDA_step300k-FT_fewshot1k_step4k_lr1e5
+save_model: /zfs1/hdaqing/rum20/kp/transfer_exps/tf_mag/transformer-kp20k-PT_step200k-MagDA_step300k-FT_fewshot1k_step4k_lr1e5/ckpts/checkpoint
+log_file: /zfs1/hdaqing/rum20/kp/transfer_exps/tf_mag/transformer-kp20k-PT_step200k-MagDA_step300k-FT_fewshot1k_step4k_lr1e5/log.txt
 wandb_project: transfer_kp_mag
 
 ### Data opts:
@@ -25,7 +26,7 @@ data:
     corpus_1:
         type: keyphrase
         transforms: [keyphrase, roberta_tokenize_kpg]
-        path_src: /zfs1/hdaqing/rum20/kp/data/kp/json/kp20k_train10k/train.json
+        path_src: /zfs1/hdaqing/rum20/kp/data/kp/json/kp20k_train1k/train.json
 
 ### Transform related opts:
 #### Keyphrase specific
@@ -80,7 +81,7 @@ adam_beta2: 0.998
 # batch_size - token: num_example * max(#word in src/tgt) * accum_count
 # batch_size - sent: batch_size * accum_count
 batch_size: 10240 # 10240*2, or 5120*4
-accum_count: 1
+accum_count: 2
 valid_batch_size: 64
 batch_type: tokens
 normalization: tokens
@@ -99,12 +100,13 @@ tensorboard: 'false'
 
 #tensorboard_log_dir: runs/kp20k.one2one.transformer/
 
-wandb: 'false'
+wandb: 'true'
 wandb_key: 'c338136c195ab221b8c7cfaa446db16b2e86c6db'
 
-world_size: 2
+
+world_size: 1
 gpu_ranks:
 - 0
-- 1
+#- 1
 #- 2
 #master_port: 10000
