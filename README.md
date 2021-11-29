@@ -2,7 +2,16 @@
 
 This is a repository providing code and datasets used in [One Size Does Not Fit All: Generating and Evaluating Variable Number of Keyphrases](https://arxiv.org/abs/1810.05241) and [Does Order Matter? An Empirical Study on Generating Multiple Keyphrases as a Sequence](https://arxiv.org/abs/1909.03590).
 
-All datasets and selected model checkpoints in the papers can be downloaded here ([data.zip](https://drive.google.com/open?id=1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP) and [models.zip](https://drive.google.com/open?id=18Pfs0ePAMl17kfjYRU_9HxYc0eUXet-_)). Unzip the file `data.zip and models.zip` and override the original `data/ and model/` folder. 
+All datasets and selected model checkpoints in the papers can be downloaded here ([data.zip](https://drive.google.com/open?id=1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP) and [models.zip](https://drive.google.com/open?id=18Pfs0ePAMl17kfjYRU_9HxYc0eUXet-_)). Unzip the file `data.zip` and `models.zip` and override the original `data/ and model/` folder. 
+
+## Update (Nov 2021)
+
+Merged with OpenNMT v2 and integrated a new pre-processing pipeline. Now training/inference can directly load JSON data ([download](https://drive.google.com/file/d/1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP/view)) from disk, without any hassle of tokenization or conversion to tensor files. Some config examples can be of help for you to kick off:
+ - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata) using RoBERTa subword tokenization. Vocab (including dict.txt/merges.txt/vocab.json/tokenizer.json) can be found [here](https://drive.google.com/file/d/1SM-8c2u3AV2-_71pjSlGVD8wyT7sv6vm/view?usp=sharing).
+ - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/empirical_study/diverse) using word tokenization. Vocab (magkp20k.vocab.json, 50k most frequent words in KP20k and MagKP) can be found [here](https://drive.google.com/file/d/1MJcQeORQBmDdEEjdxmZMVijnB9dR7pWs/view?usp=sharing).
+
+All shared resources are placed [here](https://drive.google.com/drive/folders/1nJL-LC0M8lXdDEl0ZRQMc_rcuvvKO5Hb?usp=sharing).
+
 
 ## Quickstart
 
@@ -70,7 +79,7 @@ We clarify that, since our study mainly focuses on keyword/keyphrase extraction/
 
 ## Contributers
 Major contributors are:
-- [Rui Meng](https://github.com/memray/) (University of Pittsburgh)
+- [Rui Meng](https://github.com/memray/) (Salesforce Research, previously at University of Pittsburgh)
 - [Eric Yuan](https://github.com/xingdi-eric-yuan) (Microsoft Research, Montréal)
 - [Tong Wang](https://github.com/wangtong106) (Microsoft Research, Montréal)
 - [Khushboo Thaker](https://github.com/khushsi) (University of Pittsburgh)
