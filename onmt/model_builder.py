@@ -86,6 +86,7 @@ def build_decoder(opt, embeddings, **kwargs):
 def load_test_model(opt, model_path=None):
     if model_path is None:
         model_path = opt.models[0]
+    print('Load checkpoint from %s' % model_path)
     checkpoint = torch.load(model_path,
                             map_location=lambda storage, loc: storage)
 

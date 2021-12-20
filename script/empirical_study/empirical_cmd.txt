@@ -1,6 +1,7 @@
 # one2seq-diverse
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer
 source script/empirical_study/diverse/run_pred_o2s_dev.sh
+source script/empirical_study/diverse/run_pred_o2o_dev.sh
 
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer
 

@@ -1,7 +1,7 @@
 #train_from: /zfs1/pbrusilovsky/rum20/kp/transfer_exps/kp_transformer_DA/transformer-PT_wiki_step200k-DA_stackex_step20k-lr5e5/ckpts/checkpoint_step_30000.pt
 
 ### Reset all states in the optimizer:
-train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_tl/transformer-wiki-step200k/ckpts/checkpoint_step_200000.pt
+train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_PT/transformer-wiki-step200k/ckpts/checkpoint_step_200000.pt
 reset_optim: all
 
 ### Exp meta

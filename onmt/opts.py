@@ -464,7 +464,7 @@ def model_opts(parser):
                    "rnn means a GRU encoder")
     group.add('--detach_target_encoder', '-detach_target_encoder', action="store_true",
               help='Whether to detach the target encoder and train with additional loss only, or train with decoder together.')
-    group.add('--target_encoder_layers', '-target_encoder_layers', type=int, default=3,
+    group.add('--target_encoder_layers', '-target_encoder_layers', type=int, default=0,
               help='Only relevant to Transformer, specifying how many layers of transformer will be used as target encoder.')
 
 

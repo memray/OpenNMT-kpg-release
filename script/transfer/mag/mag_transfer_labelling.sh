@@ -15,7 +15,7 @@
 #SBATCH --qos=long
 
 source ~/.bash_profile # reload LD_LIBRARY due to error ImportError: /lib64/libstdc++.so.6: version `GLIBCXX_3.4.21' not found
-cmd="/ihome/hdaqing/rum20/anaconda3/envs/kp/bin/python3.7 kp_gen_magkp_transfer_labelling.py -config config/transfer_kp/infer/keyphrase-one2seq-controlled.yml -tasks pred -exp_root_dir /zfs1/hdaqing/rum20/kp/transfer_exps/kp_bart_DA/bart_kppretrain_wiki_1e5_controlled -data_dir /zfs1/hdaqing/rum20/kp/data/kp/oag_v1_cs_nokp/ -output_dir /zfs1/hdaqing/rum20/kp/data/kp/oag_v1_cs_nokp_wikiTL/ -gpu 0 -batch_size 32 -beam_size 1 -max_length 60"
+cmd="/ihome/hdaqing/rum20/anaconda3/envs/kp/bin/python3.7 kp_gen_magkp_transfer_labelling.py -config config/transfer_kp/infer/keyphrase-one2seq-controlled.yml -tasks pred -exp_root_dir /zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_PT/bart-wiki-step200k -data_dir /zfs1/hdaqing/rum20/kp/data/kp/magkp_cs/oag_v1_cs_nokp_13m/ -output_dir /zfs1/hdaqing/rum20/kp/data/kp/magkp_cs/oag_v1_cs_nokp_TLbart_13m_v2/ -gpu 0 -batch_size 64 -beam_size 1 -max_length 60"
 
 echo $cmd
 $cmd

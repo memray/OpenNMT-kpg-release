@@ -11,7 +11,7 @@ days="1"
 random=$RANDOM
 
 task_args="pred eval" # pred or eval
-batch_size=4
+batch_size=1
 beam_size=50
 max_length=40
 step_base=1
@@ -20,6 +20,8 @@ step_base=1
 datasets=(kp20k openkp kptimes jptimes stackex)
 datasets=(kp20k_valid2k openkp_valid2k kptimes_valid2k stackex_valid2k)
 datasets=(kp20k_valid2k)
+datasets=(kp20k kp20k_valid2k duc inspec krapivin nus semeval)
+
 dataset_list=""
 
 for dataset in "${datasets[@]}"
@@ -39,6 +41,7 @@ done
 #exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/bart_mag_fewshot"
 
 exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/diverse_exps/exps/"
+exp_root_dir="/zfs1/pbrusilovsky/rum20/kp/diverse_exps/exps_devbest/"
 
 echo $0
 echo $PROJECT_DIR

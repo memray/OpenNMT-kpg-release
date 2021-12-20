@@ -455,7 +455,8 @@ class KeyphraseReplaceTargetTransform(KeyphraseRandomSpanTargetTransform):
             if not fix_target_number:
                 tgts = np.random.choice(tgts, size=np.random.randint(len(tgts)) + 1, replace=False).tolist()
 
-            # shuffle order and randomize target size
+            # shuffle order and randomize target size, disabled since random span positions should align with input
+            # np.random.shuffle(tgts)
 
             # print(len(tgts))
             # print(tgts)

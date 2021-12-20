@@ -129,7 +129,7 @@ def train(opt):
                 new_corpus_dict["path_tgt"] = src_file_path
                 src_file = src_file_path[len(corpus_dict["path_src"]):]
                 if "label_data" in corpus_dict:
-                    new_corpus_dict["label_data"] = [os.path.join(label_folder, src_file) for label_folder in corpus_dict["label_data"]]
+                    new_corpus_dict["label_data"] = [label_folder if label_folder.startswith('__') else os.path.join(label_folder, src_file) for label_folder in corpus_dict["label_data"]]
                 else:
                     new_corpus_dict["label_data"] = None
                 new_data_dict[corpus_id + '-' + src_file.replace(os.path.sep, '-')] = new_corpus_dict

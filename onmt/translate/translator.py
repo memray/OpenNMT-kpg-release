@@ -1124,7 +1124,7 @@ class Translator(Inference):
                     src_map = src_map.index_select(1, select_indices)
             if parallel_paths > 1 or any_finished:
                 # @memray re-order decoder internal states based on the prev choice of beams
-                # and drop the finished batched
+                # and drop the finished batches
                 if isinstance(self.model.decoder, BARTDecoder):
                     self.model.decoder.model.reorder_incremental_state_scripting(incremental_state, select_indices)
                     encoder_output = self.model.encoder.model.reorder_encoder_out(encoder_output, select_indices)

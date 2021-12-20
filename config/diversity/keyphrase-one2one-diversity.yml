@@ -1,0 +1,65 @@
+# Translation / inference options
+#model: models/keyphrase/kp20k/kp20k.one2one.birnn.test_step_40000.pt
+cache_dir: /zfs1/hdaqing/rum20/kp/data/kp/cache/
+
+model_type: keyphrase
+data_type: keyphrase
+data:
+    valid:
+        path_src: none
+        path_tgt: none
+        path_align: none
+        type: keyphrase
+        transforms: [keyphrase, onmt_tokenize]
+        weight: 1
+
+### Transform related opts:
+#### Keyphrase specific
+kp_concat_type: one2one
+beam_terminate: full
+use_given_inputs: false
+
+#### Subword and vocab
+share_vocab: True
+#### Word and vocab
+src_vocab: /zfs1/pbrusilovsky/rum20/kp/OpenNMT-kpg/data/keyphrase/meng17/magkp20k.vocab.json
+src_vocab_size: 50000
+lowercase: True
+return_tokens: True
+keep_punctuations: True
+add_src_boseos: False
+
+# Data options
+#model_dtype: fp16
+src_seq_length_trunc: 512
+tgt_seq_length_trunc: 128
+
+# Evaluation options
+report_time: 'true'
+
+# Options most relevant to summarization.
+#dynamic_dict: 'true'
+
+# Beam search
+#beam_size: 8
+min_length: 1
+#max_length: 32
+
+# Alpha and Beta values for Google Length + Coverage penalty
+stepwise_penalty: 'false'
+
+# Logging
+verbose: 'false'
+#log_file: output/pred/kp20k/kp20k.one2one_step_40000.pred.log
+log_file_level: 'DEBUG'
+n_best: 500
+
+# Decoding
+random_sampling_temp: 0.0
+
+# Efficiency
+#gpu: 0
+gpu: -1
+
+seed: 97
+#beam_terminate: full/topbeam

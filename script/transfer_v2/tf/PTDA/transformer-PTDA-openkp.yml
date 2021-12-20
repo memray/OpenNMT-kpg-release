@@ -1,5 +1,5 @@
 ### Reset all states in the optimizer:
-train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_tl/transformer-wiki-step200k/ckpts/checkpoint_step_200000.pt
+train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_PT/transformer-wiki-step200k/ckpts/checkpoint_step_200000.pt
 reset_optim: all
 
 ### Exp meta

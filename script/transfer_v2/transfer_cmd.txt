@@ -5,15 +5,33 @@ bash script/transfer_v2_paper/tf/tf_tlgenerate_pseudokp.sh
 ## Pred and Eval
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
 source script/transfer/run_pred_o2s_gpu_fewshot_dev.sh
-source script/transfer/run_pred_o2s_gpu_fewshot_scavenger.sh
 source script/transfer/run_pred_o2s_gpu_fewshot.sh
+source script/transfer/run_pred_o2s_gpu_fewshot_scavenger.sh
 
 ## PT
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
 source script/transfer_v2/bart/nohup-bart-wiki-lr1e5-step200k.sh
 
+## DA compare
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+sbatch script/transfer_v2/tf/DAcompare/transformer-DA-kp20k-step40k-NP.sh
+sbatch script/transfer_v2/tf/DAcompare/transformer-DA-kp20k-step40k-tlnp_55.sh
+sbatch script/transfer_v2/tf/DAcompare/transformer-DA-kp20k-step40k-tlrs_55.sh
+
+sbatch script/transfer_v2/tf/DAcompare/transformer-DA-kp20k-step40k-tlnp_28.sh
+sbatch script/transfer_v2/tf/DAcompare/transformer-DA-kp20k-step40k-tlrs_28.sh
+
 
 ## scale-up with MAG
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+bash script/transfer_v2/mag/nohup-transformer-PTDA-magcs12m-tlrs55-step200k.sh
+bash script/transfer_v2/mag/nohup-bart-PTDA_MagTL12m-lr1e5-step200k.sh
+
+### Generate pseudo labels
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+sbatch script/transfer_v2/mag/mag_transfer_labelling_tf.sh
+sbatch script/transfer_v2/mag/mag_transfer_labelling_bart.sh
+
 ### BART
 
 #### DA
@@ -27,4 +45,8 @@ bash script/transfer/mag/bart/nohup-bart-DA_MagTL13m-FT_full-lr1e5-step100k.sh
 
 ### Transformer
 
+#### selftrain
+cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+source script/transfer_v2/tf/selftrain/transformer-PTDA-magkp1m-TLtf-round7.sh
+source script/transfer_v2/tf/selftrain/FT/transformer-PTDAFT-kp20k-round7-fewshot10k.sh
 

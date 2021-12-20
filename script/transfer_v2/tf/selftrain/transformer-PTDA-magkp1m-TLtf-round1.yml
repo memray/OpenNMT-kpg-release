@@ -1,12 +1,12 @@
 ### Reset all states in the optimizer:
-train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round1/ckpts/checkpoint_step_20000.pt
+train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-wiki-step200k_round0/ckpts/checkpoint_step_200000.pt
 reset_optim: all
 
 ### Exp meta
-exp: transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round1
-exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round2/
-save_model: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round2/ckpts/checkpoint
-log_file: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round2/log.txt
+exp: transformer-PT_wiki_step200k-DA_TLtf_magkp1m_step20k_round1
+exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PTDA_TLtf_magkp1m_step20k-tlrs_55-round1/
+save_model: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PTDA_TLtf_magkp1m_step20k-tlrs_55-round1/ckpts/checkpoint
+log_file: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PTDA_TLtf_magkp1m_step20k-tlrs_55-round4/log.txt
 wandb_project: transfer_kp_transformer
 
 ### Data opts:
@@ -20,14 +20,15 @@ cache_dir: /zfs1/hdaqing/rum20/kp/data/kp/cache/
 src_seq_length_trunc: 512
 tgt_seq_length_trunc: 128
 shuffle_shards: false
-label_sample_ratio: [1.0]
-max_target_phrases: 8
+label_sample_ratio: [0.5, 0.5]
+max_target_phrases: 10
+max_phrase_len: 8
 data:
     corpus_1:
         type: keyphrase
         transforms: [keyphrase, kp_replace_target, roberta_tokenize_kpg]
-        path_src: /zfs1/hdaqing/rum20/kp/data/kp/json/kp20k_train100k/train.json
-        label_data: [/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-PT_wiki_step200k-DA_TLtf_kp20k_step20k_round1/outputs/beamsearch-width_1-maxlen_60/pred/checkpoint_step_20000-data_kp20k_train100k_train.pred]
+        path_src: /zfs1/hdaqing/rum20/kp/data/kp/json/magkpcs_1m/train.json
+        label_data: [/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain/transformer-wiki-step200k_round0/outputs/beamsearch-width_1-maxlen_60/pred/checkpoint_step_200000-data_magkpcs_1m_train.pred, __random_span]
 
 
 ### Transform related opts:
@@ -82,8 +83,8 @@ adam_beta2: 0.998
 
 # batch_size - token: num_example * max(#word in src/tgt) * accum_count
 # batch_size - sent: batch_size * accum_count
-batch_size: 25 # 4096
-accum_count: 4
+batch_size: 50 # 4096
+accum_count: 2
 valid_batch_size: 64
 batch_type: sents
 normalization: sents

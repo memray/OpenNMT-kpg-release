@@ -6,8 +6,8 @@ TEMPLATE_PATH="$CURDIR/kpeval_gpu_template.sh"
 
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
-partition="gtx1080" # titanx gtx1080 v100
-days="1"
+partition="titanx" # titanx gtx1080 v100
+days="3"
 random=$RANDOM
 
 task_args="pred eval" # pred or eval
@@ -37,11 +37,19 @@ done
 #exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/tf_mag/"
 #exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/bart_mag_fewshot"
 
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDAFT/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DA/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAFT/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompare/"
+
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_PTDA"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDAFT/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_PTDAFT"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDA_selftrain"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAFT/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompareFT/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_PTDAFT_selftrain"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/"
+
 
 echo $0
 echo $PROJECT_DIR
