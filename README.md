@@ -6,7 +6,11 @@ All datasets and selected model checkpoints in the papers can be downloaded here
 
 ## Update (Nov 2021)
 
-Merged with OpenNMT v2 and integrated a new pre-processing pipeline. Now training/inference can directly load JSON data ([download](https://drive.google.com/file/d/1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP/view)) from disk, without any hassle of tokenization or conversion to tensor files. Some config examples can be of help for you to kick off:
+Merged with OpenNMT v2 and integrated a new pre-processing pipeline. Now training/inference can directly load **JSON data** from disk, without any hassle of tokenization or conversion to tensor files. 
+ - Paper datasets and DUC ([download](https://drive.google.com/file/d/1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP/view)): KP20k/Inspec/Krapivin/NUS/SemEval2010/DUC2001.
+ - 4 large annotated datasets ([download](https://drive.google.com/file/d/1VoXr7pZqLUDBi0PPtbsvj6jv05hYtWdh/view?usp=sharing)): KP20k, OpenKP, KPTimes+JPTimes, StackExchange.
+
+Some config examples can be of help for you to kick off:
  - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata) using RoBERTa subword tokenization. Vocab (including dict.txt/merges.txt/vocab.json/tokenizer.json) can be found [here](https://drive.google.com/file/d/1SM-8c2u3AV2-_71pjSlGVD8wyT7sv6vm/view?usp=sharing).
  - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/empirical_study/diverse) using word tokenization. Vocab (magkp20k.vocab.json, 50k most frequent words in KP20k and MagKP) can be found [here](https://drive.google.com/file/d/1MJcQeORQBmDdEEjdxmZMVijnB9dR7pWs/view?usp=sharing).
 
