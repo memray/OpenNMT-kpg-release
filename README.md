@@ -4,7 +4,7 @@ This is a repository providing code and datasets used in [One Size Does Not Fit 
 
 All datasets and selected model checkpoints in the papers can be downloaded here ([data.zip](https://drive.google.com/open?id=1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP) and [models.zip](https://drive.google.com/open?id=18Pfs0ePAMl17kfjYRU_9HxYc0eUXet-_)). Unzip the file `data.zip` and `models.zip` and override the original `data/ and model/` folder. 
 
-## Update (Nov 2021)
+## Update (Jan 2022)
 
 Merged with OpenNMT v2 and integrated a new pre-processing pipeline. Now training/inference can directly load **JSON data** from disk, without any hassle of tokenization or conversion to tensor files. 
  - Paper datasets and DUC ([download](https://drive.google.com/file/d/1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP/view)): KP20k/Inspec/Krapivin/NUS/SemEval2010/DUC2001.
@@ -23,29 +23,26 @@ All the config files used for training and evaluation can be found in folder `co
 For more examples, you can refer to scripts placed in folder `script/`.
 
 
-### Preprocess the data
+### Train a One2Seq model
 
 ```bash
-source kp_convert.sh # dump json to src/tgt files (OpenNMT format)
-python preprocess.py -config config/preprocess/config-preprocess-keyphrase-kp20k.yml
-```
-
-### Train a One2Seq model with Diversity Mechanisms enabled
-
-```bash
-python train.py -config config/train/config-rnn-keyphrase-one2seq-diverse.yml
+python train.py -config config/transfer_kp/train/transformer-presabs-kp20k.yml
 ```
 
 ### Train a One2One model
 
 ```bash
-python train.py -config config/train/config-rnn-keyphrase-one2one-stackexchange.yml
+python train.py -config config/transfer_kp/train/transformer-one2one-kp20k.yml
 ```
 
 ### Run generation and evaluation 
 
 ```bash
-python kp_gen_eval.py -tasks pred eval report -config config/test/config-test-keyphrase-one2seq.yml -data_dir data/keyphrase/meng17/ -ckpt_dir models/keyphrase/meng17-one2seq-kp20k-topmodels/ -output_dir output/meng17-one2seq-topbeam-selfterminating/meng17-one2many-beam10-maxlen40/ -testsets duc inspec semeval krapivin nus -gpu -1 --verbose --beam_size 10 --batch_size 32 --max_length 40 --onepass --beam_terminate topbeam --eval_topbeam
+# beam search (beamwidth=50)
+python kp_gen_eval_transfer.py -config config/transfer_kp/infer/keyphrase-one2seq.yml -tasks pred eval -data_dir kp/data/kp/json/ -exp_root_dir kp/exps/transformer_exp_devbest/ -gpu 0 -batch_size 16 -beam_size 50 -max_length 40 -testsets kp20k openkp kptimes jptimes stackex kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k stackex_valid2k duc -splits test --data_format jsonl -gpu 0
+
+# greedy decoding (beamwidth=1)
+python kp_gen_eval_transfer.py -config config/transfer_kp/infer/keyphrase-one2seq.yml -tasks pred eval -data_dir kp/data/kp/json/ -exp_root_dir kp/exps/transformer_exp_devbest/ -gpu 0 -batch_size 16 -beam_size 1 -max_length 40 -testsets kp20k openkp kptimes jptimes stackex kp20k_valid2k openkp_valid2k kptimes_valid2k jptimes_valid2k stackex_valid2k duc -splits test --data_format jsonl -gpu 0
 ```
 
 ## Evaluation and Datasets
