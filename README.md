@@ -14,7 +14,7 @@ Some config examples can be of help for you to kick off:
  - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata) using RoBERTa subword tokenization. Vocab (including dict.txt/merges.txt/vocab.json/tokenizer.json) can be found [here](https://drive.google.com/file/d/1SM-8c2u3AV2-_71pjSlGVD8wyT7sv6vm/view?usp=sharing).
  - [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/empirical_study/diverse) using word tokenization. Vocab (magkp20k.vocab.json, 50k most frequent words in KP20k and MagKP) can be found [here](https://drive.google.com/file/d/1MJcQeORQBmDdEEjdxmZMVijnB9dR7pWs/view?usp=sharing).
 
-All shared resources are placed [here](https://drive.google.com/drive/folders/1nJL-LC0M8lXdDEl0ZRQMc_rcuvvKO5Hb?usp=sharing).
+All shared resources are placed [here](https://drive.google.com/drive/folders/1nJL-LC0M8lXdDEl0ZRQMc_rcuvvKO5Hb?usp=sharing). Please note that hf_vocab.tar.gz contains the vocab of subword tokenization (RoBERTa vocab with some new special tokens such as <SEP>), and magkp20k.vocab.json is for previous word tokenization based models (top 50k frequent words in magcs and kp20k).
 
 
 ## Quickstart
