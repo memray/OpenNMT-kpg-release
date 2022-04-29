@@ -447,7 +447,7 @@ def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>', 
     tgt_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in tgt_kps]
     pred_seqs = [[t for t in re.split(r'\W', p) if len(t) > 0] for p in pred_kps]
 
-    topk_range = ['k', 10]
+    topk_range = [5, 10, 'k']
     absent_topk_range = [50, 'M']
     metric_names = ['f_score']
 
@@ -492,9 +492,20 @@ def eval_and_print(src_text, tgt_kps, pred_kps, pred_scores, unk_token='<unk>', 
                                       pred_seqs, pred_scores, present_pred_flags, valid_pred_flags,
                                       valid_and_present_flags, valid_and_absent_flags, match_scores_exact,
                                       eval_results_names, eval_results_list)
+    count_dict = {
+        'num_gold': len(tgt_seqs),
+        'num_present_gold': sum(present_tgt_flags),
+        'num_absent_gold': len(present_tgt_flags)-sum(present_tgt_flags),
+        'num_pred': len(pred_seqs),
+        'num_valid_pred': sum(valid_pred_flags),
+        'num_present_pred': sum(present_pred_flags),
+        'num_present_valid_pred': sum(valid_and_present_flags),
+        'num_absent_valid_pred': sum(valid_and_absent_flags)
+    }
 
     if return_eval:
         eval_results_dict = {
+            'count': count_dict,
             'all_exact': all_exact_results,
             'present_exact': present_exact_results,
             'absent_exact': absent_exact_results

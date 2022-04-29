@@ -1,6 +1,8 @@
 Mag
 source script/transfer/mag/run_pred_o2s_scipaper.sh
 cd /zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/
+bash script/transfer/mag/bart/nohup-bart-DA_MagTL12m-lr1e5-step20k-bs256.sh
+bash script/transfer/mag/bart/nohup-bart-DA_MagTL1m-lr1e5-step5k-bs256.sh
 bash script/transfer/mag/bart/nohup-bart-DA_MagTL3m-lr1e5-step200k.sh
 bash script/transfer/mag/bart/nohup-bart-DA_MagTL13m-FT_full-lr1e5-step100k.sh
 bash script/transfer/mag/bart/nohup-bart-DA_MagTL13m-lr1e5-step200k.sh
@@ -13,8 +15,6 @@ bash script/transfer/mag/train/transformer-kp20k-PT_step200k-FT_full_step20k-lr1
 bash script/transfer/mag/train/transformer-kp20k-PTDA_kp20k_20k-FT_full-step20k-lr1e5-warmup2k.sh
 bash script/transfer/mag/train/transformer-kp20k-PT_step200k-FT_full_step100k_lr5e5_warmup10k.sh
 
-
-CRC-gpu-n27 nohup transformer-wiki 121189
 
 
 Note

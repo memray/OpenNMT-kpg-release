@@ -183,8 +183,8 @@ class KeyphraseTransform(Transform):
         Target text: concatenating phrases according to the given phrase order.
         """
         if self.use_given_inputs and 'src' in example and 'tgt' in example and example['src'] and example['tgt']:
-            print('WARNING: using src and tgt that are directly given rather than processed on-the-fly.\n '
-                  'This is only designated to ease the out-of-the-box inference. Ensure this behavior is wanted.')
+            # print('WARNING: using src and tgt that are directly given rather than processed on-the-fly.\n '
+            #       'This is only designated to ease the out-of-the-box inference. Ensure this behavior is wanted.')
             return example
 
         dataset_type = self.infer_dataset_type(example)
@@ -271,57 +271,51 @@ class KeyphraseRandomSpanTargetTransform(Transform):
             span_lens = sorted(span_lens, reverse=True)  # ensure larger spans get processed first
 
             spans = []
-            uncovered_spans = [(0, len(src_tokens))]
-            for span_len in span_lens:
-                candicate_spans, noncandicate_spans = [], []
-                for s in uncovered_spans:
-                    if s[1] - s[0] >= span_len:
-                        candicate_spans.append(s)
-                    else:
-                        noncandicate_spans.append(s)
-
-                if len(candicate_spans) == 0:
-                    # not possible to fit this span
-                    continue
-                candicate_span_id = random.choice(range(len(candicate_spans)))
-                candicate_span = candicate_spans[candicate_span_id]
-                candicate_span_len = candicate_span[1] - candicate_span[0]
-
-                # sample a span start given the candidate
-                span_start_offset = random.randint(0, candicate_span_len - span_len + 1)
-                span_left = candicate_span[0] + span_start_offset
+            is_masked = [False] * len(src_tokens)
+            span_idx = 0
+            num_try, max_try = 0, len(span_lens) * 4
+            while span_idx < len(span_lens):
+                # in case there's not much unmasked tokens left
+                num_try += 1
+                if num_try > max_try: break
+                # sample a span start
+                span_len = span_lens[span_idx]
+                span_left = np.random.random_integers(low=0, high=len(src_tokens)-span_len)
+                # some tokens have been masked, skip. Also to ensure no two spans are contiguous
+                has_overlap = False
+                l_idx = span_left-1 if span_left > 0 else 0
+                r_idx = span_left+span_len+1 if span_left+span_len+1 < len(src_tokens) else len(src_tokens)
+                for i in range(l_idx, r_idx):
+                    if is_masked[i]: has_overlap = True
+                if has_overlap: continue
+                # a new span
                 spans.append((span_left, span_left + span_len))
+                for i in range(span_len):
+                    is_masked[span_left+i] = True
+                span_idx += 1
 
-                # maintain the new candidate lists
-                if span_start_offset == 0:
-                    leftover_spans = [(candicate_span[0] + span_len, candicate_span[1] + 1)]
-                elif span_start_offset == candicate_span_len - span_len:
-                    leftover_spans = [(candicate_span[0], candicate_span[1] - span_len)]
-                else:
-                    leftover_spans = [(candicate_span[0], span_left), (span_left + span_len, candicate_span[1] + 1)]
-
-                uncovered_spans = noncandicate_spans + leftover_spans
-
-            masked_src_tokens = []
+            spans = sorted(spans, key=lambda k:k[0]) # order spans by their positions
+            masked_src_tokens, infill_spans = [], []
             prev_span_end = 0
             for s in spans:
                 masked_src_tokens.extend(src_tokens[prev_span_end: s[0]])
                 masked_src_tokens.append('<infill>')
+                infill_spans.append(src_tokens[s[0]: s[1]])
                 prev_span_end = s[1]
             masked_src_tokens.extend(src_tokens[prev_span_end:])
 
-            infill_phrases = [' '.join(src_tokens[s[0]: s[1]]) for s in spans]
+            span_texts = [' '.join(s) for s in infill_spans]
             if return_masked_source:
                 src_text = ' '.join(masked_src_tokens)
             else:
                 src_text = src_text
 
-        tgt_text = sep_token.join(infill_phrases)
+        tgt_text = sep_token.join(span_texts)
 
         if lowercase:
-            return src_text.lower(), tgt_text.lower()
+            return src_text.lower(), tgt_text.lower(), [p.lower() for p in span_texts]
 
-        return src_text, tgt_text, infill_phrases
+        return src_text, tgt_text, span_texts
 
     def apply(self, example, is_train=False, stats=None, **kwargs):
         """
@@ -455,14 +449,6 @@ class KeyphraseReplaceTargetTransform(KeyphraseRandomSpanTargetTransform):
             if not fix_target_number:
                 tgts = np.random.choice(tgts, size=np.random.randint(len(tgts)) + 1, replace=False).tolist()
 
-            # shuffle order and randomize target size, disabled since random span positions should align with input
-            # np.random.shuffle(tgts)
-
-            # print(len(tgts))
-            # print(tgts)
-            # print(len(tgts))
-            # print(tgts)
-
             tgt_str = sep_token.join(tgts)
 
             # add control prefix (number of phrases to output)
@@ -543,10 +529,10 @@ class ControlPrefixTransform(Transform):
             tgt_control_prefix = ''
 
         example['src'] = src_control_prefix + example['src']
-        example['tgt'] = tgt_control_prefix + example['tgt']
-
         example['src_str'] = example['src']
-        example['tgt_str'] = example['tgt']
+        if is_train:
+            example['tgt'] = tgt_control_prefix + example['tgt']
+            example['tgt_str'] = example['tgt']
 
         return example
 

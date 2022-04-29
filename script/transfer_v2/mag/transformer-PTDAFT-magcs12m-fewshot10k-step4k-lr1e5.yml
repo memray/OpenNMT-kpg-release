@@ -1,10 +1,10 @@
 train_from: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DA/transformer-PTDA_magcs12m_tlrs55-lr1e5-step200k/ckpts/checkpoint_step_200000.pt
 
 ### Exp meta
-exp: transformer-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5
-exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5
-save_model: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5/ckpts/checkpoint
-log_file: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5/log.txt
+exp: transformer-kp20k-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5
+exp_dir: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-kp20k-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5
+save_model: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-kp20k-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5/ckpts/checkpoint
+log_file: /zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT/transformer-kp20k-PTDAFT-magcs12m-fewshot10k-step4k-lr1e5/log.txt
 wandb_project: transfer_kp_transformer_fewshot
 
 ### Data opts:

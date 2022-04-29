@@ -7,7 +7,7 @@ TEMPLATE_PATH="$CURDIR/kpeval_gpu_template.sh"
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 partition="titanx" # titanx gtx1080 v100
-days="3"
+days="1"
 random=$RANDOM
 
 task_args="pred eval" # pred or eval
@@ -19,6 +19,7 @@ step_base=1
 # evaluate with all predictions
 datasets=(kp20k kp20k_valid2k duc inspec krapivin nus semeval)
 datasets=(kp20k openkp kptimes jptimes stackex)
+datasets=(kp20k kp20k_valid2k duc)
 datasets=(kp20k kp20k_valid2k openkp openkp_valid2k kptimes kptimes_valid2k jptimes duc stackex stackex_valid2k)
 
 dataset_list=""
@@ -44,8 +45,11 @@ exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompareFT_devbest"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DA"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAcompareFT_devbest"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAFT_devbest"
-exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT_devbest"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DA"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_PTDAFT_devbest"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/mag_DAFT_devbest"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_FT_devbest"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_PTFT_devbest"
 
 
 echo $0

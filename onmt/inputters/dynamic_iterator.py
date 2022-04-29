@@ -125,7 +125,7 @@ class DynamicDatasetIter(object):
     """
 
     def __init__(self, corpora, corpora_info, transforms, fields, is_train,
-                 batch_type, batch_size, batch_size_multiple, data_type="text",
+                 batch_type, batch_size, batch_size_multiple=1, data_type="text",
                  bucket_size=2048, pool_factor=8192,
                  skip_empty_level='warning', stride=1, offset=0):
         self.corpora = corpora
@@ -155,15 +155,16 @@ class DynamicDatasetIter(object):
                   stride=1, offset=0):
         """Initilize `DynamicDatasetIter` with options parsed from `opts`."""
         batch_size = opts.batch_size if is_train else opts.valid_batch_size
-        if opts.batch_size_multiple is not None:
+        if hasattr(opts, 'batch_size_multiple') and opts.batch_size_multiple is not None:
             batch_size_multiple = opts.batch_size_multiple
         else:
             batch_size_multiple = 8 if opts.model_dtype == "fp16" else 1
         return cls(
             corpora, opts.data, transforms, fields, is_train, opts.batch_type,
             batch_size, batch_size_multiple, data_type=opts.data_type,
-            bucket_size=opts.bucket_size, pool_factor=opts.pool_factor,
-            skip_empty_level=opts.skip_empty_level,
+            bucket_size=opts.bucket_size if hasattr(opts, 'bucket_size') else 2048,
+            pool_factor=opts.pool_factor if hasattr(opts, 'pool_factor') else 8192,
+            skip_empty_level=opts.skip_empty_level if hasattr(opts, 'skip_empty_level') else 'warning',
             stride=stride, offset=offset
         )
 

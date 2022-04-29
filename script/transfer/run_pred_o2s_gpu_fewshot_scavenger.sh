@@ -9,7 +9,7 @@ echo $PROJECT_DIR
 slurm_output_dir="$PROJECT_DIR/slurm_output"
 
 partition="titanx" # titanx gtx1080 v100
-days="1"
+days="0"
 random=$RANDOM
 task_args="pred" # pred or eval
 batch_size=1
@@ -34,6 +34,9 @@ exp_root_dir="/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp_fewshot10k/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps/kp_mag_fewshot_devbest/"
 exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/tf_DAFT/"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_PTDAFT"
+exp_root_dir="/zfs1/hdaqing/rum20/kp/transfer_exps_v2/bart_FT"
+
 
 EXP_NAME="sca_$task_args-$partition-$random-bs$beam_size"
 DUMP_SCRIPT_PATH="$CURDIR/tmp/$EXP_NAME.sh"

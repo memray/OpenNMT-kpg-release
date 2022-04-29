@@ -10,7 +10,7 @@ import six
 
 from onmt.keyphrase.pke.base import LoadFile
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.externals import joblib
+import joblib
 
 
 class SupervisedLoadFile(LoadFile):

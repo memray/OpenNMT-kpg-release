@@ -73,9 +73,13 @@ class DatasetAdapter(object):
         if maybe_example is None:
             return None
         maybe_example['src'] = ' '.join(maybe_example['src'])
-        maybe_example['tgt'] = ' '.join(maybe_example['tgt'])
+        if is_train:
+            maybe_example['tgt'] = ' '.join(maybe_example['tgt'])
+        else:
+            maybe_example['tgt'] = ''
         if 'align' in maybe_example:
             maybe_example['align'] = ' '.join(maybe_example['align'])
+
         return maybe_example
 
     def _maybe_add_dynamic_dict(self, example, fields):
@@ -223,7 +227,6 @@ class ParallelCorpusIterator(object):
         stride (int): iterate corpus with this line stride;
         offset (int): iterate corpus with this line offset.
     """
-
     def __init__(self, corpus, transform, infinitely=False,
                  skip_empty_level='warning', stride=1, offset=0):
         self.cid = corpus.id

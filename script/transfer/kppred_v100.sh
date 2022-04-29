@@ -4,13 +4,20 @@
 #SBATCH --account=hdaqing
 
 #SBATCH --partition=v100
+#SBATCH --partition=scavenger
+#SBATCH --constraint=v100
+
+#SBATCH --partition=titanx
+#SBATCH --partition=scavenger
+#SBATCH --constraint=titanx
+
 #SBATCH --job-name=v100_pred-1d
 #SBATCH --output=slurm_output/v100_pred.out
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8GB
-#SBATCH --time=1-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --time=0-12:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 

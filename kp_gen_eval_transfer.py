@@ -21,7 +21,7 @@ import onmt.opts as opts
 
 train_test_mappings = {
     'kp20k': ['kp20k', 'kp20k_valid2k', 'inspec', 'krapivin', 'semeval', 'nus', 'duc'],
-    'openkp': ['openkp', 'openkp_valid2k', 'duc'],
+    'openkp': ['openkp', 'openkp_valid2k', 'jptimes', 'duc'],
     'kptimes': ['kptimes', 'kptimes_valid2k', 'jptimes', 'duc'],
     'stackex': ['stackex', 'stackex_valid2k', 'duc'],
 }
@@ -314,7 +314,7 @@ if __name__ == "__main__":
                         elapsed_time = time.time() - os.stat(pred_path).st_mtime
                         if elapsed_time > opt.test_interval:
                             os.remove(pred_path)
-                            logger.warn('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
+                            logger.warning('Removed a bad PRED file, #(line)=%d, #(elapsed_time)=%ds. PRED file: %s'
                                         % (num_pred, int(elapsed_time), pred_path))
                             del pred_linecount_dict[pred_path]
                     else:

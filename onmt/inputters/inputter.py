@@ -317,8 +317,6 @@ def load_roberta_kp_tokenizer(vocab_path, bpe_dropout):
     print('Vocab size=%d, base vocab size=%d' % (len(roberta_kp_tokenizer), roberta_kp_tokenizer.vocab_size))
     if isinstance(roberta_kp_tokenizer, RobertaTokenizerFast) and float(bpe_dropout) > 0.0:
         roberta_kp_tokenizer._tokenizer.model.dropout = float(bpe_dropout)
-        # workaround_files = roberta_kp_tokenizer._tokenizer.model.save(vocab_dir, 'workaround')
-        # roberta_kp_tokenizer._tokenizer.model = type(roberta_kp_tokenizer._tokenizer.model)(*workaround_files, dropout=float(bpe_dropout))
 
     return roberta_kp_tokenizer
 
@@ -755,3 +753,7 @@ def _read_vocab_file(vocab_path, tag):
             else:
                 vocab = [line.strip().split()[0] for line in lines]
             return vocab, has_count
+
+if __name__ == '__main__':
+    tokenizer = load_roberta_kp_tokenizer('/zfs1/hdaqing/rum20/kp/data/kp/hf_vocab/roberta-base-kp/vocab.json', bpe_dropout=0.0)
+    tokenizer.save_pretrained("/zfs1/hdaqing/rum20/kp/transfer_exps_v2/kp_PT/bart-wiki-step40k-bs256/hf_ckpts/tokenizer/")

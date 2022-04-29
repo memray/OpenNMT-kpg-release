@@ -23,7 +23,7 @@ import string
 import logging
 
 import numpy as np
-from sklearn.externals import joblib
+import joblib
 from sklearn.naive_bayes import MultinomialNB
 
 from onmt.keyphrase.pke.supervised.api import SupervisedLoadFile

@@ -11,7 +11,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16GB
-#SBATCH --time=3-00:00:00 # 6 days walltime in dd-hh:mm format
+#SBATCH --time={days}-00:00:00 # 6 days walltime in dd-hh:mm format
 #SBATCH --qos=long
 
 source ~/.bash_profile # reload LD_LIBRARY due to error ImportError: /lib64/libstdc++.so.6: version `GLIBCXX_3.4.21' not found

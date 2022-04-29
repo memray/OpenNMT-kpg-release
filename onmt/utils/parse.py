@@ -89,6 +89,8 @@ class DataOptsCheckerMixin(object):
     def _get_all_transform(cls, opt):
         """Should only called after `_validate_data`."""
         all_transforms = set(opt.transforms)
+        if isinstance(opt.data, str):
+            opt.data = eval(opt.data)
         for cname, corpus in opt.data.items():
             _transforms = set(corpus['transforms'])
             if len(_transforms) != 0:

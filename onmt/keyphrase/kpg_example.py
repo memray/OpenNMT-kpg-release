@@ -44,7 +44,7 @@ def extract_bartkp(ex_dict):
     config_path = '/zfs1/hdaqing/rum20/kp/OpenNMT-kpg-transfer/config/transfer_kp/infer/keyphrase-one2seq-controlled.yml'
     opt = parser.parse_args('-config %s' % (config_path))
 
-    ckpt_path = '/zfs1/hdaqing/rum20/kp/fairseq-kpg/exps/kp/bart_kppretrain_wiki_1e5/ckpts/checkpoint_step_100000.pt'
+    ckpt_path = '/zfs1/pbrusilovsky/rum20/kp/openNMT-kpg-release-ckpt/bart-wiki-step40k-bs256.checkpoint_step_40000.pt'
     opt.__setattr__('models', [ckpt_path])
     opt.__setattr__('fairseq_model', True)
     opt.__setattr__('encoder_type', 'bart')
@@ -206,7 +206,7 @@ if __name__ == '__main__':
                 ex['keywords'] = ex['keywords'].split(';') if isinstance(ex['keywords'], str) else ex['keywords']
                 ex['dataset_type'] = 'news'
             else:
-                print('????')
+                raise NotImplementedError(f'Not supported dataset type: {dataset_name}.')
 
     print('Loaded #(docs)=%d' % (len(ex_dicts)))
     doc_id = random.randint(0, len(ex_dicts))

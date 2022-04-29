@@ -382,10 +382,14 @@ class RoBERTaTransform(TokenizerTransform):
     def apply(self, example, is_train=False, stats=None, **kwargs):
         """Apply bpe subword encode to src & tgt."""
         src_out = self._tokenize(example['src'], 'src', is_train)
-        tgt_out = self._tokenize(example['tgt'], 'tgt', is_train)
+        if is_train:
+            tgt_out = self._tokenize(example['tgt'], 'tgt', is_train)
+        else:
+            tgt_out = None
+
         if stats is not None:
-            n_words = len(example['src']) + len(example['tgt'])
-            n_subwords = len(src_out) + len(tgt_out)
+            n_words = len(example['src']) + len(example['tgt']) if tgt_out else len(example['src'])
+            n_subwords = len(src_out) + len(tgt_out) if tgt_out else len(src_out)
             stats.update(SubwordStats(n_subwords, n_words))
         example['src'], example['tgt'] = src_out, tgt_out
         return example

@@ -371,7 +371,7 @@ class Inference(object):
         self,
         src,
         tgt=None,
-        batch_size=None,
+        batch_size=32,
         batch_type="sents",
         attn_debug=False,
         align_debug=False,
@@ -449,7 +449,7 @@ class Inference(object):
             data = src
             # src_vocabs will be used in collapse_copy_scores and Translator.py
             src_vocabs = None
-            has_tgt = True
+            has_tgt = True if tgt is not None else False
         else:
             raise NotImplementedError('Currently only support data type=text/keyphrase.')
 
@@ -940,7 +940,7 @@ class Translator(Inference):
             # BARTDecoder only uses decoder_in and encoder_output
             #    decoder_in.shape = (tgt_len, batch_size, 1)
             #    output=(tgt_len, batch_size, dec_dim), attn=(tgt_len, batch_size, src_len)
-            dec_out, dec_attn = self.model.decoder(decoder_in, memory_bank,
+            dec_out, dec_attn = self.model.decoder(tgt=decoder_in, memory_bank=memory_bank,
                                                    memory_lengths=memory_lengths,
                                                    encoder_output=encoder_output,
                                                    incremental_state=incremental_state,
@@ -1322,7 +1322,7 @@ class GeneratorLM(Inference):
         return super(GeneratorLM, self).translate(
             src,
             tgt,
-            batch_size=1,
+            batch_size=batch_size,
             batch_type=batch_type,
             attn_debug=attn_debug,
             align_debug=align_debug,
