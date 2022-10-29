@@ -1,11 +1,24 @@
 # Keyphrase Generation (built on OpenNMT-py)
 
-This is a repository providing code and datasets used in [One Size Does Not Fit All: Generating and Evaluating Variable Number of Keyphrases](https://arxiv.org/abs/1810.05241) and [Does Order Matter? An Empirical Study on Generating Multiple Keyphrases as a Sequence](https://arxiv.org/abs/1909.03590).
+This is a repository providing code and datasets for keyphrase generation.
 
-All datasets and selected model checkpoints in the papers can be downloaded here ([data.zip](https://drive.google.com/open?id=1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP) and [models.zip](https://drive.google.com/open?id=18Pfs0ePAMl17kfjYRU_9HxYc0eUXet-_)). Unzip the file `data.zip` and `models.zip` and override the original `data/ and model/` folder.
+## Update (October 2022)
+All datasets and selected model checkpoints in the papers can be downloaded from Huggingface Hub ([data](https://huggingface.co/datasets/memray/keyphrase/tree/main) and [ckpt](https://huggingface.co/memray/opennmt-kpg/tree/main)).
+Config files can be found at [script/](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata). 
+
+For example, you can start training a Transformer model on KP20k using OpenNMT:
+```bash
+CUDA_VISIBLE_DEVICES=0 python train.py -config config/transfer_kp/train/transformer-presabs-kp20k.yml
+```
+To train a BART model on KP20k using [fairseq-kpg](https://github.com/memray/fairseq-kpg):
+```bash
+cd $FAIRSEQ_DIR
+CUDA_VISIBLE_DEVICES=0 python train.py data/kp/json/kp20k/ --save-dir exps/kp/bartFT_presabs_kp20k_100k_rerun/ckpts --disable-validation --task keyphrasification --max-source-length 512 --max-target-length 128 --kp-concat-type pres_abs --arch bart_large --restore-file cache/bart.large/model.pt --bpe hf_pretrained_bpe --bpe-vocab hf_vocab/roberta-base-kp/vocab.json --bpe-merges hf_vocab/roberta-base-kp/merges.txt --dict-path hf_vocab/roberta-base-kp/dict.txt --bpe-dropout 0.0 --ddp-backend=no_c10d --criterion label_smoothed_cross_entropy --share-all-embeddings --layernorm-embedding --share-all-embeddings --share-decoder-input-output-embed --reset-optimizer --reset-dataloader --reset-meters --required-batch-size-multiple 1 --optimizer adam --adam-betas (0.9,0.999) --adam-eps 1e-08 --clip-norm 0.1 --lr 1e-5 --update-freq 8 --lr-scheduler polynomial_decay --label-smoothing 0.1 --dropout 0.1 --attention-dropout 0.1 --weight-decay 0.01 --log-format simple --log-interval 100 --fixed-validation-seed 7 --max-tokens 1024 --save-interval-updates 5000 --warmup-updates 10000 --total-num-update 100000 --num-workers 4 --find-unused-parameters --fp16 --ddp-backend=no_c10d --wandb-project kp-project
+```
+
 
 ## Update (April 2022)
-Several pretrained checkpoints are available at Huggingface model repos. Paper will be available soon.
+Several pretrained checkpoints are available at Huggingface model repos.
 - BART-large-KPG model pretrained with wikipedia phrases: [https://huggingface.co/memray/bart_wikikp](https://huggingface.co/memray/bart_wikikp/tree/main)
 - BART/Transformers trained on four different keyphrase datasets: [https://huggingface.co/memray/opennmt-kpg/](https://huggingface.co/memray/opennmt-kpg/tree/main)
 
@@ -104,7 +117,23 @@ Major contributors are:
 ## Citation
 
 Please cite the following papers if you are interested in using our code and datasets.
-
+```
+@article{meng2022general2specific,
+  title={General-to-Specific Transfer Labeling for Domain Adaptable Keyphrase Generation},
+  author={Meng, Rui and Wang, Tong and Yuan, Xingdi and Zhou, Yingbo and He, Daqing},
+  journal={arXiv preprint arXiv:2208.09606},
+  year={2022}
+}
+```
+```
+@inproceedings{meng2021empirical,
+  title={An Empirical Study on Neural Keyphrase Generation},
+  author={Meng, Rui and Yuan, Xingdi and Wang, Tong and Zhao, Sanqiang and Trischler, Adam and He, Daqing},
+  booktitle={Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies},
+  pages={4985--5007},
+  year={2021}
+}
+```
 ```
 @article{yuan2018onesizenotfit,
   title={One Size Does Not Fit All: Generating and Evaluating Variable Number of Keyphrases},
