@@ -12,7 +12,7 @@ For example, you can start training a Transformer model on KP20k using OpenNMT:
 ```bash
 CUDA_VISIBLE_DEVICES=0 python train.py -config config/transfer_kp/train/transformer-presabs-kp20k.yml
 ```
-To train a BART model on KP20k using [fairseq-kpg](https://github.com/memray/fairseq-kpg):
+To train a BART model on KP20k using [fairseq-kpg](https://github.com/memray/fairseq-kpg), vocab can be downloaded [here](https://huggingface.co/memray/opennmt-kpg/blob/main/roberta-base-kp.zip):
 ```bash
 cd $FAIRSEQ_DIR
 CUDA_VISIBLE_DEVICES=0 python train.py data/kp/json/kp20k/ --save-dir exps/kp/bartFT_presabs_kp20k_100k_rerun/ckpts --disable-validation --task keyphrasification --max-source-length 512 --max-target-length 128 --kp-concat-type pres_abs --arch bart_large --restore-file cache/bart.large/model.pt --bpe hf_pretrained_bpe --bpe-vocab hf_vocab/roberta-base-kp/vocab.json --bpe-merges hf_vocab/roberta-base-kp/merges.txt --dict-path hf_vocab/roberta-base-kp/dict.txt --bpe-dropout 0.0 --ddp-backend=no_c10d --criterion label_smoothed_cross_entropy --share-all-embeddings --layernorm-embedding --share-all-embeddings --share-decoder-input-output-embed --reset-optimizer --reset-dataloader --reset-meters --required-batch-size-multiple 1 --optimizer adam --adam-betas (0.9,0.999) --adam-eps 1e-08 --clip-norm 0.1 --lr 1e-5 --update-freq 8 --lr-scheduler polynomial_decay --label-smoothing 0.1 --dropout 0.1 --attention-dropout 0.1 --weight-decay 0.01 --log-format simple --log-interval 100 --fixed-validation-seed 7 --max-tokens 1024 --save-interval-updates 5000 --warmup-updates 10000 --total-num-update 100000 --num-workers 4 --find-unused-parameters --fp16 --ddp-backend=no_c10d --wandb-project kp-project
@@ -37,14 +37,15 @@ CUDA_VISIBLE_DEVICES=0 python onmt/keyphrase/kpg_example_hfdatasets.py
 ## Update (Jan 2022)
 
 Merged with OpenNMT v2 and integrated a new pre-processing pipeline. Now training/inference can directly load **JSON data** from disk, without any hassle of tokenization or conversion to tensor files.
-- Paper datasets and DUC ([download](https://drive.google.com/file/d/1z1JGWMnQkkWw_4tjptgO-dxXD0OeTfuP/view)): KP20k/Inspec/Krapivin/NUS/SemEval2010/DUC2001.
-- 4 large annotated datasets ([download](https://drive.google.com/file/d/1VoXr7pZqLUDBi0PPtbsvj6jv05hYtWdh/view?usp=sharing)): KP20k, OpenKP, KPTimes+JPTimes, StackExchange.
+Please check out Huggingface [repo](https://huggingface.co/datasets/memray/keyphrase/) for all resources.
+~~- Paper datasets and DUC: KP20k/Inspec/Krapivin/NUS/SemEval2010/DUC2001.~~
+~~- 4 large annotated datasets: KP20k, OpenKP, KPTimes+JPTimes, StackExchange.~~ 
 
 Some config examples can be of help for you to kick off:
-- [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata) using RoBERTa subword tokenization. Vocab (including dict.txt/merges.txt/vocab.json/tokenizer.json) can be found [here](https://drive.google.com/file/d/1SM-8c2u3AV2-_71pjSlGVD8wyT7sv6vm/view?usp=sharing).
-- [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/empirical_study/diverse) using word tokenization. Vocab (magkp20k.vocab.json, 50k most frequent words in KP20k and MagKP) can be found [here](https://drive.google.com/file/d/1MJcQeORQBmDdEEjdxmZMVijnB9dR7pWs/view?usp=sharing).
+- [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata) using RoBERTa subword tokenization. Vocab (including merges.txt/vocab.json/tokenizer.json) can be found [here](https://huggingface.co/memray/opennmt-kpg/blob/main/roberta-base-kp.zip).
+- [Configs](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/empirical_study/diverse) using word tokenization. Vocab (magkp20k.vocab.json, 50k most frequent words in KP20k and MagKP) can be found [here](https://huggingface.co/memray/opennmt-kpg/blob/main/magkp20k.vocab.json).
 
-All shared resources are placed [here](https://drive.google.com/drive/folders/1nJL-LC0M8lXdDEl0ZRQMc_rcuvvKO5Hb?usp=sharing). Please note that hf_vocab.tar.gz contains the vocab of subword tokenization (RoBERTa vocab with some new special tokens such as <SEP>), and magkp20k.vocab.json is for previous word tokenization based models (top 50k frequent words in magcs and kp20k).
+Please note that hf_vocab.tar.gz contains the vocab of subword tokenization (RoBERTa vocab with some new special tokens such as <SEP>), and [magkp20k.vocab.json](https://huggingface.co/memray/opennmt-kpg/blob/main/magkp20k.vocab.json) is for previous word tokenization based models (top 50k frequent words in magcs and kp20k).
 
 
 ## Quickstart
