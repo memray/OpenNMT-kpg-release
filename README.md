@@ -3,9 +3,9 @@
 This is a repository providing code and datasets for keyphrase generation.
 
 ## Update (October 2022)
-Release the resources of paper [**General-to-Specific Transfer Labeling for Domain Adaptable Keyphrase Generation**](https://arxiv.org/pdf/2208.09606.pdf). All scores can be found [here](https://docs.google.com/spreadsheets/d/1AWUdVbOsOn_F6rGeHm-xOBK6DTQ4LqRAaiT-QIAhFmk/edit?usp=sharing).
+Release the resources of paper [**General-to-Specific Transfer Labeling for Domain Adaptable Keyphrase Generation**](https://arxiv.org/pdf/2208.09606.pdf). 
 
-All datasets and selected model checkpoints in the papers can be downloaded from Huggingface Hub ([data](https://huggingface.co/datasets/memray/keyphrase/tree/main) and [ckpt](https://huggingface.co/memray/opennmt-kpg/tree/main)).
+All datasets and selected model checkpoints in the papers can be downloaded from Huggingface Hub ([data](https://huggingface.co/memray) and [ckpt](https://huggingface.co/memray/opennmt-kpg/tree/main)).
 Config files can be found at [script/](https://github.com/memray/OpenNMT-kpg-release/tree/master/script/transfer/train_fulldata). 
 
 For example, you can start training a Transformer model on KP20k using OpenNMT:
