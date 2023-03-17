@@ -29,7 +29,7 @@ setup(
         "configargparse==1.2.3",
         "tensorboard==2.3.0",
         "flask==1.1.2",
-        "waitress==1.4.4",
+        "waitress==2.1.1",
         "pyonmttok==1.22.1;platform_system=='Linux'",
         "pyyaml==5.4",
     ],
