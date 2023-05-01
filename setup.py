@@ -28,7 +28,7 @@ setup(
         "future==0.18.2",
         "configargparse==1.2.3",
         "tensorboard==2.3.0",
-        "flask==1.1.2",
+        "flask==2.3.2",
         "waitress==1.4.4",
         "pyonmttok==1.22.1;platform_system=='Linux'",
         "pyyaml==5.4",
