@@ -25,7 +25,7 @@ setup(
         "tqdm==4.51.0",
         "torch==1.6.0",
         "torchtext==0.4.0",
-        "future==0.18.2",
+        "future==0.18.3",
         "configargparse==1.2.3",
         "tensorboard==2.3.0",
         "flask==1.1.2",
